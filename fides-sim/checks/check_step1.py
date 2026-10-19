@@ -289,12 +289,13 @@ def main() -> None:
         observed_cols |= set(frame.columns)
     truth_cols = set(latent.columns)
     overlap = observed_cols & truth_cols
+    # device_id xuất hiện khi đã chạy bước 2; cả hai đều là khóa nối bảng.
     report.add(
         "Cột observed ∩ truth",
         "{" + ", ".join(sorted(overlap)) + "}",
-        "{customer_id}",
+        "chỉ khóa",
         "-",
-        overlap == {"customer_id"},
+        overlap <= {"customer_id", "device_id"} and "customer_id" in overlap,
     )
 
     # Tham khảo, không làm rớt kiểm tra.

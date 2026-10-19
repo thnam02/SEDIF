@@ -47,3 +47,40 @@ population:
     small_business:
       median: 25000000
       sigma: 0.8
+
+accounts:
+  banks: [B01, B02, B03, B04, B05, B06, B07, B08]
+  home_bank: B01
+  # Thị phần giả định. B01 là ngân hàng pilot; tỷ lệ này áp cho ngân hàng chính
+  # của khách hàng, nên khoảng 20% khách hàng có tài khoản tại B01.
+  bank_share:
+    B01: 0.20
+    B02: 0.16
+    B03: 0.14
+    B04: 0.13
+    B05: 0.12
+    B06: 0.10
+    B07: 0.08
+    B08: 0.07
+  accounts_per_customer:
+    1: 0.55
+    2: 0.35
+    3: 0.10
+  savings_share: 0.30
+  securities_share: 0.10
+  n_merchants: 3000
+  merchant_verified_share: 0.40
+  external_with_account_share: 0.60
+  new_account_in_window_share: 0.03
+  android_share: 0.70
+  second_device_share: 0.08
+  rooted_share: 0.01
+  new_device_in_window_share: 0.05
+  family_shared_device_share: 0.02
+  balance_multiple_of_income:
+    default:
+      median: 3.0
+      sigma: 1.0
+    elderly:
+      median: 6.0
+      sigma: 1.0
