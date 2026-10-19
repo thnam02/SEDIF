@@ -1,0 +1,49 @@
+seed: 42
+sim_start: 2026-07-01
+sim_end: 2026-09-29
+
+population:
+  n_customers: 50000
+  n_external_numbers: 30000
+  age_bands:
+    - {min: 18, max: 30, share: 0.33}
+    - {min: 31, max: 50, share: 0.40}
+    - {min: 51, max: 65, share: 0.17}
+    - {min: 66, max: 85, share: 0.10}
+  elderly_age: 60
+  # Tỷ lệ doanh nghiệp nhỏ trong nhóm chưa cao tuổi.
+  small_business_share: 0.08
+  telco_share:
+    Viettel: 0.55
+    VNPT: 0.25
+    MobiFone: 0.18
+    Vietnamobile: 0.02
+  city_share:
+    TP Hồ Chí Minh: 0.30
+    Hà Nội: 0.25
+    Đà Nẵng: 0.05
+    Hải Phòng: 0.05
+    Cần Thơ: 0.04
+    Tỉnh khác: 0.31
+  # Tỷ lệ số hộ, không phải tỷ lệ người.
+  household_size:
+    1: 0.25
+    2: 0.25
+    3: 0.25
+    4: 0.15
+    5: 0.10
+  guardian_share:
+    elderly: 0.20
+    other: 0.03
+  recent_sim_share: 0.04
+  ported_share: 0.05
+  income_lognormal:
+    normal:
+      median: 9000000
+      sigma: 0.6
+    elderly:
+      median: 5000000
+      sigma: 0.7
+    small_business:
+      median: 25000000
+      sigma: 0.8
