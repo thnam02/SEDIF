@@ -84,3 +84,14 @@ accounts:
     elderly:
       median: 6.0
       sigma: 1.0
+
+history:
+  tx_per_month_median: 25          # theo activity_level, lognormal, sigma 0.7
+  card_payments_aggregate_daily: true
+  renter_share_young: 0.30          # 18–35 tuổi trả tiền nhà hàng tháng
+  school_fee_parent_share: 0.25     # hộ có con đi học, đóng học phí tháng 8–9
+  large_oneoff_share: 0.003         # đặt cọc nhà/xe, viện phí trong 90 ngày
+  own_transfer_drain_share: 0.02    # chuyển > 80% số dư sang tài khoản của chính mình
+  legit_passthrough_share: 0.005    # thủ quỹ nhóm, cha mẹ nhận rồi chuyển cho con
+  round_amount_share: 0.70          # số tiền tròn nghìn/trăm nghìn
+  payee_add_method: {contact: 0.55, paste: 0.25, qr: 0.15, typed: 0.05}

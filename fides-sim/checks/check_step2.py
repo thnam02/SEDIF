@@ -13,7 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 TZ = "Asia/Ho_Chi_Minh"
-KEYS = {"customer_id", "device_id"}
+# number_id và relation xuất hiện khi đã chạy bước 3 (danh bạ).
+KEYS = {"customer_id", "device_id", "number_id", "relation"}
 
 
 def load_config() -> dict:
