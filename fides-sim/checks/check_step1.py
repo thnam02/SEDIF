@@ -280,9 +280,32 @@ def main() -> None:
 
     ascii_ok = bool(customers["name_ascii"].equals(customers["full_name"].map(to_name_ascii).astype(customers["name_ascii"].dtype)))
     report.add("name_ascii in hoa, Đ→D", "đạt" if ascii_ok else "lỗi", "đạt", "-", ascii_ok)
+    has_digit = customers["full_name"].astype(str).str.contains(r"\d") | customers["name_ascii"].astype(str).str.contains(r"\d")
+    report.add("Tên không chứa chữ số", "đạt" if not has_digit.any() else f"{int(has_digit.sum())} tên", "0 tên", "-", not bool(has_digit.any()))
     sus = latent["susceptibility"]
     sus_ok = bool(sus.notna().all() and (sus >= 0).all() and (sus <= 1).all())
     report.add("susceptibility trong [0, 1]", "đạt" if sus_ok else "lỗi", "đạt", "-", sus_ok)
+    sus_people = customers[["customer_id", "birth_year"]].merge(latent[["customer_id", "susceptibility"]], on="customer_id")
+    sus_age = ref_year - sus_people["birth_year"]
+    elderly_sus = sus_people.loc[sus_age >= elderly_age, "susceptibility"]
+    other_sus = sus_people.loc[sus_age < elderly_age, "susceptibility"]
+    sus_cut = float(elderly_sus.median())
+    overlap = float((other_sus > sus_cut).mean())
+    report.add(
+        "Không cao tuổi có susceptibility > trung vị cao tuổi",
+        pct(overlap),
+        "20–40%",
+        f"trung vị cao tuổi {sus_cut:.3f}",
+        0.20 <= overlap <= 0.40,
+    )
+    dup_rate = float(customers.duplicated(["name_ascii", "birth_year", "city"], keep=False).mean())
+    report.add(
+        "Trùng name_ascii + birth_year + city",
+        pct(dup_rate),
+        "0,1%–1%",
+        f"{int(customers.duplicated(['name_ascii', 'birth_year', 'city'], keep=False).sum())} người",
+        0.001 <= dup_rate <= 0.01,
+    )
 
     observed_cols: set[str] = set()
     for frame in (customers, phones, guardians):
@@ -326,6 +349,17 @@ def main() -> None:
     print(f"  Chuyển mạng (đầu số khác nhà mạng hiện tại): {pct(ported)} (mục tiêu {pct(float(pop['ported_share']))})")
     if child_n:
         print(f"  Con ở thành phố khác hộ: {pct(child_away / child_n)} (mục tiêu 20%)")
+    n_relatives = len(guardians)
+    child_in_home = float((guardians["relation"] == "con").mean()) if n_relatives else 0.0
+    external_number = float(guardians["guardian_customer_id"].isna().mean()) if n_relatives else 0.0
+    alone_elderly = customers[["customer_id", "birth_year"]].merge(latent[["customer_id", "lives_alone"]], on="customer_id")
+    alone_elderly = alone_elderly[(ref_year - alone_elderly["birth_year"] >= elderly_age) & alone_elderly["lives_alone"]]
+    alone_with_relative = int(alone_elderly["customer_id"].isin(guardians["customer_id"]).sum())
+    print("  Báo cáo người thân:")
+    print(f"    Là con trong hộ: {pct(child_in_home)} ({int(round(child_in_home * n_relatives))}/{n_relatives})")
+    print(f"    Là số bên ngoài: {pct(external_number)} ({int(round(external_number * n_relatives))}/{n_relatives})")
+    print(f"    Cao tuổi sống một mình có người thân: {alone_with_relative}/{len(alone_elderly)}")
+    print(f"  Tên đầy đủ khác nhau: {customers['full_name'].nunique()}/{n}")
     print()
     report.print()
     if not report.ok():

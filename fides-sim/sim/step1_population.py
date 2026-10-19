@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sim.io import write
-from sim.names import sample_middle_given, surname_table, to_name_ascii
+from sim.names import sample_name_body, surname_table, to_name_ascii
 
 TZ = "Asia/Ho_Chi_Minh"
 AGE_MIN = 18
@@ -622,8 +622,9 @@ def build_population(cfg: dict) -> dict[str, pd.DataFrame]:
     surname_idx[diff_pos] = _draw_other_surnames(rng, hh_surname[hh_index[diff_pos]], surname_p)
     surnames = surname_names[surname_idx]
 
-    middle, given = sample_middle_given(rng, gender == "nam")
-    full_name = np.char.add(np.char.add(surnames.astype(str), " "), np.char.add(np.char.add(middle.astype(str), " "), given.astype(str)))
+    young = (ref_year - ages) > 1995
+    body = sample_name_body(rng, gender == "nam", young)
+    full_name = np.char.add(np.char.add(surnames.astype(str), " "), body.astype(str))
     name_ascii = np.array([to_name_ascii(name) for name in full_name], dtype=object)
 
     segment = np.full(n, SEGMENT_NORMAL, dtype=object)
@@ -659,7 +660,7 @@ def build_population(cfg: dict) -> dict[str, pd.DataFrame]:
 
     elderly_f = elderly.astype(float)
     alone_f = lives_alone.astype(float)
-    susceptibility = 1.0 / (1.0 + np.exp(-(-0.25 + 0.90 * elderly_f + 0.60 * alone_f + 1.20 * rng.standard_normal(n))))
+    susceptibility = 1.0 / (1.0 + np.exp(-(-0.25 + 0.62 * elderly_f + 0.60 * alone_f + 1.20 * rng.standard_normal(n))))
 
     created_at = pd.Series(skewed_timestamps(as_timestamp("2015-01-01"), sim_start, n, rng, power=0.30))
     if created_at.dt.tz is None:

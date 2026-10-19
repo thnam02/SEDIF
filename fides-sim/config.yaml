@@ -73,9 +73,9 @@ accounts:
   external_with_account_share: 0.60
   new_account_in_window_share: 0.03
   android_share: 0.70
-  second_device_share: 0.08
+  second_device_share: 0.08        # dùng HAI máy SONG SONG trong suốt cửa sổ
   rooted_share: 0.01
-  new_device_in_window_share: 0.05
+  new_device_in_window_share: 0.05 # ĐỔI máy: máy cũ ngừng dùng, tính RIÊNG, không gộp vào 8%
   family_shared_device_share: 0.02
   balance_multiple_of_income:
     default:

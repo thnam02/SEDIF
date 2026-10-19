@@ -17,10 +17,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sim.io import write
-from sim.names import sample_middle_given, surname_table, to_name_ascii
+from sim.names import sample_name_body, surname_table, to_name_ascii
 
 TZ = "Asia/Ho_Chi_Minh"
-MAX_ACCOUNTS_PER_DEVICE = 3
 TALKBACK_ELDERLY_SHARE = 0.02
 PASSWORD_MANAGER_SHARE = 0.05
 REMOTE_ACCESS_SHARE = 0.01
@@ -258,10 +257,11 @@ def build_external_accounts(phones, banks, share, share_with_account, rng):
     chosen = rng.choice(external, size=n_take, replace=False)
     bank = rng.choice(np.array(banks, dtype=object), size=n_take, p=[share[b] for b in banks])
     male = rng.random(n_take) < 0.5
-    middle, given = sample_middle_given(rng, male)
+    young = rng.random(n_take) < 0.33
+    body = sample_name_body(rng, male, young)
     surnames, weights = surname_table()
     surname = rng.choice(surnames, size=n_take, p=weights)
-    full = np.char.add(np.char.add(surname.astype(str), " "), np.char.add(np.char.add(middle.astype(str), " "), given.astype(str)))
+    full = np.char.add(np.char.add(surname.astype(str), " "), body.astype(str))
     holder = np.array([to_name_ascii(name) for name in full], dtype=object)
     income_median = np.full(n_take, 9_000_000.0)
     income = lognormal_money(income_median, np.full(n_take, 0.6), rng)
@@ -372,16 +372,35 @@ def assemble_accounts(people, phones, cfg, rng):
     return accounts, customer, merch_kind
 
 
-def build_devices(people, n_products: np.ndarray, block, cfg, rng):
+def build_devices(people, block, cfg, rng):
+    """Hai cờ độc lập: 8% dùng hai máy song song, 5% đổi một máy trong cửa sổ.
+
+    Khách chỉ đổi máy có máy cũ (last_seen) và máy mới. Khách vừa dùng hai máy vừa đổi
+    thì giữ máy chính, ngừng máy thứ hai và thêm máy thay thế.
+    """
     n = len(people)
-    second = np.zeros(n, dtype=bool)
-    n_second = int(round(float(block["second_device_share"]) * n))
-    second[rng.choice(n, size=n_second, replace=False)] = True
-    # Thêm máy thứ hai khi một máy không đủ chỗ cho mọi tài khoản (tối đa 3).
-    second |= n_products > MAX_ACCOUNTS_PER_DEVICE
-    n_devices = n + int(second.sum())
-    owner_row = np.concatenate([np.arange(n), np.flatnonzero(second)])
-    slot = np.concatenate([np.zeros(n, dtype=int), np.ones(int(second.sum()), dtype=int)])
+    parallel = np.zeros(n, dtype=bool)
+    replace = np.zeros(n, dtype=bool)
+    n_parallel = int(round(float(block["second_device_share"]) * n))
+    n_replace = int(round(float(block["new_device_in_window_share"]) * n))
+    parallel[rng.choice(n, size=n_parallel, replace=False)] = True
+    replace[rng.choice(n, size=n_replace, replace=False)] = True
+
+    parallel_rows = np.flatnonzero(parallel)
+    replace_rows = np.flatnonzero(replace)
+    # slot 0: máy đang dùng chính. slot 1: máy song song đang dùng. slot 2: máy đã ngừng.
+    owner_row = np.concatenate([np.arange(n), parallel_rows, replace_rows])
+    slot = np.concatenate([
+        np.zeros(n, dtype=int),
+        np.ones(len(parallel_rows), dtype=int),
+        np.full(len(replace_rows), 2, dtype=int),
+    ])
+    n_devices = len(owner_row)
+    in_window = np.zeros(n_devices, dtype=bool)
+    # Chỉ đổi máy: máy chính là máy mới. Vừa song song vừa đổi: máy thứ hai là máy mới.
+    in_window[np.flatnonzero(replace & ~parallel)] = True
+    second_pos = n + np.arange(len(parallel_rows))
+    in_window[second_pos[replace[parallel_rows]]] = True
 
     os_counts = largest_remainder(["Android", "iOS"], [float(block["android_share"]), 1.0 - float(block["android_share"])], n_devices)
     os_name = repeat_labels(os_counts, rng)
@@ -394,10 +413,14 @@ def build_devices(people, n_products: np.ndarray, block, cfg, rng):
 
     sim_start = as_timestamp(cfg["sim_start"])
     sim_end = as_timestamp(cfg["sim_end"])
-    n_new = int(round(float(block["new_device_in_window_share"]) * n_devices))
-    in_window = np.zeros(n_devices, dtype=bool)
-    in_window[rng.choice(n_devices, size=n_new, replace=False)] = True
     first_seen = mix_timestamps(n_devices, in_window, sim_start, sim_end, rng)
+    last_seen = pd.Series(pd.NaT, index=np.arange(n_devices), dtype=f"datetime64[ns, {TZ}]")
+    new_index = np.arange(n)
+    new_index[parallel_rows] = second_pos
+    gap = rng.integers(1, 7 * 24 * 3600, size=len(replace_rows))
+    retired_at = first_seen.iloc[new_index[replace_rows]].reset_index(drop=True) - pd.to_timedelta(gap, unit="s")
+    retired_pos = n + len(parallel_rows) + np.arange(len(replace_rows))
+    last_seen.iloc[retired_pos] = retired_at.to_numpy()
 
     devices = pd.DataFrame(
         {
@@ -406,11 +429,12 @@ def build_devices(people, n_products: np.ndarray, block, cfg, rng):
             "os": pd.Series(os_name, dtype="string"),
             "is_rooted": rooted,
             "first_seen": first_seen,
+            "last_seen": last_seen,
         }
     )
     devices["_owner_row"] = owner_row
     devices["_slot"] = slot
-    return devices, second
+    return devices, parallel
 
 
 def build_links(accounts, devices, people, activity, block, rng):
@@ -421,10 +445,11 @@ def build_links(accounts, devices, people, activity, block, rng):
     owned = owned.sort_values(["_row", "account_type", "account_id"], kind="mergesort").reset_index(drop=True)
     owned["_rank"] = owned.groupby("_row", sort=False).cumcount()
     sizes = owned.groupby("_row", sort=False).size()
-    second_rows = set(devices.loc[devices["_slot"] == 1, "_owner_row"].tolist())
+    second_rows = devices.loc[devices["_slot"] == 1, "_owner_row"].to_numpy()
     n_dev = np.ones(len(people), dtype=int)
-    n_dev[list(second_rows)] = 2
-    split = np.minimum(MAX_ACCOUNTS_PER_DEVICE, np.ceil(sizes / n_dev[sizes.index.to_numpy()]).astype(int))
+    n_dev[second_rows] = 2
+    split = np.ceil(sizes.to_numpy() / n_dev[sizes.index.to_numpy()]).astype(int)
+    split = pd.Series(split, index=sizes.index)
     owned["_split"] = owned["_row"].map(split)
     owned["_slot"] = (owned["_rank"] >= owned["_split"]).astype(int)
     key = {(int(row), int(slot)): device_id for row, slot, device_id in zip(devices["_owner_row"], devices["_slot"], devices["device_id"])}
@@ -437,15 +462,12 @@ def build_links(accounts, devices, people, activity, block, rng):
     login = np.rint(2.0 + 150.0 * activity[holder_row] + rng.normal(0.0, 4.0, size=len(links)))
     links["login_count"] = np.clip(login, 1, None).astype(np.int64)
     out = links[["account_id", "device_id", "login_count"]].reset_index(drop=True)
-    counts = out.groupby("device_id").size()
-    if int(counts.max()) > MAX_ACCOUNTS_PER_DEVICE:
-        raise RuntimeError(f"Thiết bị gắn {int(counts.max())} tài khoản")
     return out
 
 
 def attach_unused_second_devices(links: pd.DataFrame, devices: pd.DataFrame) -> pd.DataFrame:
-    """Máy thứ hai của khách chỉ có một tài khoản vẫn được gắn tài khoản đó."""
-    second = devices.loc[devices["_slot"] == 1, ["device_id", "customer_id"]]
+    """Máy song song hoặc máy đã ngừng, nếu chưa có tài khoản, nhận tài khoản personal."""
+    second = devices.loc[devices["_slot"] >= 1, ["device_id", "customer_id"]]
     missing = second.loc[~second["device_id"].isin(set(links["device_id"]))]
     if missing.empty:
         return links
@@ -461,8 +483,9 @@ def share_with_children(links, devices, people, block, rng) -> pd.DataFrame:
     elderly_ids = people.loc[age >= elderly_age, "customer_id"].to_numpy()
     quota = int(round(float(block["family_shared_device_share"]) * len(elderly_ids)))
     children = offspring_map(people)
-    devices_of = devices.groupby("customer_id")["device_id"].apply(list).to_dict()
-    load = links.groupby("device_id").size().to_dict()
+    active_devices = devices.loc[devices["_slot"] < 2]
+    devices_of = active_devices.groupby("customer_id")["device_id"].apply(list).to_dict()
+    holders = {device_id: set(group["customer_id"]) for device_id, group in links.groupby("device_id", sort=False)}
     personal = (
         links.loc[links["account_type"] == "personal", ["account_id", "customer_id"]]
         .drop_duplicates("customer_id")
@@ -483,16 +506,15 @@ def share_with_children(links, devices, people, block, rng) -> pd.DataFrame:
         candidates = []
         for child in children.get(elder, []):
             for device_id in devices_of.get(child, []):
-                spare = MAX_ACCOUNTS_PER_DEVICE - int(load.get(device_id, 0))
-                if spare > 0:
-                    candidates.append((spare, device_id))
+                current = holders.get(device_id, set())
+                if len(current | {elder}) <= 2:
+                    candidates.append(device_id)
         if not candidates:
             continue
-        candidates.sort(key=lambda item: (-item[0], item[1]))
-        device_id = candidates[0][1]
+        device_id = sorted(candidates)[0]
         extra_accounts.append(account_id)
         extra_devices.append(device_id)
-        load[device_id] = int(load.get(device_id, 0)) + 1
+        holders[device_id] = holders.get(device_id, set()) | {elder}
         placed += 1
     if placed < quota:
         raise RuntimeError(f"Chỉ gắn được {placed}/{quota} thiết bị dùng chung trong hộ")
@@ -558,10 +580,9 @@ def _sanity(accounts, devices, links, latent, people, cfg) -> None:
     if not banks.eq(counts).all():
         raise RuntimeError("Tài khoản personal của một khách bị trùng ngân hàng")
     name = people.set_index("customer_id")["name_ascii"]
-    for kind in ("savings", "securities"):
-        part = accounts[accounts["account_type"] == kind]
-        if not part["holder_name_ascii"].eq(part["customer_id"].map(name)).all():
-            raise RuntimeError(f"{kind} không cùng holder_name_ascii với chủ")
+    owned = accounts.dropna(subset=["customer_id"])
+    if not owned["holder_name_ascii"].eq(owned["customer_id"].map(name)).all():
+        raise RuntimeError("holder_name_ascii không khớp name_ascii của chủ")
     if accounts["opening_balance"].dtype != np.int64 or links["login_count"].dtype != np.int64:
         raise RuntimeError("Tiền hoặc login_count không phải int64")
     sim_end = as_timestamp(cfg["sim_end"])
@@ -581,7 +602,7 @@ def main() -> None:
     rng = np.random.default_rng(int(cfg["seed"]))
     people, phones = load_population()
     accounts, customer, _kinds = assemble_accounts(people, phones, cfg, rng)
-    devices, _second = build_devices(people, customer["n_products"], cfg["accounts"], cfg, rng)
+    devices, _second = build_devices(people, cfg["accounts"], cfg, rng)
     links = build_links(accounts, devices, people, customer["activity"], cfg["accounts"], rng)
     latent = latent_devices(devices, people, rng)
     _sanity(accounts, devices, links, latent, people, cfg)

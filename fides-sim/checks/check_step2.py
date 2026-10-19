@@ -123,17 +123,24 @@ def main() -> None:
         )
 
     names = customers.set_index("customer_id")["name_ascii"]
-    for kind in ("savings", "securities"):
-        part = accounts.loc[accounts["account_type"] == kind]
-        matched = bool(part["holder_name_ascii"].eq(part["customer_id"].map(names)).all()) and part["customer_id"].notna().all()
-        report.add(f"{kind} cùng holder_name_ascii với chủ", "đạt" if matched else "lệch", "trùng tên chủ", "-", matched)
+    owned_accounts = accounts.dropna(subset=["customer_id"])
+    matched = bool(owned_accounts["holder_name_ascii"].eq(owned_accounts["customer_id"].map(names)).all())
+    report.add("holder_name_ascii khớp name_ascii của chủ", "đạt" if matched else "lệch", "mọi tài khoản của khách", "-", matched)
 
-    per_device = links.groupby("device_id").size()
-    max_accounts = int(per_device.max()) if len(per_device) else 0
-    report.add("Tài khoản trên một thiết bị", str(max_accounts), "≤ 3", "-", max_accounts <= 3)
-
-    linked = links.merge(accounts[["account_id", "customer_id"]], on="account_id", how="left")
+    linked = links.merge(accounts[["account_id", "customer_id", "holder_name_ascii"]], on="account_id", how="left")
     linked = linked.dropna(subset=["customer_id"]).merge(latent_people[["customer_id", "family_group_id"]], on="customer_id", how="left")
+    holder_n = linked.groupby("device_id")["holder_name_ascii"].nunique()
+    family_of_holder = linked.groupby("device_id")["family_group_id"].nunique()
+    two_holders = holder_n[holder_n == 2].index
+    holder_ok = bool((holder_n <= 2).all()) and (len(two_holders) == 0 or bool((family_of_holder.loc[two_holders] == 1).all()))
+    report.add(
+        "Holder khác nhau trên một thiết bị",
+        f"tối đa {int(holder_n.max()) if len(holder_n) else 0}, {len(two_holders)} máy có 2 holder",
+        "≤ 2, và = 2 chỉ khi cùng family_group_id",
+        "-",
+        holder_ok,
+    )
+
     family_count = linked.groupby("device_id")["family_group_id"].nunique()
     customer_count = linked.groupby("device_id")["customer_id"].nunique()
     shared = customer_count[customer_count > 1].index
@@ -151,6 +158,40 @@ def main() -> None:
 
     report.add("opened_at < sim_end, múi giờ VN", "đạt" if before(accounts["opened_at"], sim_end) else "lỗi", "đạt", "-", before(accounts["opened_at"], sim_end))
     report.add("first_seen < sim_end, múi giờ VN", "đạt" if before(devices["first_seen"], sim_end) else "lỗi", "đạt", "-", before(devices["first_seen"], sim_end))
+    sim_start = as_timestamp(cfg["sim_start"])
+    marked = devices.copy()
+    marked["in_window"] = (marked["first_seen"] >= sim_start) & (marked["first_seen"] < sim_end)
+    new_first = marked.loc[marked["in_window"]].groupby("customer_id")["first_seen"].min()
+    retired = marked.loc[marked["last_seen"].notna(), ["customer_id", "last_seen"]]
+    changers = set(new_first.index)
+    ordered = changers == set(retired["customer_id"]) and len(changers) > 0
+    if ordered:
+        compared = retired.merge(new_first.rename("new_first"), on="customer_id")
+        ordered = bool((compared["last_seen"] < compared["new_first"]).all())
+    report.add(
+        "Đổi máy trong cửa sổ: last_seen máy cũ < first_seen máy mới",
+        f"{len(changers)} khách" if ordered else "lệch hoặc thiếu last_seen",
+        "last_seen cũ < first_seen mới",
+        "-",
+        ordered,
+    )
+    active_count = marked.loc[marked["last_seen"].isna()].groupby("customer_id").size()
+    parallel_rate = float((active_count == 2).sum() / len(customers))
+    replace_rate = retired["customer_id"].nunique() / len(customers)
+    report.add(
+        "Dùng hai máy song song",
+        pct(parallel_rate),
+        pct(float(block["second_device_share"])),
+        f"{100 * (parallel_rate - float(block['second_device_share'])):+.2f} đ.p",
+        abs(parallel_rate - float(block["second_device_share"])) < 0.01,
+    )
+    report.add(
+        "Đổi máy trong cửa sổ",
+        pct(replace_rate),
+        pct(float(block["new_device_in_window_share"])),
+        f"{100 * (replace_rate - float(block['new_device_in_window_share'])):+.2f} đ.p",
+        abs(replace_rate - float(block["new_device_in_window_share"])) < 0.01,
+    )
     active_ok = set(accounts["status"].unique()) == {"active"}
     report.add("Chưa có tài khoản mule", "active" if active_ok else "có trạng thái khác", "active", "-", active_ok)
 
@@ -174,16 +215,12 @@ def main() -> None:
     fk_ok = fk_ok and bool(named_phone.isin(phones["number_id"]).all())
     report.add("Khóa ngoại tài khoản và thiết bị", "đạt" if fk_ok else "lỗi", "đạt", "-", fk_ok)
 
-    sim_start = as_timestamp(cfg["sim_start"])
     new_accounts = float(((accounts["opened_at"] >= sim_start) & (accounts["opened_at"] < sim_end)).mean())
-    new_devices = float(((devices["first_seen"] >= sim_start) & (devices["first_seen"] < sim_end)).mean())
-    per_customer = devices.groupby("customer_id").size()
-    two = float((per_customer == 2).mean())
     print()
     print("Tham khảo (không tính ĐẠT/LỖI)")
     print(f"  Tài khoản mới trong cửa sổ: {pct(new_accounts)} (mục tiêu {pct(float(block['new_account_in_window_share']))})")
-    print(f"  Thiết bị mới trong cửa sổ: {pct(new_devices)} (mục tiêu {pct(float(block['new_device_in_window_share']))})")
-    print(f"  Khách có 2 thiết bị: {pct(two)} (mục tiêu tối thiểu {pct(float(block['second_device_share']))})")
+    print(f"  Dùng 2 máy song song: {pct(parallel_rate)} (mục tiêu {pct(float(block['second_device_share']))})")
+    print(f"  Đổi máy: {pct(replace_rate)} (mục tiêu {pct(float(block['new_device_in_window_share']))})")
     print(f"  Android {pct(float((devices['os'] == 'Android').mean()))}, rooted {pct(float(devices['is_rooted'].mean()))}")
     merchants = accounts["customer_id"].isna() & (accounts["account_type"] == "business") & accounts["phone_number_id"].isna()
     print(f"  Merchant {int(merchants.sum())}, trong đó verified {pct(float(accounts.loc[merchants, 'merchant_verified'].mean()))} (mục tiêu {pct(float(block['merchant_verified_share']))})")
