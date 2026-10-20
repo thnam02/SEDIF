@@ -359,6 +359,189 @@ def write_side(accounts, links, truth_accounts, rings) -> None:
     write(rings, "truth", "mule_rings")
 
 
+FAST_KINDS = {"police", "bank_staff", "relative"}
+
+
+def open_early_rings(rings: pd.DataFrame, sim_start: pd.Timestamp) -> pd.DataFrame:
+    """Một mule ngủ không được giữ cả đường dây đóng đến sau ngày 60.
+
+    Giữ đúng 30% đường dây đang hoạt động mở muộn; các đường dây còn lại
+    mở trong 20 ngày đầu. Lần chạy sau không kéo thêm vì số ring muộn đã đủ.
+    """
+    rings = rings.copy()
+    rings["ring_id"] = rings["ring_id"].astype(str)
+    active_ids = sorted(rings.loc[rings["active_to"] >= sim_start, "ring_id"].unique())
+    start_of = rings.groupby("ring_id")["active_from"].min()
+    late = [ring for ring in active_ids if start_of[ring] >= sim_start + pd.Timedelta(days=60)]
+    keep_n = int(round(0.30 * len(active_ids)))
+    if len(late) <= keep_n:
+        return rings
+    keep = set(sorted(late, key=lambda ring: (start_of[ring], ring), reverse=True)[:keep_n])
+    clock = np.random.default_rng(42)
+    for ring in sorted(ring for ring in late if ring not in keep):
+        opened = sim_start + pd.Timedelta(days=int(clock.integers(0, 20)))
+        rings.loc[rings["ring_id"].eq(ring), "active_from"] = opened
+    print(f"  Đường dây mở trong 20 ngày đầu: {len(late) - len(keep)}; giữ mở muộn: {len(keep)}")
+    return rings
+
+
+def _pay_times(kind: str, start: pd.Timestamp, end: pd.Timestamp) -> list[pd.Timestamp]:
+    if kind in FAST_KINDS or kind == "deposit":
+        return [end - pd.Timedelta(minutes=20)]
+    if kind == "romance":
+        return [start + (end - start) * 0.55, end - pd.Timedelta(hours=8)]
+    return [start + (end - start) * frac for frac in (0.35, 0.50, 0.62, 0.74, 0.86, 0.95)]
+
+
+def schedule_cases(rng, types, spans, rings, sim_start, sim_end, max_cases: int):
+    """Rải vụ trong cửa sổ ring. Mỗi mule hoạt động vài ngày; chỉ nghỉ sau khi bị liệt kê hoặc đóng băng.
+
+    Khoản nhanh (police, bank_staff, relative) nằm sau khoản chậm, trong hạn liệt kê sớm nhất
+    của kiểu chậm, và không quá 4 vụ trong một ngày.
+    """
+    ring_span = rings.groupby("ring_id", sort=False).agg(active_from=("active_from", "min"), active_to=("active_to", "max"))
+    active_rings = [
+        str(ring)
+        for ring, row in ring_span.iterrows()
+        if row["active_from"] < sim_end and row["active_to"] > sim_start and row["active_to"] >= sim_start
+    ]
+    l1 = rings.loc[rings["layer"].astype(str) == "l1", ["ring_id", "account_id"]]
+    l1_of: dict[str, list[str]] = {}
+    for ring, account in zip(l1["ring_id"].astype(str), l1["account_id"].astype(str)):
+        l1_of.setdefault(ring, []).append(account)
+    n_cases = len(types)
+    ring_of = [""] * n_cases
+    mule_of = [""] * n_cases
+    start_of: list[pd.Timestamp] = [sim_start] * n_cases
+    end_of: list[pd.Timestamp] = [sim_start] * n_cases
+    mules = []
+    for ring in active_rings:
+        window_from = max(sim_start, pd.Timestamp(ring_span.loc[ring, "active_from"]))
+        window_to = min(sim_end - pd.Timedelta(minutes=1), pd.Timestamp(ring_span.loc[ring, "active_to"]))
+        if window_to <= window_from:
+            continue
+        for account in sorted(l1_of.get(ring, [])):
+            mules.append(
+                {
+                    "id": account,
+                    "ring": ring,
+                    "window_from": window_from,
+                    "window_to": window_to,
+                    "days": (window_to - window_from).total_seconds() / 86400.0,
+                    "usage": 0,
+                    "n_invest": 0,
+                    "romance": False,
+                    "cushion": 0,
+                    "spell_start": None,
+                    "spell_end": None,
+                    "day_count": {},
+                }
+            )
+    long_mules = sorted((mule for mule in mules if mule["days"] >= 28), key=lambda mule: (-mule["days"], mule["id"]))[:40]
+    long_ids = {mule["id"] for mule in long_mules}
+    mid_mules = [mule for mule in mules if mule["id"] not in long_ids]
+    by_kind: dict[str, list[int]] = {}
+    for index, kind in enumerate(types):
+        by_kind.setdefault(str(kind), []).append(index)
+    spell_long = pd.Timedelta(days=24)
+    spell_mid = pd.Timedelta(days=7)
+    margin = pd.Timedelta(hours=48)
+
+    def reserve_spell(mule, spell: pd.Timedelta) -> bool:
+        if mule["spell_start"] is not None:
+            return True
+        room = mule["window_to"] - mule["window_from"] - spell - margin
+        if room.total_seconds() < 0:
+            return False
+        seconds = max(int(room.total_seconds()), 1)
+        shift = int(rng.integers(0, seconds))
+        mule["spell_start"] = mule["window_from"] + pd.to_timedelta(shift, unit="s")
+        mule["spell_end"] = mule["spell_start"] + spell
+        return True
+
+    def pay_days(kind: str, start: pd.Timestamp, end: pd.Timestamp) -> set:
+        return {stamp.tz_convert(TZ).date() for stamp in _pay_times(kind, start, end)}
+
+    def accept(mule, index: int, kind: str, start: pd.Timestamp, end: pd.Timestamp) -> bool:
+        if mule["usage"] >= max_cases or start < mule["window_from"] or end > mule["window_to"] or end >= sim_end:
+            return False
+        days = pay_days(kind, start, end)
+        if any(mule["day_count"].get(day, 0) >= 4 for day in days):
+            return False
+        for day in days:
+            mule["day_count"][day] = mule["day_count"].get(day, 0) + 1
+        mule["usage"] += 1
+        if kind == "investment":
+            mule["n_invest"] += 1
+            mule["cushion"] = max(mule["cushion"], 3)
+        elif kind == "romance":
+            mule["romance"] = True
+            mule["cushion"] = max(mule["cushion"], 7)
+        ring_of[index] = mule["ring"]
+        mule_of[index] = mule["id"]
+        start_of[index] = start
+        end_of[index] = end
+        return True
+
+    def place_slow(index: int, kind: str, pool, spell: pd.Timedelta, limit: int) -> bool:
+        for mule in pool:
+            if kind == "investment" and mule["n_invest"] >= limit:
+                continue
+            if kind == "romance" and mule["romance"]:
+                continue
+            if not reserve_spell(mule, spell):
+                continue
+            if accept(mule, index, kind, mule["spell_start"], mule["spell_end"]):
+                return True
+        return False
+
+    for index in by_kind.get("investment", []):
+        if place_slow(index, "investment", long_mules, spell_long, 4):
+            continue
+        if place_slow(index, "investment", mid_mules, spell_mid, 3):
+            continue
+        if not place_slow(index, "investment", mules, spell_mid, max_cases):
+            raise RuntimeError("Không xếp được vụ đầu tư vào mule lớp 1")
+    for index in by_kind.get("romance", []):
+        if place_slow(index, "romance", mid_mules, spell_mid, max_cases):
+            continue
+        if not place_slow(index, "romance", mules, spell_mid, max_cases):
+            raise RuntimeError("Không xếp được vụ tình cảm vào mule lớp 1")
+
+    slots = []
+    for mule in mules:
+        if mule["spell_start"] is None and not reserve_spell(mule, pd.Timedelta(hours=6)):
+            continue
+        for cluster in (0, 1):
+            if cluster == 1 and mule["cushion"] < 3:
+                continue
+            for slot in range(4):
+                slots.append((0 if cluster == 0 else 1 if mule["id"] in long_ids else 2, mule, cluster, slot))
+    slots.sort(key=lambda item: (item[0], item[1]["id"], item[3]))
+    used_slots: set[tuple[str, int, int]] = set()
+
+    def take_slot(index: int, kind: str, span: pd.Timedelta) -> bool:
+        for _order, mule, cluster, slot in slots:
+            key = (mule["id"], cluster, slot)
+            if key in used_slots or mule["usage"] >= max_cases:
+                continue
+            stamp = mule["spell_end"] + pd.Timedelta(hours=20 if cluster == 0 else 44) + pd.Timedelta(minutes=15 * slot)
+            end = stamp + pd.Timedelta(minutes=20)
+            start = end - span
+            if start < mule["window_from"]:
+                start = mule["window_from"]
+            if accept(mule, index, kind, start, end):
+                used_slots.add(key)
+                return True
+        return False
+
+    for kind in ("deposit", "police", "bank_staff", "relative"):
+        for index in by_kind.get(kind, []):
+            if not take_slot(index, kind, spans[index]):
+                raise RuntimeError(f"Không xếp được vụ {kind} vào mule lớp 1")
+    return ring_of, mule_of, start_of, end_of
+
+
 def main() -> None:
     cfg = load_config()
     spec = cfg["cases"]
@@ -373,7 +556,13 @@ def main() -> None:
     phones = pd.read_parquet(observed / "phone_numbers.parquet")
     accounts = pd.read_parquet(observed / "accounts.parquet")
     transactions = pd.read_parquet(observed / "transactions.parquet")
-    rings = pd.read_parquet(truth / "mule_rings.parquet")
+    floor_path = truth / "step6_floor.parquet"
+    if floor_path.exists():
+        floor = int(pd.read_parquet(floor_path)["first_tx_num"].iloc[0])
+        tx_num = transactions["tx_id"].astype(str).str[1:].astype(int)
+        transactions = transactions.loc[tx_num < floor].reset_index(drop=True)
+    rings = open_early_rings(pd.read_parquet(truth / "mule_rings.parquet"), sim_start)
+    write(rings, "truth", "mule_rings")
     prior_numbers = truth / "truth_numbers.parquet"
     if prior_numbers.exists():
         old_ids = set(pd.read_parquet(prior_numbers, columns=["number_id"])["number_id"].astype(str))
@@ -467,81 +656,10 @@ def main() -> None:
             low = mid
     victim_row = select(best_alpha)
 
-    ring_span = rings.groupby("ring_id", sort=False).agg(active_from=("active_from", "min"), active_to=("active_to", "max"))
-    active_rings = [
-        str(ring)
-        for ring, row in ring_span.iterrows()
-        if row["active_from"] < sim_end and row["active_to"] > sim_start and row["active_to"] >= sim_start
-    ]
-    l1 = rings.loc[rings["layer"].astype(str) == "l1", ["ring_id", "account_id"]]
-    l1_of: dict[str, list[str]] = {}
-    for ring, account in zip(l1["ring_id"].astype(str), l1["account_id"].astype(str)):
-        l1_of.setdefault(ring, []).append(account)
-    usage = {account: 0 for accounts_in_ring in l1_of.values() for account in accounts_in_ring}
-    anchor_end: dict[str, pd.Timestamp] = {}
-    max_cases = int(spec["l1_mule_max_cases"])
     spans = [case_span(str(kind), rng) for kind in types]
-    order = sorted(range(n_cases), key=lambda index: spans[index], reverse=True)
-    ring_of = [""] * n_cases
-    mule_of = [""] * n_cases
-    start_of: list[pd.Timestamp] = [sim_start] * n_cases
-    end_of: list[pd.Timestamp] = [sim_start] * n_cases
-
-    def place(index: int, span: pd.Timedelta) -> bool:
-        ring_order = list(rng.permutation(np.array(active_rings, dtype=object)))
-        for ring in ring_order:
-            window_from = max(sim_start, ring_span.loc[ring, "active_from"])
-            window_to = min(sim_end, ring_span.loc[ring, "active_to"])
-            options = [account for account in l1_of.get(ring, []) if usage[account] < max_cases]
-            if not options:
-                continue
-            anchored = [
-                account for account in options
-                if account in anchor_end
-                and window_from <= anchor_end[account] - span
-                and anchor_end[account] <= window_to
-                and anchor_end[account] < sim_end
-            ]
-            if anchored:
-                mule = min(anchored, key=lambda account: (usage[account], account))
-                end = anchor_end[mule] + pd.Timedelta(minutes=20 * usage[mule])
-                if end >= sim_end or end > window_to or end - anchor_end[mule] > pd.Timedelta(days=1):
-                    anchored = [account for account in anchored if account != mule]
-                    if not anchored:
-                        continue
-                    mule = min(anchored, key=lambda account: (usage[account], account))
-                    end = anchor_end[mule] + pd.Timedelta(minutes=20 * usage[mule])
-                    if end >= sim_end or end > window_to or end - anchor_end[mule] > pd.Timedelta(days=1):
-                        continue
-                start = end - span
-                if start < window_from:
-                    continue
-            else:
-                fresh = [account for account in options if account not in anchor_end]
-                if not fresh:
-                    continue
-                latest = window_to - span
-                if latest <= window_from:
-                    continue
-                seconds = max(int((latest - window_from).total_seconds()), 1)
-                start = window_from + pd.to_timedelta(int(rng.integers(0, seconds)), unit="s")
-                end = start + span
-                if end > window_to or end >= sim_end:
-                    continue
-                mule = min(fresh, key=lambda account: (usage[account], account))
-                anchor_end[mule] = end
-            usage[mule] += 1
-            ring_of[index] = ring
-            mule_of[index] = mule
-            start_of[index] = start
-            end_of[index] = end
-            return True
-        return False
-
-    for index in order:
-        if not place(index, spans[index]):
-            if not place(index, pd.Timedelta(hours=3)):
-                raise RuntimeError("Không còn đường dây lớp 1 cho vụ lừa")
+    ring_of, mule_of, start_of, end_of = schedule_cases(
+        rng, types, spans, rings, sim_start, sim_end, int(spec["l1_mule_max_cases"])
+    )
 
     n_repeat = int(round(float(spec["repeat_victim_share"]) * n_cases))
     by_time = sorted(range(n_cases), key=lambda index: start_of[index])

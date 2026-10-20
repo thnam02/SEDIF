@@ -145,17 +145,49 @@ def main() -> None:
         abs(false_rate - target_false) <= max(0.00005, 3 * np.sqrt(target_false * (1 - target_false) / max(len(legit), 1))),
     )
 
-    print("  Tỷ lệ nhãn khả dụng trên giao dịch lừa đảo:")
+    fraud["kind"] = fraud["case_id"].map(type_of)
+    week = fraud.loc[(fraud["ts"] >= sim_start) & (fraud["ts"] < sim_end)].copy()
+    week["week"] = ((week["ts"] - sim_start).dt.total_seconds() // (7 * 86400)).astype(int)
+    print("  Giao dịch lừa đảo theo tuần trong cửa sổ:")
+    for index, part in week.groupby("week", sort=True):
+        opening = sim_start + pd.Timedelta(days=7 * int(index))
+        print(f"    tuần {int(index)} từ {opening.date()}: {len(part)} giao dịch")
     marks = {
+        "sim_start+30 ngày": sim_start + pd.Timedelta(days=30),
         "sim_start+60 ngày": sim_start + pd.Timedelta(days=60),
         "sim_end": sim_end,
         "sim_end+30 ngày": sim_end + pd.Timedelta(days=30),
     }
-    ready = fraud["reported"] & fraud["label_available_at"].notna()
+    print("  Nhãn khả dụng: trong các giao dịch lừa đảo có ts ≤ T, tỷ lệ label_available_at ≤ T")
+    kind_order = ["police", "bank_staff", "relative", "deposit", "investment", "romance"]
+    police_60 = None
+    investment_60 = None
     for name, stamp in marks.items():
-        rate = float((ready & (fraud["label_available_at"] <= stamp)).mean()) if len(fraud) else 0.0
-        print(f"    {name}: {pct(rate)}")
-    report.add("Bảng nhãn khả dụng", "đã in", "3 mốc", "-", len(fraud) > 0)
+        happened = fraud.loc[fraud["ts"] <= stamp]
+        ready = happened["label_available_at"].notna() & (happened["label_available_at"] <= stamp)
+        print(f"    {name}: {int(ready.sum())}/{len(happened)} = {pct(float(ready.mean()) if len(happened) else 0.0)}")
+        for kind in kind_order:
+            part = happened.loc[happened["kind"].astype(str).eq(kind)]
+            flagged = part["label_available_at"].notna() & (part["label_available_at"] <= stamp)
+            rate = float(flagged.mean()) if len(part) else 0.0
+            print(f"      {kind}: {int(flagged.sum())}/{len(part)} = {pct(rate)}")
+            if name == "sim_start+60 ngày" and kind == "police":
+                police_60 = rate
+            if name == "sim_start+60 ngày" and kind == "investment":
+                investment_60 = rate
+    label_ok = (
+        police_60 is not None
+        and investment_60 is not None
+        and 0.55 <= police_60 <= 0.70
+        and investment_60 <= police_60 - 0.15
+    )
+    report.add(
+        "Nhãn khả dụng tại sim_start+60",
+        f"police {pct(police_60 or 0.0)}, investment {pct(investment_60 or 0.0)}",
+        "police 55–70%, investment thấp hơn ít nhất 15 đ.p",
+        "mẫu số là giao dịch đã xảy ra",
+        label_ok,
+    )
 
     tx = transactions[["tx_id", "ts", "to_account", "amount"]].copy()
     tx["tx_id"] = tx["tx_id"].astype(str)
@@ -219,7 +251,7 @@ def main() -> None:
         monotone and full and source_ok,
     )
 
-    smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_accounts, model)
+    smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_accounts, model, labels, cases, sim_start, sim_end)
     observed_cols: set[str] = set()
     for path in observed.glob("*.parquet"):
         observed_cols |= set(pd.read_parquet(path).columns)
@@ -235,7 +267,7 @@ def main() -> None:
     print("\nTất cả kiểm tra bước 7 đều đạt.")
 
 
-def smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_accounts, model) -> None:
+def smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_accounts, model, labels, cases, sim_start, sim_end) -> None:
     sessions = sessions.copy()
     sessions["session_id"] = sessions["session_id"].astype(str)
     scenarios = scenarios.copy()
@@ -271,6 +303,7 @@ def smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_
     bothered = 0
     legit_n = 0
     complaints = 0.0
+    session_stop: dict[str, tuple[float, str, str]] = {}
     feature["customer_id"] = feature["customer_id"].astype(str)
     feature = feature.sort_values(["customer_id", "start_ts"], kind="mergesort")
     prior: dict[str, list[pd.Timestamp]] = {}
@@ -296,6 +329,7 @@ def smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_
         stop = float(chosen["p_stop"]) * (0.85 ** recent)
         if str(row.action) == "friction":
             history.append(row.start_ts)
+        session_stop[str(row.session_id)] = (stop, str(row.action), group)
         if not fraud:
             legit_n += 1
             if str(row.action) in {"friction", "hold"}:
@@ -308,6 +342,43 @@ def smoke(transactions, sessions, scenarios, accounts, customers, latent, truth_
         f"  Smoke test can thiệp 1%: tiền lừa đảo tránh được {saved:,.0f} VND, "
         f"phiên hợp lệ bị làm phiền {pct(bother_rate)}, khiếu nại kỳ vọng {complaints:.1f}"
     )
+    bank_of = dict(zip(accounts["account_id"].astype(str), accounts["bank_id"].astype(str)))
+    fraud_id = set(labels.loc[labels["is_fraud"], "txn_id"].astype(str))
+    kind_of = dict(zip(cases["case_id"].astype(str), cases["scam_type"].astype(str)))
+    case_of = dict(zip(labels["txn_id"].astype(str), labels["case_id"].astype(str)))
+    flow = transactions.loc[
+        transactions["tx_id"].astype(str).isin(fraud_id)
+        & transactions["from_account"].astype(str).map(bank_of).eq("B01")
+        & transactions["tx_type"].astype(str).eq("transfer")
+        & (transactions["amount"] > 0)
+        & (transactions["ts"] >= sim_start)
+        & (transactions["ts"] < sim_end)
+    ].copy()
+    flow["session_id"] = flow["session_id"].astype(str)
+    flow["kind"] = flow["tx_id"].astype(str).map(case_of).map(kind_of)
+    safe_payee = flow["to_account"].astype(str).isin(safe_ids)
+    flow.loc[safe_payee, "kind"] = "own_name_safe_account"
+    outflow = float(flow["amount"].sum())
+    avoided = 0.0
+    by_out: dict[str, float] = {}
+    by_saved: dict[str, float] = {}
+    for row in flow.itertuples(index=False):
+        kind = str(row.kind)
+        by_out[kind] = by_out.get(kind, 0.0) + float(row.amount)
+        stop, action, _group = session_stop.get(str(row.session_id), (0.0, "allow", ""))
+        if action in {"friction", "hold"}:
+            kept = float(row.amount) * stop
+            avoided += kept
+            by_saved[kind] = by_saved.get(kind, 0.0) + kept
+    avoided_rate = avoided / outflow if outflow else 0.0
+    print(
+        f"  Tiền lừa đảo đi ra từ B01 trong cửa sổ: {outflow:,.0f} VND, "
+        f"tránh được {avoided:,.0f} VND ({pct(avoided_rate)})"
+    )
+    for kind in sorted(by_out):
+        base = by_out[kind]
+        rate = by_saved.get(kind, 0.0) / base if base else 0.0
+        print(f"    {kind}: {base:,.0f} VND, tránh được {pct(rate)}")
 
 
 if __name__ == "__main__":

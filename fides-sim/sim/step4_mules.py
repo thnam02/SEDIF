@@ -328,13 +328,22 @@ def main() -> None:
         pool.sort(key=lambda account: int(balance_of.get(account, 0)))
         dormant_accounts.update(pool[-short:])
 
-    ring_has_dormant = set(members.loc[members["account_id"].isin(dormant_accounts), "ring_id"])
-    for ring in sorted(set(members["ring_id"])):
-        active = bool(members.loc[members["ring_id"] == ring, "active_ring"].iloc[0])
+    rented_rows = members.loc[members["mule_type"].eq("rented"), ["ring_id", "account_id"]]
+    dormant_share: dict[str, float] = {}
+    for ring, part in rented_rows.groupby(rented_rows["ring_id"].astype(str), sort=False):
+        owned = part["account_id"].astype(str)
+        dormant_share[str(ring)] = float(owned.isin(dormant_accounts).mean()) if len(owned) else 0.0
+    active_ids = sorted({str(ring) for ring, active in zip(members["ring_id"], members["active_ring"]) if bool(active)})
+    # Một mule ngủ không được đẩy cả đường dây qua ngày 60: chỉ đường dây
+    # mà phần lớn tài khoản thuê đang ngủ mới mở muộn.
+    late_rings = {ring for ring in active_ids if dormant_share.get(ring, 0.0) >= 0.5}
+    ring_has_dormant = late_rings
+    for ring in sorted(set(members["ring_id"].astype(str))):
+        active = bool(members.loc[members["ring_id"].astype(str) == ring, "active_ring"].iloc[0])
         if not active:
             active_from[ring] = sim_start - pd.to_timedelta(int(rng.integers(180, 900)), unit="D")
             active_to[ring] = sim_start - pd.to_timedelta(int(rng.integers(1, 40)), unit="D")
-        elif ring in ring_has_dormant:
+        elif ring in late_rings:
             active_from[ring] = sim_start + pd.to_timedelta(int(rng.integers(62, 78)), unit="D")
             active_to[ring] = sim_end
         else:

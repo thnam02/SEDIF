@@ -158,6 +158,27 @@ def main() -> None:
         "lớp 1" if on_l1 else "có mule không phải lớp 1",
         bool(covered.all()) and over == 0 and on_l1,
     )
+    received = plans.loc[(plans["planned_amount"] > 0) & plans["to_mule_account_id"].astype(str).isin(l1)].copy()
+    received["account_id"] = received["to_mule_account_id"].astype(str)
+    received["day"] = pd.to_datetime(received["planned_ts"]).dt.tz_convert("Asia/Ho_Chi_Minh").dt.date
+    span_days = received.groupby("account_id")["planned_ts"].agg(lambda stamps: (stamps.max() - stamps.min()).total_seconds() / 86400.0)
+    per_day = received.groupby(["account_id", "day"])["case_id"].nunique()
+    hottest = per_day.groupby("account_id").max()
+    hot_share = float((hottest >= 5).mean()) if len(hottest) else 1.0
+    p50 = float(span_days.median()) if len(span_days) else 0.0
+    p90 = float(span_days.quantile(0.9)) if len(span_days) else 0.0
+    print(
+        "  Mule lớp 1, ngày cuối − ngày đầu nhận tiền nạn nhân: "
+        f"p10 {float(span_days.quantile(0.1)):.2f}, p50 {p50:.2f}, p90 {p90:.2f} ngày; "
+        f"mule có ngày ≥ 5 vụ: {hot_share:.1%}"
+    )
+    report.add(
+        "Thời gian hoạt động mule lớp 1",
+        f"trung vị {p50:.2f} ngày, p90 {p90:.2f}, {hot_share:.1%} mule ≥ 5 vụ/ngày",
+        "trung vị 3–7 ngày, p90 ≥ 14, ≤ 30% mule có ngày ≥ 5 vụ",
+        f"{len(span_days)} mule",
+        3.0 <= p50 <= 7.0 and p90 >= 14.0 and hot_share <= 0.30,
+    )
 
     owned = accounts.loc[
         accounts["customer_id"].notna() & accounts["account_type"].isin(["personal", "savings"]),
