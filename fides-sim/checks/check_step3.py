@@ -15,7 +15,8 @@ if str(ROOT) not in sys.path:
 
 TZ = "Asia/Ho_Chi_Minh"
 SCHOOL_AGE = 22
-KEYS = {"customer_id", "device_id", "number_id", "account_id"}
+# ts, channel trùng tên với lịch liên lạc bước 5; không phải nhãn mule.
+KEYS = {"customer_id", "device_id", "number_id", "account_id", "ts", "channel"}
 ANCHORS = (5, 10, 15, 25)
 
 

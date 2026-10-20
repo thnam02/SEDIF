@@ -14,7 +14,8 @@ if str(ROOT) not in sys.path:
 
 TZ = "Asia/Ho_Chi_Minh"
 # number_id xuất hiện khi đã chạy bước 3 (danh bạ). contact_type không trùng cột observed.
-KEYS = {"customer_id", "device_id", "number_id", "account_id"}
+# ts và channel trùng tên giữa giao dịch và lịch liên lạc, không phải nhãn.
+KEYS = {"customer_id", "device_id", "number_id", "account_id", "ts", "channel"}
 
 
 def load_config() -> dict:
@@ -145,40 +146,114 @@ def main() -> None:
     matched = bool(owned_accounts["holder_name_ascii"].eq(owned_accounts["customer_id"].map(names)).all())
     report.add("holder_name_ascii khớp name_ascii của chủ", "đạt" if matched else "lệch", "mọi tài khoản của khách", "-", matched)
 
-    linked = links.merge(accounts[["account_id", "customer_id", "holder_name_ascii"]], on="account_id", how="left")
-    linked = linked.dropna(subset=["customer_id"]).merge(latent_people[["customer_id", "family_group_id"]], on="customer_id", how="left")
+    linked = links.merge(accounts[["account_id", "customer_id"]], on="account_id", how="left")
+    linked["device_id"] = linked["device_id"].astype(str)
+    linked["account_id"] = linked["account_id"].astype(str)
+    linked = linked.merge(latent_people[["customer_id", "family_group_id"]], on="customer_id", how="left")
+    linked["household"] = linked["family_group_id"].astype(str)
+    missing_hh = linked["family_group_id"].isna() | linked["customer_id"].isna()
+    linked.loc[missing_hh, "household"] = "A:" + linked.loc[missing_hh, "account_id"]
     mule_accounts = mule_account_ids()
-    mule_devices = set(devices.loc[devices["customer_id"].isna(), "device_id"].astype(str))
-    ordinary = linked.loc[~linked["device_id"].astype(str).isin(mule_devices)]
-    holder_n = ordinary.groupby("device_id")["holder_name_ascii"].nunique()
-    family_of_holder = ordinary.groupby("device_id")["family_group_id"].nunique()
-    two_holders = holder_n[holder_n == 2].index
-    holder_ok = bool((holder_n <= 2).all()) and (len(two_holders) == 0 or bool((family_of_holder.loc[two_holders] == 1).all()))
-    if mule_devices:
-        farm = linked.loc[linked["device_id"].astype(str).isin(mule_devices)]
-        pure = farm.groupby("device_id")["account_id"].apply(lambda col: set(col.astype(str)) <= mule_accounts)
-        holder_ok = holder_ok and bool(pure.all())
-    report.add(
-        "Holder khác nhau trên một thiết bị",
-        f"tối đa {int(holder_n.max()) if len(holder_n) else 0}, {len(two_holders)} máy có 2 holder",
-        "≤ 2, và = 2 chỉ khi cùng family_group_id",
-        "máy trang trại mule tách riêng" if mule_devices else "-",
-        holder_ok,
-    )
+    owner_segment = devices["customer_id"].map(customers.set_index("customer_id")["segment"]).astype(str)
+    segment_of = dict(zip(devices["device_id"].astype(str), owner_segment))
+    window_end = sim_end
 
-    family_count = ordinary.groupby("device_id")["family_group_id"].nunique()
-    customer_count = ordinary.groupby("device_id")["customer_id"].nunique()
-    shared = customer_count[customer_count > 1].index
-    if len(shared) == 0:
-        shared_ok = False
-    else:
-        shared_ok = bool((family_count.loc[shared] == 1).all())
+    def holder_intervals(part: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+        intervals = []
+        named = part.dropna(subset=["customer_id"])
+        for _, rows in named.groupby(named["customer_id"].astype(str), sort=False):
+            start = rows["first_seen"].min()
+            stop = rows["last_seen"].max()
+            if pd.isna(stop):
+                stop = window_end
+            intervals.append((start, stop))
+        intervals.sort(key=lambda item: item[0])
+        return intervals
+
+    def sequential(intervals: list[tuple[pd.Timestamp, pd.Timestamp]]) -> bool:
+        return len(intervals) >= 2 and all(left[1] < right[0] for left, right in zip(intervals, intervals[1:]))
+
+    def parallel(intervals: list[tuple[pd.Timestamp, pd.Timestamp]]) -> bool:
+        if len(intervals) < 2:
+            return False
+        return max(item[0] for item in intervals) < min(item[1] for item in intervals)
+
+    household_n = linked.groupby("device_id")["household"].nunique()
+    customer_n = linked.dropna(subset=["customer_id"]).groupby("device_id")["customer_id"].nunique()
+    resale_ids = []
+    family3_ids = []
+    shop_ids = []
+    explained = True
+    multi_ids = set(customer_n[customer_n > 1].index.astype(str))
+    for device_id, part in linked.loc[linked["device_id"].isin(multi_ids)].groupby("device_id", sort=False):
+        households = int(household_n.get(device_id, 0))
+        customers_on = int(customer_n.get(device_id, 0))
+        accounts_on = set(part["account_id"])
+        mule_device = bool(accounts_on) and accounts_on <= mule_accounts
+        intervals = holder_intervals(part)
+        same_family = households == 1 and customers_on >= 2
+        is_resale = households == 2 and customers_on == 2 and sequential(intervals)
+        is_family3 = customers_on == 3 and households == 1
+        is_shop = (
+            segment_of.get(str(device_id)) == "doanh nghiệp nhỏ"
+            and 4 <= customers_on <= 6
+            and households == customers_on
+            and parallel(intervals)
+        )
+        if is_resale:
+            resale_ids.append(device_id)
+        if is_family3:
+            family3_ids.append(device_id)
+        if is_shop:
+            shop_ids.append(device_id)
+        if customers_on > 1 and not (same_family or is_resale or is_family3 or is_shop or mule_device):
+            explained = False
+    n_devices = len(devices)
+    resale_rate = len(resale_ids) / n_devices if n_devices else 0.0
+    family3_rate = len(family3_ids) / n_devices if n_devices else 0.0
     report.add(
-        "Thiết bị dùng chung cùng một hộ",
-        f"{len(shared)} thiết bị" if shared_ok else "có hộ khác nhau hoặc không có máy dùng chung",
-        "chỉ trong cùng family_group_id",
-        "-",
-        shared_ok,
+        "Máy cũ bán lại khác hộ",
+        f"{len(resale_ids)} máy, {pct(resale_rate)}",
+        "~0.30%",
+        "last_seen chủ cũ < first_seen chủ mới",
+        abs(resale_rate - 0.003) <= 0.0005 and len(resale_ids) > 0,
+    )
+    report.add(
+        "Máy hộ 3 người",
+        f"{len(family3_ids)} máy, {pct(family3_rate)}",
+        "~0.10%",
+        "cùng family_group_id",
+        abs(family3_rate - 0.001) <= 0.0003 and len(family3_ids) > 0,
+    )
+    report.add(
+        "Máy cửa hàng",
+        f"{len(shop_ids)} máy",
+        "30–60",
+        "chủ doanh nghiệp nhỏ, 3–5 nhân viên khác hộ, đăng nhập song song",
+        30 <= len(shop_ids) <= 60,
+    )
+    crowded = household_n[household_n > 2]
+    mule_crowded = 0
+    for device_id in crowded.index:
+        accounts_on = set(linked.loc[linked["device_id"] == device_id, "account_id"])
+        if accounts_on and accounts_on <= mule_accounts:
+            mule_crowded += 1
+    if mule_accounts:
+        mule_share = mule_crowded / len(crowded) if len(crowded) else 0.0
+        print(f"  Thiết bị > 2 hộ khác nhau: {len(crowded)} máy, mule {mule_crowded} ({pct(mule_share)})")
+        crowded_ok = 0.85 <= mule_share <= 0.95
+        crowded_target = "85–95% là mule"
+    else:
+        mule_share = 0.0
+        crowded_ok = len(crowded) == len(shop_ids) and 30 <= len(shop_ids) <= 60
+        crowded_target = "toàn bộ là máy cửa hàng khi chưa có mule"
+        print(f"  Thiết bị > 2 hộ khác nhau: {len(crowded)} máy, chưa có mule")
+    report.add(
+        "Thiết bị > 2 holder khác hộ",
+        f"{len(crowded)} máy, mule {pct(mule_share)}",
+        crowded_target,
+        f"{mule_crowded} máy mule",
+        crowded_ok and explained,
     )
 
     report.add("opened_at < sim_end, múi giờ VN", "đạt" if before(accounts["opened_at"], sim_end) else "lỗi", "đạt", "-", before(accounts["opened_at"], sim_end))

@@ -437,7 +437,7 @@ def build_devices(people, block, cfg, rng):
     return devices, parallel
 
 
-def build_links(accounts, devices, people, activity, block, rng):
+def build_links(accounts, devices, people, activity, block, cfg, rng):
     customer_accounts = accounts["customer_id"].notna()
     owned = accounts.loc[customer_accounts, ["account_id", "customer_id", "account_type"]].copy()
     row_of = pd.Series(np.arange(len(people)), index=people["customer_id"].to_numpy())
@@ -458,10 +458,12 @@ def build_links(accounts, devices, people, activity, block, rng):
     links = owned[["account_id", "device_id", "customer_id", "account_type"]].copy()
     links = attach_unused_second_devices(links, devices)
     links = share_with_children(links, devices, people, block, rng)
+    links, buyer_first = add_legitimate_multiholders(links, devices, people, cfg, rng)
     holder_row = links["customer_id"].map(row_of).to_numpy()
     login = np.rint(2.0 + 150.0 * activity[holder_row] + rng.normal(0.0, 4.0, size=len(links)))
     links["login_count"] = np.clip(login, 1, None).astype(np.int64)
-    out = links[["account_id", "device_id", "login_count"]].reset_index(drop=True)
+    links = stamp_link_windows(links, devices, buyer_first)
+    out = links[["account_id", "device_id", "login_count", "first_seen", "last_seen"]].reset_index(drop=True)
     return out
 
 
@@ -529,6 +531,200 @@ def share_with_children(links, devices, people, block, rng) -> pd.DataFrame:
             }
         )
         links = pd.concat([links, addition], ignore_index=True)
+    return links
+
+
+# Máy cũ bán lại, hộ 3 người, và máy cửa hàng — trước khi có mule.
+RESALE_DEVICE_SHARE = 0.003
+FAMILY_THREE_SHARE = 0.001
+N_SHOP_DEVICES = 32
+
+
+def add_legitimate_multiholders(links, devices, people, cfg, rng):
+    """Thêm holder hợp lệ: máy bán lại khác hộ, hộ 3 người, nhân viên cửa hàng."""
+    sim_end = as_timestamp(cfg["sim_end"])
+    personal = (
+        links.loc[links["account_type"] == "personal", ["account_id", "customer_id"]]
+        .drop_duplicates("customer_id")
+        .set_index("customer_id")["account_id"]
+        .astype(str)
+        .to_dict()
+    )
+    family = dict(zip(people["customer_id"].astype(str), people["family_group_id"].astype(str)))
+    segment = dict(zip(people["customer_id"].astype(str), people["segment"].astype(str)))
+    holders = {
+        str(device_id): set(group["customer_id"].astype(str))
+        for device_id, group in links.groupby("device_id", sort=False)
+    }
+    slot = dict(zip(devices["device_id"].astype(str), devices["_slot"].to_numpy()))
+    owner = dict(zip(devices["device_id"].astype(str), devices["customer_id"].astype(str)))
+    last_seen = dict(zip(devices["device_id"].astype(str), devices["last_seen"]))
+    active_owned = devices.loc[devices["_slot"] < 2, ["device_id", "customer_id"]]
+    devices_of = (
+        active_owned.groupby(active_owned["customer_id"].astype(str))["device_id"]
+        .apply(lambda values: [str(item) for item in values])
+        .to_dict()
+    )
+    reserved: set[str] = set()
+    extra_accounts: list[str] = []
+    extra_devices: list[str] = []
+    extra_customers: list[str] = []
+
+    n_family = int(round(FAMILY_THREE_SHARE * len(devices)))
+    by_family: dict[str, list[str]] = {}
+    for customer_id, fam in family.items():
+        if customer_id in personal:
+            by_family.setdefault(fam, []).append(customer_id)
+    families = [members for members in by_family.values() if len(members) >= 3]
+    rng.shuffle(families)
+    placed_family = 0
+    for members in families:
+        if placed_family >= n_family:
+            break
+        order = list(members)
+        rng.shuffle(order)
+        chosen_device = None
+        host = None
+        for person in order:
+            for device_id in devices_of.get(person, []):
+                if device_id in reserved or slot.get(device_id, 9) >= 2:
+                    continue
+                if holders.get(device_id) == {person}:
+                    chosen_device = device_id
+                    host = person
+                    break
+            if chosen_device:
+                break
+        if chosen_device is None:
+            continue
+        others = [person for person in order if person != host][:2]
+        if len(others) < 2:
+            continue
+        for person in others:
+            extra_accounts.append(personal[person])
+            extra_devices.append(chosen_device)
+            extra_customers.append(person)
+            holders[chosen_device].add(person)
+        reserved.add(chosen_device)
+        placed_family += 1
+    if placed_family < n_family:
+        raise RuntimeError(f"Chỉ gắn được {placed_family}/{n_family} máy hộ 3 người")
+
+    n_resale = int(round(RESALE_DEVICE_SHARE * len(devices)))
+    retired = devices.loc[devices["_slot"] == 2, ["device_id", "customer_id", "last_seen"]]
+    eligible = []
+    for record in retired.itertuples(index=False):
+        device_id = str(record.device_id)
+        if len(holders.get(device_id, ())) != 1:
+            continue
+        stopped = record.last_seen
+        if pd.isna(stopped) or stopped >= sim_end - pd.Timedelta(days=2):
+            continue
+        eligible.append(device_id)
+    if len(eligible) < n_resale:
+        raise RuntimeError(f"Chỉ có {len(eligible)}/{n_resale} máy cũ để bán lại")
+    sold = [str(item) for item in rng.choice(np.array(eligible, dtype=object), size=n_resale, replace=False)]
+    buyers = [customer_id for customer_id in family if customer_id in personal]
+    rng.shuffle(buyers)
+    buyer_at = 0
+    buyer_first: dict[tuple[str, str], pd.Timestamp] = {}
+    for device_id in sold:
+        seller = owner[device_id]
+        seller_family = family[seller]
+        buyer = None
+        while buyer_at < len(buyers):
+            candidate = buyers[buyer_at]
+            buyer_at += 1
+            if candidate != seller and family.get(candidate) != seller_family and candidate not in holders[device_id]:
+                buyer = candidate
+                break
+        if buyer is None:
+            raise RuntimeError("Không đủ người mua máy cũ khác hộ")
+        stopped = last_seen[device_id]
+        gap = int(rng.integers(3600, 10 * 24 * 3600))
+        started = stopped + pd.to_timedelta(gap, unit="s")
+        if started >= sim_end:
+            started = stopped + pd.to_timedelta(3600, unit="s")
+        if started >= sim_end:
+            raise RuntimeError("Thời điểm mua máy cũ vượt cửa sổ")
+        account_id = personal[buyer]
+        extra_accounts.append(account_id)
+        extra_devices.append(device_id)
+        extra_customers.append(buyer)
+        holders[device_id].add(buyer)
+        buyer_first[(account_id, device_id)] = started
+        reserved.add(device_id)
+
+    businesses = [customer_id for customer_id, label in segment.items() if label == "doanh nghiệp nhỏ" and customer_id in personal]
+    rng.shuffle(businesses)
+    staff = np.array([customer_id for customer_id in family if customer_id in personal], dtype=object)
+    rng.shuffle(staff)
+    staff_at = 0
+    used_staff: set[str] = set()
+    n_shop = 0
+    for owner_id in businesses:
+        if n_shop >= N_SHOP_DEVICES:
+            break
+        chosen_device = None
+        for device_id in devices_of.get(owner_id, []):
+            if device_id in reserved or slot.get(device_id, 9) >= 2:
+                continue
+            if holders.get(device_id) == {owner_id}:
+                chosen_device = device_id
+                break
+        if chosen_device is None:
+            continue
+        n_staff = int(rng.integers(3, 6))
+        picked = []
+        seen = {family[owner_id]}
+        while len(picked) < n_staff and staff_at < len(staff):
+            person = str(staff[staff_at])
+            staff_at += 1
+            fam = family[person]
+            if person in used_staff or person == owner_id or fam in seen:
+                continue
+            picked.append(person)
+            seen.add(fam)
+        if len(picked) < n_staff:
+            raise RuntimeError("Không đủ nhân viên khác hộ cho máy cửa hàng")
+        for person in picked:
+            extra_accounts.append(personal[person])
+            extra_devices.append(chosen_device)
+            extra_customers.append(person)
+            holders[chosen_device].add(person)
+            used_staff.add(person)
+        reserved.add(chosen_device)
+        n_shop += 1
+    if n_shop < N_SHOP_DEVICES:
+        raise RuntimeError(f"Chỉ gắn được {n_shop}/{N_SHOP_DEVICES} máy cửa hàng")
+
+    if extra_accounts:
+        addition = pd.DataFrame(
+            {
+                "account_id": extra_accounts,
+                "device_id": extra_devices,
+                "customer_id": extra_customers,
+                "account_type": "personal",
+            }
+        )
+        links = pd.concat([links, addition], ignore_index=True)
+    return links, buyer_first
+
+
+def stamp_link_windows(links: pd.DataFrame, devices: pd.DataFrame, buyer_first: dict) -> pd.DataFrame:
+    """first_seen/last_seen theo thiết bị; người mua máy cũ bắt đầu sau last_seen của chủ cũ."""
+    device_times = devices.drop_duplicates("device_id").set_index("device_id")
+    links = links.copy()
+    links["first_seen"] = links["device_id"].map(device_times["first_seen"])
+    links["last_seen"] = links["device_id"].map(device_times["last_seen"])
+    if buyer_first:
+        key = links["account_id"].astype(str) + "|" + links["device_id"].astype(str)
+        override = {f"{account}|{device_id}": stamp for (account, device_id), stamp in buyer_first.items()}
+        replaced = key.isin(override)
+        links.loc[replaced, "first_seen"] = key.map(override).loc[replaced].to_numpy()
+        links.loc[replaced, "last_seen"] = pd.NaT
+    links["first_seen"] = pd.to_datetime(links["first_seen"]).dt.tz_convert(TZ)
+    links["last_seen"] = pd.to_datetime(links["last_seen"]).dt.tz_convert(TZ)
     return links
 
 
@@ -603,7 +799,7 @@ def main() -> None:
     people, phones = load_population()
     accounts, customer, _kinds = assemble_accounts(people, phones, cfg, rng)
     devices, _second = build_devices(people, cfg["accounts"], cfg, rng)
-    links = build_links(accounts, devices, people, customer["activity"], cfg["accounts"], rng)
+    links = build_links(accounts, devices, people, customer["activity"], cfg["accounts"], cfg, rng)
     latent = latent_devices(devices, people, rng)
     _sanity(accounts, devices, links, latent, people, cfg)
     devices_out = devices.drop(columns=["_owner_row", "_slot"])

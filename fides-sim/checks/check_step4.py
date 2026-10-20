@@ -194,18 +194,21 @@ def main() -> None:
     linked["household"] = linked["account_id"].map(lambda account: family_of.get(owner.get(account, ""), account))
     households = linked.groupby("device_id")["household"].nunique()
     crowded = set(households[households > 2].index.astype(str))
-    on_crowded = linked.loc[linked["device_id"].isin(crowded)]
-    crowded_ok = bool(on_crowded["account_id"].isin(mule_ids).all()) if len(on_crowded) else True
-    normal_on_crowded = int((~on_crowded["account_id"].isin(mule_ids)).sum()) if len(on_crowded) else 0
-    exposed = set(linked.loc[linked["device_id"].isin(crowded), "account_id"])
-    exposed_rate = len(exposed & mule_ids) / len(mule_ids) if mule_ids else 0.0
+    mule_devices = 0
+    for device_id, part in linked.loc[linked["device_id"].isin(crowded)].groupby("device_id", sort=False):
+        if set(part["account_id"]) <= mule_ids:
+            mule_devices += 1
+    mule_share = mule_devices / len(crowded) if crowded else 0.0
+    exposed = set(linked.loc[linked["device_id"].isin(crowded) & linked["account_id"].isin(mule_ids), "account_id"])
+    exposed_rate = len(exposed) / len(mule_ids) if mule_ids else 0.0
     print(f"  Mule lộ qua thiết bị nhiều hộ: {pct(exposed_rate)}; mule chỉ máy riêng: {pct(1 - exposed_rate)}")
+    print(f"  Thiết bị > 2 hộ khác nhau: {len(crowded)} máy, mule {mule_devices} ({pct(mule_share)})")
     report.add(
         "Thiết bị > 2 holder khác hộ",
-        f"{len(crowded)} máy, {normal_on_crowded} người thường",
-        "100% mule, 0 người thường",
-        "-",
-        crowded_ok and normal_on_crowded == 0 and len(crowded) > 0,
+        f"{len(crowded)} máy, mule {pct(mule_share)}",
+        "85–95% là mule",
+        f"{mule_devices} máy mule",
+        0.85 <= mule_share <= 0.95 and len(crowded) > 0,
     )
 
     age_years = sim_start.year - customers.set_index("customer_id")["birth_year"]

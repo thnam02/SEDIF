@@ -111,3 +111,17 @@ mules:
   old_ring_device_reuse: 0.30     # thiết bị của đường dây cũ được dùng lại ở đường dây mới
   dormant_share_rented: 0.30      # tài khoản thuê ngủ ≥ 60 ngày rồi hoạt động lại
   simo_false_listing_rate: 0.05
+
+cases:
+  n_cases: 2500                     # tỷ lệ cao để đủ mẫu; khi đánh giá sẽ tái trọng số
+  type_share: {police: 0.30, investment: 0.30, bank_staff: 0.15, relative: 0.10, deposit: 0.10, romance: 0.05}
+  ott_share: 0.50
+  spoofed_caller_share: 0.10
+  scammer_number_prereported_share: 0.20
+  scammer_number_new_sim_share: 0.70  # đăng ký trong 30 ngày; 30% số cũ mua lại
+  split_share: 0.30
+  declines_permission_share: 0.30
+  hangs_up_before_transfer_share: 0.40
+  repeat_victim_share: 0.03
+  l1_mule_max_cases: 15
+  victim_bank_B01_weight: 1.0       # không ưu tiên B01; để tự nhiên ~20%

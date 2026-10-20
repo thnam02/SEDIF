@@ -5,6 +5,7 @@ Chưa sinh tiền nạn nhân. Cùng seed cho cùng kết quả.
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -194,7 +195,18 @@ def main() -> None:
     protected_accounts = set(
         transactions.loc[transactions["tx_type"].isin(PROTECTED), "from_account"].dropna().astype(str)
     )
-    eligible_ids = [cid for cid in people["customer_id"] if cid in account_of and account_of[cid] not in protected_accounts]
+    link_people = links.merge(accounts[["account_id", "customer_id"]], on="account_id", how="left").dropna(subset=["customer_id"])
+    link_people["customer_id"] = link_people["customer_id"].astype(str)
+    link_people["device_id"] = link_people["device_id"].astype(str)
+    link_people = link_people.merge(latent[["customer_id", "family_group_id"]], on="customer_id", how="left")
+    busy_devices = set(
+        link_people.groupby("device_id")["family_group_id"].nunique().loc[lambda series: series > 2].index.astype(str)
+    )
+    busy_customers = set(link_people.loc[link_people["device_id"].isin(busy_devices), "customer_id"].astype(str))
+    eligible_ids = [
+        cid for cid in people["customer_id"]
+        if cid in account_of and account_of[cid] not in protected_accounts and cid not in busy_customers
+    ]
     eligible = people.set_index("customer_id").loc[eligible_ids]
     score_index = {cid: index for index, cid in enumerate(people["customer_id"])}
     eligible_pos = np.array([score_index[cid] for cid in eligible_ids], dtype=int)
@@ -432,7 +444,7 @@ def main() -> None:
     device_rows = []
     link_rows = []
     ring_devices: dict[str, list[str]] = {}
-    device_ids = next_ids("D", devices["device_id"], n_active + n_old + (n_active + n_old) * farm_max + n_new)
+    device_ids = next_ids("D", devices["device_id"], n_active + n_old + (n_active + n_old) * farm_max + n_new + n_slots)
     device_cursor = 0
 
     def take_device() -> str:
@@ -506,6 +518,84 @@ def main() -> None:
             }
         )
         link_rows.append((record.account_id, device_id, record.ring_id))
+
+    # Thêm máy trang trại đúng 3 hộ để máy > 2 hộ khác nhau vẫn chủ yếu là mule,
+    # sau khi bước 2 đã có máy cửa hàng hợp lệ.
+    family_of = dict(zip(people["customer_id"].astype(str), people["family_group_id"].astype(str)))
+
+    def member_household(customer_id, account_id) -> str:
+        if customer_id is None or pd.isna(customer_id):
+            return "A:" + str(account_id)
+        return "F:" + family_of.get(str(customer_id), str(customer_id))
+
+    hh_of = {
+        str(account): member_household(customer, account)
+        for account, customer in zip(members["account_id"], members["customer_id"])
+    }
+    base_links = links.merge(accounts[["account_id", "customer_id"]], on="account_id", how="left")
+    base_links["household"] = base_links["customer_id"].map(
+        lambda customer: "F:" + family_of.get(str(customer), str(customer)) if pd.notna(customer) else "X"
+    )
+    shop_like = int((base_links.groupby("device_id")["household"].nunique() > 2).sum())
+    device_households: dict[str, set[str]] = {}
+    account_nlinks: dict[str, int] = {}
+    for account, device_id, _ring in link_rows:
+        device_households.setdefault(device_id, set()).add(hh_of[account])
+        account_nlinks[account] = account_nlinks.get(account, 0) + 1
+    mule_crowded = sum(1 for households in device_households.values() if len(households) > 2)
+    pool = members.loc[~members["own_device"] & members["active_ring"], "account_id"].astype(str).tolist()
+    rng.shuffle(pool)
+    max_links = 2
+
+    def capacity_for(limit: int) -> int:
+        spare = sum(max(0, limit - account_nlinks.get(account, 0)) for account in pool)
+        return mule_crowded + spare // 3
+
+    if shop_like:
+        low = math.ceil(0.85 * shop_like / 0.15)
+        high = math.floor(0.95 * shop_like / 0.05)
+        if capacity_for(max_links) < low:
+            max_links = 3
+        goal = min(max(int(round(0.90 * shop_like / 0.10)), low), high, capacity_for(max_links))
+        if goal < low:
+            raise RuntimeError(
+                f"Không đủ mule cho tỷ lệ 85% máy nhiều hộ (cần {low}, có {capacity_for(max_links)}, cửa hàng {shop_like})"
+            )
+    else:
+        low = 0
+        goal = mule_crowded
+    while mule_crowded < goal:
+        chosen = []
+        seen: set[str] = set()
+        for account in pool:
+            if account_nlinks.get(account, 0) >= max_links:
+                continue
+            household = hh_of[account]
+            if household in seen:
+                continue
+            chosen.append(account)
+            seen.add(household)
+            if len(chosen) == 3:
+                break
+        if len(chosen) < 3:
+            break
+        device_id = take_device()
+        device_rows.append(
+            {
+                "device_id": device_id,
+                "customer_id": pd.NA,
+                "os": "Android" if rng.random() < 0.7 else "iOS",
+                "is_rooted": False,
+                "first_seen": sim_start - pd.to_timedelta(5, unit="D"),
+                "last_seen": pd.NaT,
+            }
+        )
+        for account in chosen:
+            link_rows.append((account, device_id, ""))
+            account_nlinks[account] = account_nlinks.get(account, 0) + 1
+        mule_crowded += 1
+    if shop_like and mule_crowded < low:
+        raise RuntimeError(f"Máy mule nhiều hộ dừng ở {mule_crowded}, cần ≥ {low}")
 
     device_frame = pd.DataFrame(device_rows)
     device_frame["device_id"] = device_frame["device_id"].astype("string")
