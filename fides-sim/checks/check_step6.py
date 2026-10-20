@@ -240,6 +240,10 @@ def main() -> None:
     inflow_tx["to_account"] = inflow_tx["to_account"].astype(str)
     inflow_groups = {account: part for account, part in inflow_tx.groupby("to_account", sort=False)}
     status_of = dict(zip(accounts["account_id"].astype(str), accounts["status"].astype(str)))
+    if "frozen_at" in accounts.columns:
+        frozen_time = dict(zip(accounts["account_id"].astype(str), accounts["frozen_at"]))
+    else:
+        frozen_time = {}
     reasons = {"đúng hạn": 0, "gần cuối cửa sổ": 0, "mule đã frozen": 0, "thiếu số dư": 0, "khác": 0}
     used_forward: set[tuple[str, int]] = set()
     checked = 0
@@ -258,8 +262,10 @@ def main() -> None:
         pick = close_in.iloc[(close_in["ts"] - row.planned_ts).abs().argmin()]
         expected = pick.ts + pd.Timedelta(minutes=int(delay))
         if status_of.get(mule) == "frozen":
-            reasons["mule đã frozen"] += 1
-            continue
+            frozen_at = frozen_time.get(mule, pd.NaT)
+            if pd.isna(frozen_at) or pick.ts >= frozen_at:
+                reasons["mule đã frozen"] += 1
+                continue
         if expected >= sim_end:
             reasons["gần cuối cửa sổ"] += 1
             continue
@@ -278,7 +284,18 @@ def main() -> None:
         if not bool(near_at.any()):
             reasons["khác"] += 1
             continue
-        chosen = free_ts.loc[gaps.loc[near_at].idxmin()]
+        candidates = free_ts.loc[near_at]
+        chosen = None
+        best_gap = None
+        for stamp in candidates:
+            bundle_try = part.loc[part["ts"] == stamp]
+            trial = float(bundle_try["amount"].sum()) / max(int(pick.amount), 1)
+            gap = abs(stamp - expected)
+            if 0.88 <= trial <= 0.99 and (best_gap is None or gap < best_gap):
+                chosen = stamp
+                best_gap = gap
+        if chosen is None:
+            chosen = free_ts.loc[gaps.loc[near_at].idxmin()]
         used_forward.add((mule, int(chosen.value)))
         bundle = part.loc[part["ts"] == chosen]
         ratio = float(bundle["amount"].sum()) / max(int(pick.amount), 1)
@@ -495,10 +512,14 @@ def main() -> None:
     hour = feature["start_ts"].dt.tz_convert(TZ).dt.hour.fillna(0).to_numpy(dtype=float)
     holder = dict(zip(accounts["account_id"].astype(str), accounts["holder_name_ascii"].astype(str)))
     name_match = []
+    same_customer = []
     for row in feature.itertuples(index=False):
         left = holder.get(str(row.from_account), "")
         right = holder.get(str(row.to_account), "")
         name_match.append(bool(left) and left == right and left not in {"nan", "<NA>", "None"})
+        sender = owner.get(str(row.from_account), "")
+        receiver = owner.get(str(row.to_account), "")
+        same_customer.append(bool(sender) and sender == receiver and sender not in {"nan", "<NA>", "None"})
     label = feature["scenario_type"].astype(str).isin(fraud_types).to_numpy()
     matrix = np.column_stack(
         [
@@ -510,6 +531,7 @@ def main() -> None:
             feature["remote_access_app_installed"].fillna(False).to_numpy(dtype=float),
             hour,
             np.array(name_match, dtype=float),
+            np.array(same_customer, dtype=float),
         ]
     )
     score = fit_logit(matrix, label)
@@ -519,7 +541,7 @@ def main() -> None:
         "Baseline rò rỉ AUC",
         f"{auc:.3f}",
         "0.80–0.93",
-        "amount/balance, người nhận mới, paste, cuộc gọi, accessibility, remote, giờ, tên khớp chủ",
+        "amount/balance, người nhận mới, paste, cuộc gọi, accessibility, remote, giờ, tên khớp chủ, cùng chủ",
         0.80 <= auc <= 0.93,
     )
     fraud_scores = score[label]
@@ -567,6 +589,26 @@ def main() -> None:
             "có đặc trưng tên người nhận khớp tên chủ",
             drain_rate is not None and drain_rate < 0.30,
         )
+        safe_ids = set()
+        truth_accounts_path = truth / "accounts_truth.parquet"
+        if truth_accounts_path.exists():
+            truth_accounts = pd.read_parquet(truth_accounts_path, columns=["account_id", "mule_type"])
+            safe_ids = set(truth_accounts.loc[truth_accounts["mule_type"].astype(str).eq("own_name_safe_account"), "account_id"].astype(str))
+        safe_mask = feature["to_account"].astype(str).isin(safe_ids).to_numpy() & label
+        safe_n = int(safe_mask.sum())
+        if safe_n:
+            safe_caught = float((score[safe_mask] >= threshold).mean())
+            safe_named = float(np.array(name_match)[safe_mask].mean())
+            print(f"  own_name_safe_account: tên khớp {pct(safe_named)}, bắt ở ngưỡng 80% {pct(safe_caught)} ({safe_n} phiên)")
+            report.add(
+                "own_name_safe_account bị bắt",
+                pct(safe_caught),
+                "tên khớp và bị bắt bởi đặc trưng khác",
+                f"tên khớp {pct(safe_named)}",
+                safe_named == 1.0 and safe_caught >= 0.60,
+            )
+        else:
+            report.add("own_name_safe_account bị bắt", "0 phiên", "có phiên", "-", False)
     else:
         report.add("Ngưỡng 80% lừa đảo", "không có phiên lừa", "có", "-", False)
 

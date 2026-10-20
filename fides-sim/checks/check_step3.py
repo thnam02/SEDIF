@@ -19,6 +19,7 @@ SCHOOL_AGE = 22
 KEYS = {
     "customer_id", "device_id", "number_id", "account_id", "ts", "channel",
     "session_id", "start_ts", "end_ts", "seq", "duration_s", "remote_access_app_installed",
+    "segment", "source",
 }
 ANCHORS = (5, 10, 15, 25)
 

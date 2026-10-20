@@ -202,6 +202,163 @@ def split_amount(amount: int, rng) -> list[int]:
     return parts
 
 
+def place_own_name_accounts(cfg, rng, cases, transfers, accounts, customers) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """~15% vụ police và bank_staff trả vào tài khoản mới đứng tên nạn nhân."""
+    from sim.step4_mules import next_ids
+
+    observed = ROOT / "out" / "observed"
+    truth = ROOT / "out" / "truth"
+    share = float(cfg["cases"]["own_name_safe_account_share"])
+    links = pd.read_parquet(observed / "account_device.parquet")
+    devices = pd.read_parquet(observed / "devices.parquet")
+    rings = pd.read_parquet(truth / "mule_rings.parquet")
+    truth_accounts = pd.read_parquet(truth / "accounts_truth.parquet")
+    if "mule_type" in truth_accounts.columns:
+        old_ids = set(truth_accounts.loc[truth_accounts["mule_type"].astype(str).eq("own_name_safe_account"), "account_id"].astype(str))
+        if old_ids:
+            accounts = accounts.loc[~accounts["account_id"].astype(str).isin(old_ids)].reset_index(drop=True)
+            links = links.loc[~links["account_id"].astype(str).isin(old_ids)].reset_index(drop=True)
+            truth_accounts = truth_accounts.loc[~truth_accounts["account_id"].astype(str).isin(old_ids)].reset_index(drop=True)
+            rings = rings.loc[~rings["account_id"].astype(str).isin(old_ids)].reset_index(drop=True)
+    voice = cases["scam_type"].astype(str).isin(["police", "bank_staff"])
+    pool = cases.loc[voice, "case_id"].astype(str).to_numpy()
+    n_take = int(round(share * len(pool)))
+    if n_take == 0 or len(pool) == 0:
+        write_side(accounts, links, truth_accounts, rings)
+        return accounts, transfers
+    chosen = set(rng.choice(pool, size=n_take, replace=False).tolist())
+    name_of = dict(zip(customers["customer_id"].astype(str), customers["name_ascii"].astype(str)))
+    banks = [bank for bank in cfg["accounts"]["banks"] if bank != "B01"]
+    l2 = rings.loc[rings["layer"].astype(str).eq("l2"), ["ring_id", "account_id"]]
+    l2_of: dict[str, list[str]] = {}
+    for ring, account in zip(l2["ring_id"].astype(str), l2["account_id"].astype(str)):
+        l2_of.setdefault(ring, []).append(account)
+    farm = devices.loc[devices["customer_id"].isna(), "device_id"].astype(str)
+    farm_ids = set(farm)
+    ring_accounts = rings.groupby(rings["ring_id"].astype(str))["account_id"].apply(lambda series: set(series.astype(str))).to_dict()
+    device_first = dict(zip(devices["device_id"].astype(str), devices["first_seen"]))
+    device_last = dict(zip(devices["device_id"].astype(str), devices["last_seen"]))
+    new_ids = next_ids("A", accounts["account_id"], n_take)
+    new_accounts = []
+    new_links = []
+    new_truth = []
+    retarget = {}
+    for offset, case_id in enumerate(sorted(chosen)):
+        case = cases.loc[cases["case_id"].astype(str).eq(case_id)].iloc[0]
+        victim = str(case.victim_customer_id)
+        ring = str(case.ring_id)
+        positive = transfers.loc[transfers["case_id"].astype(str).eq(case_id) & (transfers["planned_amount"] > 0)]
+        if positive.empty:
+            continue
+        first = positive["planned_ts"].min()
+        age_minutes = int(rng.integers(1, 2 * 24 * 60 + 1))
+        opened = first - pd.Timedelta(minutes=age_minutes)
+        account_id = new_ids[offset]
+        wallet = bool(rng.random() < 0.30)
+        bank = str(rng.choice(banks))
+        members = ring_accounts.get(ring, set())
+        linked = links.loc[links["account_id"].astype(str).isin(members)]
+        farm_links = linked.loc[linked["device_id"].astype(str).isin(farm_ids)]
+        device_id = None
+        if len(farm_links):
+            device_id = str(farm_links["device_id"].astype(str).mode().iloc[0])
+        elif len(linked):
+            device_id = str(linked["device_id"].astype(str).iloc[0])
+        dests = l2_of.get(ring, [])
+        if not dests:
+            cash = rings.loc[(rings["ring_id"].astype(str).eq(ring)) & (rings["layer"].astype(str).eq("cashout")), "account_id"].astype(str)
+            dests = cash.tolist()
+        onward = str(rng.choice(dests)) if dests else ""
+        delay = int(rng.integers(2, 16))
+        new_accounts.append(
+            {
+                "account_id": account_id,
+                "customer_id": pd.NA,
+                "phone_number_id": pd.NA,
+                "bank_id": bank,
+                "account_type": "ewallet" if wallet else "personal",
+                "holder_name_ascii": name_of.get(victim, ""),
+                "opened_at": opened,
+                "opening_balance": np.int64(0),
+                "status": "active",
+                "merchant_verified": False,
+            }
+        )
+        if device_id:
+            first_seen = opened
+            device_seen = device_first.get(device_id)
+            if pd.notna(device_seen) and device_seen > first_seen:
+                first_seen = device_seen
+            new_links.append(
+                {
+                    "account_id": account_id,
+                    "device_id": device_id,
+                    "login_count": int(rng.integers(1, 6)),
+                    "first_seen": first_seen,
+                    "last_seen": device_last.get(device_id, pd.NaT),
+                }
+            )
+        new_truth.append(
+            {
+                "account_id": account_id,
+                "is_mule": True,
+                "mule_type": "own_name_safe_account",
+                "ring_id": ring,
+                "layer": "safe",
+                "recruited_at": opened,
+                "simo_listing_correct": False,
+                "forward_to": onward,
+                "forward_delay_minutes": delay,
+                "source_l1": str(positive["to_mule_account_id"].iloc[0]),
+            }
+        )
+        retarget[case_id] = account_id
+    if new_accounts:
+        extra = pd.DataFrame(new_accounts)
+        for column in accounts.columns:
+            if column not in extra.columns:
+                extra[column] = pd.NA
+        accounts = pd.concat([accounts, extra[accounts.columns]], ignore_index=True)
+        accounts["account_id"] = accounts["account_id"].astype("string")
+        accounts["customer_id"] = accounts["customer_id"].astype("string")
+        accounts["bank_id"] = accounts["bank_id"].astype("string")
+        accounts["account_type"] = accounts["account_type"].astype("string")
+        accounts["holder_name_ascii"] = accounts["holder_name_ascii"].astype("string")
+        accounts["status"] = accounts["status"].astype("string")
+        accounts["opening_balance"] = accounts["opening_balance"].astype(np.int64)
+    if new_links:
+        links = pd.concat([links, pd.DataFrame(new_links)], ignore_index=True)
+        links["account_id"] = links["account_id"].astype("string")
+        links["device_id"] = links["device_id"].astype("string")
+        links["login_count"] = links["login_count"].astype(np.int64)
+    truth_extra = pd.DataFrame(new_truth)
+    for column in ("forward_to", "forward_delay_minutes", "source_l1"):
+        if column not in truth_accounts.columns:
+            truth_accounts[column] = pd.NA
+    if len(truth_extra):
+        for column in truth_accounts.columns:
+            if column not in truth_extra.columns:
+                truth_extra[column] = pd.NA
+        truth_accounts = pd.concat([truth_accounts, truth_extra[truth_accounts.columns]], ignore_index=True)
+    truth_accounts["account_id"] = truth_accounts["account_id"].astype("string")
+    truth_accounts["is_mule"] = truth_accounts["is_mule"].astype(bool)
+    truth_accounts["mule_type"] = truth_accounts["mule_type"].astype("string")
+    mask = transfers["case_id"].astype(str).isin(retarget) & (transfers["planned_amount"] > 0)
+    transfers.loc[mask, "to_mule_account_id"] = transfers.loc[mask, "case_id"].astype(str).map(retarget)
+    write_side(accounts, links, truth_accounts, rings)
+    print(f"  Tài khoản đứng tên nạn nhân: {len(retarget)}")
+    return accounts, transfers
+
+
+def write_side(accounts, links, truth_accounts, rings) -> None:
+    from sim.io import write
+
+    write(accounts, "observed", "accounts")
+    write(links, "observed", "account_device")
+    write(truth_accounts, "truth", "accounts_truth")
+    write(rings, "truth", "mule_rings")
+
+
 def main() -> None:
     cfg = load_config()
     spec = cfg["cases"]
@@ -321,6 +478,7 @@ def main() -> None:
     for ring, account in zip(l1["ring_id"].astype(str), l1["account_id"].astype(str)):
         l1_of.setdefault(ring, []).append(account)
     usage = {account: 0 for accounts_in_ring in l1_of.values() for account in accounts_in_ring}
+    anchor_end: dict[str, pd.Timestamp] = {}
     max_cases = int(spec["l1_mule_max_cases"])
     spans = [case_span(str(kind), rng) for kind in types]
     order = sorted(range(n_cases), key=lambda index: spans[index], reverse=True)
@@ -334,18 +492,44 @@ def main() -> None:
         for ring in ring_order:
             window_from = max(sim_start, ring_span.loc[ring, "active_from"])
             window_to = min(sim_end, ring_span.loc[ring, "active_to"])
-            latest = window_to - span
-            if latest <= window_from:
-                continue
             options = [account for account in l1_of.get(ring, []) if usage[account] < max_cases]
             if not options:
                 continue
-            seconds = max(int((latest - window_from).total_seconds()), 1)
-            start = window_from + pd.to_timedelta(int(rng.integers(0, seconds)), unit="s")
-            end = start + span
-            if end > window_to or end >= sim_end:
-                continue
-            mule = min(options, key=lambda account: (usage[account], account))
+            anchored = [
+                account for account in options
+                if account in anchor_end
+                and window_from <= anchor_end[account] - span
+                and anchor_end[account] <= window_to
+                and anchor_end[account] < sim_end
+            ]
+            if anchored:
+                mule = min(anchored, key=lambda account: (usage[account], account))
+                end = anchor_end[mule] + pd.Timedelta(minutes=20 * usage[mule])
+                if end >= sim_end or end > window_to or end - anchor_end[mule] > pd.Timedelta(days=1):
+                    anchored = [account for account in anchored if account != mule]
+                    if not anchored:
+                        continue
+                    mule = min(anchored, key=lambda account: (usage[account], account))
+                    end = anchor_end[mule] + pd.Timedelta(minutes=20 * usage[mule])
+                    if end >= sim_end or end > window_to or end - anchor_end[mule] > pd.Timedelta(days=1):
+                        continue
+                start = end - span
+                if start < window_from:
+                    continue
+            else:
+                fresh = [account for account in options if account not in anchor_end]
+                if not fresh:
+                    continue
+                latest = window_to - span
+                if latest <= window_from:
+                    continue
+                seconds = max(int((latest - window_from).total_seconds()), 1)
+                start = window_from + pd.to_timedelta(int(rng.integers(0, seconds)), unit="s")
+                end = start + span
+                if end > window_to or end >= sim_end:
+                    continue
+                mule = min(fresh, key=lambda account: (usage[account], account))
+                anchor_end[mule] = end
             usage[mule] += 1
             ring_of[index] = ring
             mule_of[index] = mule
@@ -675,6 +859,7 @@ def main() -> None:
             "declines_permission": is_decline,
             "hangs_up_before_transfer": is_hangup,
             "planned_total": [int(planned_total.get(f"K{index + 1:06d}", 0)) for index in range(n_cases)],
+            "l1_account_id": pd.Series(mule_of, dtype="string"),
         }
     )
     cases["planned_total"] = cases["planned_total"].astype(np.int64)
@@ -696,6 +881,7 @@ def main() -> None:
     transfers["planned_ts"] = [
         clamp_stamp(case_id, stamp) for case_id, stamp in zip(transfers["case_id"], transfers["planned_ts"])
     ]
+    accounts, transfers = place_own_name_accounts(cfg, rng, cases, transfers, accounts, customers)
 
     label = np.zeros(len(customers), dtype=bool)
     label[np.unique(victim_row)] = True

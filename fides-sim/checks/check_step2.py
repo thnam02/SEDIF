@@ -20,6 +20,7 @@ TZ = "Asia/Ho_Chi_Minh"
 KEYS = {
     "customer_id", "device_id", "number_id", "account_id", "ts", "channel",
     "session_id", "start_ts", "end_ts", "seq", "duration_s", "remote_access_app_installed",
+    "segment", "source",
 }
 
 
@@ -30,10 +31,16 @@ def load_config() -> dict:
 
 def mule_account_ids() -> set[str]:
     path = ROOT / "out" / "truth" / "mule_rings.parquet"
-    if not path.exists():
-        return set()
-    rings = pd.read_parquet(path, columns=["account_id"])
-    return set(rings["account_id"].astype(str))
+    ids: set[str] = set()
+    if path.exists():
+        rings = pd.read_parquet(path, columns=["account_id"])
+        ids |= set(rings["account_id"].astype(str))
+    truth_accounts = ROOT / "out" / "truth" / "accounts_truth.parquet"
+    if truth_accounts.exists():
+        frame = pd.read_parquet(truth_accounts, columns=["account_id", "mule_type"])
+        extra = frame.loc[frame["mule_type"].astype(str).eq("own_name_safe_account"), "account_id"]
+        ids |= set(extra.astype(str))
+    return ids
 
 
 def old_mule_account_ids(sim_start: pd.Timestamp) -> set[str]:
@@ -303,8 +310,14 @@ def main() -> None:
         active_ok = not frozen and set(accounts["status"].astype(str).unique()) == {"active"}
         report.add("Chưa có tài khoản mule", "active" if active_ok else "có trạng thái khác", "active", "-", active_ok)
     else:
-        active_ok = frozen == old_mules
-        report.add("Tài khoản đóng băng đúng đường dây cũ", f"{len(frozen)} đóng băng", f"{len(old_mules)} mule cũ", "-", active_ok)
+        active_ok = old_mules <= frozen
+        report.add(
+            "Tài khoản đóng băng đúng đường dây cũ",
+            f"{len(frozen)} đóng băng",
+            f"{len(old_mules)} mule cũ",
+            f"thêm {len(frozen - old_mules)} trong cửa sổ",
+            active_ok,
+        )
 
     observed_cols: set[str] = set()
     truth_cols: set[str] = set()

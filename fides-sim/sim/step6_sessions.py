@@ -385,6 +385,15 @@ def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[s
     rows = []
     queue = deque(inbounds)
     seen = 0
+    used_stamp: set[tuple[str, int]] = set()
+
+    def reserve(account: str, when: pd.Timestamp) -> pd.Timestamp:
+        bump = 0
+        while (account, int(when.value)) in used_stamp and bump < 180:
+            when = when + pd.Timedelta(seconds=1)
+            bump += 1
+        used_stamp.add((account, int(when.value)))
+        return when
     while queue and seen < 200_000:
         account, amount, ts = queue.popleft()
         seen += 1
@@ -407,6 +416,7 @@ def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[s
             method = meta["cashout_method"] if meta["cashout_method"] in {"cash_withdrawal", "crypto_purchase"} else "cash_withdrawal"
             delay = int(rng.integers(5, 41))
             when = ts + pd.Timedelta(minutes=delay)
+            when = reserve(account, when)
             if when >= sim_end or when <= ts:
                 continue
             purpose = "rut tien mat" if method == "cash_withdrawal" else "mua crypto"
@@ -416,6 +426,7 @@ def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[s
             continue
         delay = int(meta["delay"]) if meta["delay"] else int(rng.integers(2, 31))
         when = ts + pd.Timedelta(minutes=delay)
+        when = reserve(account, when)
         if when >= sim_end or when <= ts:
             continue
         base = send // len(dests)
@@ -661,6 +672,22 @@ def main() -> None:
             "cashout_method": None if pd.isna(record.cashout_method) else str(record.cashout_method),
         }
     mule_ids = set(ring_of)
+    safe_meta = {}
+    truth_accounts_path = truth / "accounts_truth.parquet"
+    if truth_accounts_path.exists():
+        truth_accounts = pd.read_parquet(truth_accounts_path)
+        safe_rows = truth_accounts.loc[truth_accounts["mule_type"].astype(str).eq("own_name_safe_account")]
+        for record in safe_rows.itertuples(index=False):
+            onward = "" if pd.isna(record.forward_to) else str(record.forward_to)
+            delay = int(record.forward_delay_minutes) if pd.notna(record.forward_delay_minutes) else 5
+            safe_meta[str(record.account_id)] = {"layer": "safe", "forward_to": [onward] if onward else [], "delay": delay, "cashout_method": None}
+        ring_of.update(safe_meta)
+    safe_ids = set(safe_meta)
+    if "frozen_at" not in accounts.columns:
+        accounts["frozen_at"] = pd.Series(pd.NaT, index=accounts.index, dtype=f"datetime64[ns, {TZ}]")
+    thawed = accounts["frozen_at"].notna() & (accounts["frozen_at"] >= sim_start)
+    accounts.loc[thawed, "status"] = "active"
+    accounts.loc[thawed, "frozen_at"] = pd.NaT
     l1_ids = {account for account, meta in ring_of.items() if meta["layer"] == "l1"}
     home = str(spec["session_banks"][0])
     case_meta = cases.set_index("case_id")
@@ -753,19 +780,38 @@ def main() -> None:
         row.pop("_invest", None)
     if extra:
         transactions = pd.concat([transactions, pd.DataFrame(extra)], ignore_index=True)
-    tracked = set(accounts.loc[accounts["customer_id"].notna(), "account_id"].astype(str)) | mule_ids
+    tracked = set(accounts.loc[accounts["customer_id"].notna(), "account_id"].astype(str)) | mule_ids | safe_ids
     transactions = replay(transactions, opening, tracked)
     fresh = transactions["tx_id"].astype(str).str[1:].astype(np.int64) >= first_tx_num
-    arrived = transactions.loc[
+    inbound_mask = (
         fresh
-        & transactions["to_account"].astype(str).isin(l1_ids)
-        & ~transactions["from_account"].astype(str).isin(mule_ids)
+        & ~transactions["from_account"].astype(str).isin(mule_ids | safe_ids)
         & transactions["tx_type"].astype(str).eq("transfer")
         & transactions["purpose_text"].astype(str).ne("tra lai")
         & (transactions["amount"] > 0)
-    ]
+    )
+    arrived = transactions.loc[inbound_mask & transactions["to_account"].astype(str).isin(l1_ids)].copy()
+    safe_in = transactions.loc[inbound_mask & transactions["to_account"].astype(str).isin(safe_ids)].copy()
+    stuck_share = float(spec.get("l1_stuck_share", 0.04))
+    n_stuck = int(round(stuck_share * len(arrived))) if len(arrived) else 0
+    last_in = arrived.sort_values(["ts", "tx_id"], kind="mergesort").groupby(arrived["to_account"].astype(str), sort=False).tail(1)
+    n_stuck = min(n_stuck, len(last_in))
+    stuck_index = rng.choice(last_in.index.to_numpy(), size=n_stuck, replace=False) if n_stuck else []
+    stuck = arrived.loc[stuck_index] if n_stuck else arrived.iloc[0:0]
+    if len(stuck):
+        freeze_at = dict(zip(stuck["to_account"].astype(str), stuck["ts"]))
+        for account, stamp in freeze_at.items():
+            accounts.loc[accounts["account_id"].astype(str).eq(account), "status"] = "frozen"
+            accounts.loc[accounts["account_id"].astype(str).eq(account), "frozen_at"] = stamp
+        arrived = arrived.drop(index=stuck.index)
+    recovered = pd.DataFrame(
+        {
+            "txn_id": stuck["tx_id"].astype(str).to_numpy() if len(stuck) else [],
+            "amount_recovered": stuck["amount"].astype(np.int64).to_numpy() if len(stuck) else [],
+        }
+    )
     inbound_for_forward = [
-        (str(row.to_account), int(row.amount), row.ts) for row in arrived.itertuples(index=False)
+        (str(row.to_account), int(row.amount), row.ts) for row in list(arrived.itertuples(index=False)) + list(safe_in.itertuples(index=False))
     ]
     forwards, cursor = forward_chain(inbound_for_forward, ring_of, rng, sim_end, tx_ids, cursor)
     if forwards:
@@ -1178,6 +1224,8 @@ def main() -> None:
     transactions["from_balance_before"] = transactions["from_balance_before"].astype(np.int64)
 
     write(transactions, "observed", "transactions")
+    write(accounts, "observed", "accounts")
+    write(recovered, "truth", "recovered_funds")
     write(sessions_out, "observed", "sessions")
     write(events, "observed", "session_events")
     write(signals, "observed", "device_signals")

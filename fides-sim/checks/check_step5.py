@@ -143,9 +143,14 @@ def main() -> None:
     merged = cases.merge(bounds, left_on="ring_id", right_index=True, how="left")
     covered = merged["active_from"].notna() & (merged["active_from"] <= merged["start_ts"]) & (merged["active_to"] >= merged["end_ts"])
     l1 = set(rings.loc[rings["layer"].astype(str) == "l1", "account_id"].astype(str))
-    mule_cases = plans.groupby("to_mule_account_id")["case_id"].nunique()
+    safe_ids = set()
+    truth_accounts_path = truth / "accounts_truth.parquet"
+    if truth_accounts_path.exists():
+        mule_type = pd.read_parquet(truth_accounts_path, columns=["account_id", "mule_type"])
+        safe_ids = set(mule_type.loc[mule_type["mule_type"].astype(str).eq("own_name_safe_account"), "account_id"].astype(str))
+    mule_cases = plans.loc[~plans["to_mule_account_id"].astype(str).isin(safe_ids)].groupby("to_mule_account_id")["case_id"].nunique()
     over = int((mule_cases > int(spec["l1_mule_max_cases"])).sum())
-    on_l1 = bool(set(plans["to_mule_account_id"].astype(str)) <= l1)
+    on_l1 = bool(set(plans["to_mule_account_id"].astype(str)) <= (l1 | safe_ids))
     report.add(
         "Đường dây hoạt động và mule lớp 1",
         f"{int(covered.sum())}/{n_cases} vụ, {over} mule vượt trần",

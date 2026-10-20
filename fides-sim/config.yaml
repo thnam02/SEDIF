@@ -125,6 +125,7 @@ cases:
   repeat_victim_share: 0.03
   l1_mule_max_cases: 15
   victim_bank_B01_weight: 1.0       # không ưu tiên B01; để tự nhiên ~20%
+  own_name_safe_account_share: 0.15 # police và bank_staff chuyển vào tài khoản mới đứng tên nạn nhân
 
 sessions:
   session_banks: [B01]                 # FIDES chạy ở B01
@@ -137,3 +138,17 @@ sessions:
   bank_staff_remote_app: 0.60           # vụ giả nhân viên ngân hàng có cài app điều khiển từ xa
   coached_lie_yes_no: 0.60              # nạn nhân bị dặn nói dối khi được hỏi có/không
   hard_negative_min_sessions: 400   # mỗi loại mẫu khó cần đủ bấy nhiêu phiên
+  l1_stuck_share: 0.04                 # khoản vào mule lớp 1 bị đóng băng trước khi chuyển tiếp
+
+labels:
+  report_rate: {police: 0.75, bank_staff: 0.70, relative: 0.70, deposit: 0.50, investment: 0.45, romance: 0.30, own_name_safe_account: 0.75}
+  report_delay_days:          # tính từ khoản chuyển cuối của vụ
+    police: [0, 3]
+    bank_staff: [0, 2]
+    relative: [0, 2]
+    deposit: [1, 10]
+    investment: [3, 30]
+    romance: [7, 60]
+  bank_processing_days: [0, 7]    # báo cáo → nhãn có trong hệ thống
+  false_report_rate: 0.0002       # giao dịch hợp lệ bị báo nhầm là lừa đảo
+  simo_listing_delay_days: [0, 2]

@@ -175,9 +175,10 @@ def main() -> None:
             ok = ok and abs(actual - float(target)) <= 0.03
         return ", ".join(parts), ok
 
-    type_text, type_ok = share_ok(truth_accounts.loc[truth_accounts["is_mule"], "mule_type"].astype(str), spec["type_share"])
+    core_mules = truth_accounts.loc[truth_accounts["is_mule"] & truth_accounts["mule_type"].astype(str).ne("own_name_safe_account")]
+    type_text, type_ok = share_ok(core_mules["mule_type"].astype(str), spec["type_share"])
     layer_text, layer_ok = share_ok(rings["layer"].astype(str), spec["layer_share"])
-    report.add("Tỷ lệ loại mule", type_text, "±3 đ.p", "-", type_ok and int(truth_accounts["is_mule"].sum()) == len(rings))
+    report.add("Tỷ lệ loại mule", type_text, "±3 đ.p", "-", type_ok and len(core_mules) == len(rings))
     report.add("Tỷ lệ lớp", layer_text, "±3 đ.p", "-", layer_ok)
 
     bank_rate = float((accounts.set_index("account_id").loc[rings["account_id"], "bank_id"].astype(str) == "B01").mean())
@@ -187,7 +188,7 @@ def main() -> None:
     family_of = dict(zip(people["customer_id"], people["family_group_id"].astype(str)))
     holder = dict(zip(accounts["account_id"], accounts["holder_name_ascii"].astype(str)))
     owner = dict(zip(accounts["account_id"], accounts["customer_id"].astype(str)))
-    mule_ids = set(rings["account_id"])
+    mule_ids = set(rings["account_id"].astype(str)) | set(truth_accounts.loc[truth_accounts["is_mule"], "account_id"].astype(str))
     linked = links.copy()
     linked["account_id"] = linked["account_id"].astype(str)
     linked["device_id"] = linked["device_id"].astype(str)
@@ -274,7 +275,11 @@ def main() -> None:
         len(linked_rings) >= need,
     )
 
-    simo_ids = set(simo["account_id"])
+    if "source" in simo.columns:
+        simo_base = simo.loc[simo["source"].astype(str).ne("victim_report")].copy()
+    else:
+        simo_base = simo
+    simo_ids = set(simo_base["account_id"].astype(str))
     legit = set(accounts["account_id"]) - mule_ids
     false_ids = simo_ids - mule_ids
     false_rate = len(false_ids) / len(legit) if legit else 0.0
@@ -288,7 +293,7 @@ def main() -> None:
     )
     report.add("SIMO chưa có mule đang hoạt động", str(active_listed), "0", f"mule cũ trong SIMO {len(old_accounts & simo_ids)}/{len(old_accounts)}", active_listed == 0 and old_accounts <= simo_ids)
     if len(simo):
-        report_ok = bool((simo.loc[simo["account_id"].isin(old_accounts), "listed_at"] < sim_start).all())
+        report_ok = bool((simo_base.loc[simo_base["account_id"].astype(str).isin(old_accounts), "listed_at"] < sim_start).all()) if len(simo_base) else False
     else:
         report_ok = False
     report.add("SIMO mule cũ listed_at trước cửa sổ", "đạt" if report_ok else "lỗi", "trước sim_start", "-", report_ok)
@@ -303,7 +308,7 @@ def main() -> None:
     account_ids = set(accounts["account_id"])
     device_ids = set(devices["device_id"].astype(str))
     phone_ids = set(pd.read_parquet(observed / "phone_numbers.parquet", columns=["number_id"])["number_id"].astype(str))
-    fk_ok = mule_ids <= account_ids and simo_ids <= account_ids
+    fk_ok = mule_ids <= account_ids and set(simo["account_id"].astype(str)) <= account_ids
     fk_ok = fk_ok and set(links["account_id"].astype(str)) <= account_ids and set(links["device_id"].astype(str)) <= device_ids
     named = accounts["phone_number_id"].dropna().astype(str)
     fk_ok = fk_ok and bool(named.isin(phone_ids).all())
