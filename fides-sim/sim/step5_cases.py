@@ -171,6 +171,19 @@ def increasing_amounts(cap: int, rng, split: bool) -> list[int]:
     return amounts
 
 
+def flatten_peak(amounts: list[int], rng) -> list[int]:
+    """Sau đỉnh: chững lại hoặc giảm. Cả chuỗi không còn tăng dần."""
+    if len(amounts) < 2:
+        return amounts
+    peak = amounts[-2] if len(amounts) >= 3 else amounts[0]
+    if rng.random() < 0.45:
+        amounts[-1] = int(peak)
+    else:
+        lowered = int(peak * float(rng.uniform(0.40, 0.80)) // 1000 * 1000)
+        amounts[-1] = max(1000, min(lowered, peak - 1000 if peak > 1000 else peak))
+    return amounts
+
+
 def split_amount(amount: int, rng) -> list[int]:
     amount = int(amount // 1000) * 1000
     n_parts = int(rng.integers(2, 6))
@@ -260,6 +273,9 @@ def main() -> None:
     is_split = draw_flag(spec["split_share"])
     is_decline = draw_flag(spec["declines_permission_share"])
     is_hangup = draw_flag(spec["hangs_up_before_transfer_share"])
+    invest_slots = np.flatnonzero(types == "investment")
+    n_flat = int(round(float(cfg["sessions"]["investment_non_monotonic_share"]) * len(invest_slots)))
+    flat_slots = set(rng.choice(invest_slots, size=n_flat, replace=False).tolist()) if n_flat else set()
 
     eligible = {kind: not_mule & (wealth >= floors[kind]) for kind in type_names}
     noise = rng.standard_normal(len(customers))
@@ -481,6 +497,8 @@ def main() -> None:
             amounts = split_amount(sum(amounts), rng)
         if kind == "investment" and (len(amounts) < 2 or any(amounts[i] <= amounts[i - 1] for i in range(1, len(amounts)))):
             amounts = increasing_amounts(max(cap, 0), rng, False)
+        if kind == "investment" and index in flat_slots:
+            amounts = flatten_peak(amounts, rng)
         seq = 1
         interest_times = [start + pd.Timedelta(days=1 + offset) for offset in range(len(interest))]
         if kind == "investment":

@@ -16,7 +16,10 @@ if str(ROOT) not in sys.path:
 TZ = "Asia/Ho_Chi_Minh"
 SCHOOL_AGE = 22
 # ts, channel trùng tên với lịch liên lạc bước 5; không phải nhãn mule.
-KEYS = {"customer_id", "device_id", "number_id", "account_id", "ts", "channel"}
+KEYS = {
+    "customer_id", "device_id", "number_id", "account_id", "ts", "channel",
+    "session_id", "start_ts", "end_ts", "seq", "duration_s", "remote_access_app_installed",
+}
 ANCHORS = (5, 10, 15, 25)
 
 
@@ -401,8 +404,18 @@ def main() -> None:
     other_time = zone_name(payees["added_at"]) == TZ and zone_name(contacts["first_contact"]) == TZ
     other_time = other_time and bool(payees["added_at"].max() < sim_end) and bool(contacts["first_contact"].max() < sim_end)
     report.add("ts giao dịch trong cửa sổ, giờ VN", "đạt" if time_ok else "lỗi", "đạt", "-", time_ok and other_time)
-    session_ok = bool(transactions["session_id"].isna().all())
-    report.add("session_id trống", "null" if session_ok else "có giá trị", "null", "-", session_ok)
+    sessions_path = observed / "sessions.parquet"
+    if sessions_path.exists():
+        known_sessions = set(pd.read_parquet(sessions_path, columns=["session_id"])["session_id"].astype(str))
+        filled = transactions["session_id"].notna()
+        session_ok = bool(transactions.loc[filled, "session_id"].astype(str).isin(known_sessions).all()) and bool(filled.any())
+        session_label = f"{int(filled.sum())} giao dịch có phiên"
+        session_target = "session_id thuộc observed/sessions"
+    else:
+        session_ok = bool(transactions["session_id"].isna().all())
+        session_label = "null" if session_ok else "có giá trị"
+        session_target = "null"
+    report.add("session_id trống", session_label, session_target, "-", session_ok)
     money_ok = str(transactions["amount"].dtype) == "int64" and str(transactions["from_balance_before"].dtype) == "int64"
     report.add("Tiền là int64 VND", f"{transactions['amount'].dtype}, {transactions['from_balance_before'].dtype}", "int64", "-", money_ok)
 

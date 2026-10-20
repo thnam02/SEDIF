@@ -125,3 +125,14 @@ cases:
   repeat_victim_share: 0.03
   l1_mule_max_cases: 15
   victim_bank_B01_weight: 1.0       # không ưu tiên B01; để tự nhiên ~20%
+
+sessions:
+  session_banks: [B01]                 # FIDES chạy ở B01
+  session_txn_types: [transfer, rent, school_fee, large_oneoff, own_transfer, own_transfer_drain, passthrough_out]
+  legit_on_call_known: 0.06            # phiên hợp lệ đang gọi với người quen (gia đình, công việc)
+  legit_on_call_unknown: 0.015         # đang gọi số lạ hợp lệ: shipper, người bán, chủ nhà
+  legit_ott_call: 0.03
+  paste_share_new_payee: {legit: 0.45, fraud: 0.70}
+  investment_non_monotonic_share: 0.15  # sửa bước 5: chững lại/giảm sau đỉnh
+  bank_staff_remote_app: 0.60           # vụ giả nhân viên ngân hàng có cài app điều khiển từ xa
+  coached_lie_yes_no: 0.60              # nạn nhân bị dặn nói dối khi được hỏi có/không

@@ -15,7 +15,12 @@ if str(ROOT) not in sys.path:
 TZ = "Asia/Ho_Chi_Minh"
 # number_id xuất hiện khi đã chạy bước 3 (danh bạ). contact_type không trùng cột observed.
 # ts và channel trùng tên giữa giao dịch và lịch liên lạc, không phải nhãn.
-KEYS = {"customer_id", "device_id", "number_id", "account_id", "ts", "channel"}
+# session_id, start_ts, end_ts, seq, duration_s, remote_access_app_installed
+# trùng tên giữa observed và truth, không phải nhãn vụ lừa.
+KEYS = {
+    "customer_id", "device_id", "number_id", "account_id", "ts", "channel",
+    "session_id", "start_ts", "end_ts", "seq", "duration_s", "remote_access_app_installed",
+}
 
 
 def load_config() -> dict:
