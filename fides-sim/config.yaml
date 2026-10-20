@@ -90,8 +90,24 @@ history:
   card_payments_aggregate_daily: true
   renter_share_young: 0.30          # 18–35 tuổi trả tiền nhà hàng tháng
   school_fee_parent_share: 0.25     # hộ có con đi học, đóng học phí tháng 8–9
+  school_fee_monthly_share: 0.85    # phổ thông thu theo tháng; đại học luôn theo học kỳ
+  school_enrollment_fee_share: 0.30 # trường thu thêm phí giữ chỗ tháng 8 cho học sinh mới
+  school_change_yearly_share: 0.03  # đổi trường mỗi năm, trong khoảng 2–5%
   large_oneoff_share: 0.003         # đặt cọc nhà/xe, viện phí trong 90 ngày
   own_transfer_drain_share: 0.02    # chuyển > 80% số dư sang tài khoản của chính mình
   legit_passthrough_share: 0.005    # thủ quỹ nhóm, cha mẹ nhận rồi chuyển cho con
   round_amount_share: 0.70          # số tiền tròn nghìn/trăm nghìn
   payee_add_method: {contact: 0.55, paste: 0.25, qr: 0.15, typed: 0.05}
+
+mules:
+  n_active_rings: 40              # đường dây hoạt động trong cửa sổ
+  n_old_rings: 15                 # đường dây cũ, bị đóng băng trước sim_start
+  ring_size: {min: 5, max: 30}    # lognormal
+  layer_share: {l1: 0.50, l2: 0.35, cashout: 0.15}
+  type_share: {rented: 0.50, new_opened: 0.35, recruited_victim: 0.15}
+  new_opened_age_days: {min: 2, max: 30}
+  own_device_share: 0.40          # mule dùng máy riêng, không lộ qua thiết bị
+  farm_devices_per_ring: {min: 1, max: 4}
+  old_ring_device_reuse: 0.30     # thiết bị của đường dây cũ được dùng lại ở đường dây mới
+  dormant_share_rented: 0.30      # tài khoản thuê ngủ ≥ 60 ngày rồi hoạt động lại
+  simo_false_listing_rate: 0.05

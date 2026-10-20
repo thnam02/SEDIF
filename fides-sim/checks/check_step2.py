@@ -13,13 +13,30 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 TZ = "Asia/Ho_Chi_Minh"
-# number_id và relation xuất hiện khi đã chạy bước 3 (danh bạ).
-KEYS = {"customer_id", "device_id", "number_id", "relation"}
+# number_id xuất hiện khi đã chạy bước 3 (danh bạ). contact_type không trùng cột observed.
+KEYS = {"customer_id", "device_id", "number_id", "account_id"}
 
 
 def load_config() -> dict:
     with (ROOT / "config.yaml").open(encoding="utf-8") as handle:
         return yaml.safe_load(handle)
+
+
+def mule_account_ids() -> set[str]:
+    path = ROOT / "out" / "truth" / "mule_rings.parquet"
+    if not path.exists():
+        return set()
+    rings = pd.read_parquet(path, columns=["account_id"])
+    return set(rings["account_id"].astype(str))
+
+
+def old_mule_account_ids(sim_start: pd.Timestamp) -> set[str]:
+    path = ROOT / "out" / "truth" / "mule_rings.parquet"
+    if not path.exists():
+        return set()
+    rings = pd.read_parquet(path, columns=["account_id", "active_to"])
+    old = rings.loc[rings["active_to"] < sim_start, "account_id"]
+    return set(old.astype(str))
 
 
 def as_timestamp(value) -> pd.Timestamp:
@@ -130,20 +147,27 @@ def main() -> None:
 
     linked = links.merge(accounts[["account_id", "customer_id", "holder_name_ascii"]], on="account_id", how="left")
     linked = linked.dropna(subset=["customer_id"]).merge(latent_people[["customer_id", "family_group_id"]], on="customer_id", how="left")
-    holder_n = linked.groupby("device_id")["holder_name_ascii"].nunique()
-    family_of_holder = linked.groupby("device_id")["family_group_id"].nunique()
+    mule_accounts = mule_account_ids()
+    mule_devices = set(devices.loc[devices["customer_id"].isna(), "device_id"].astype(str))
+    ordinary = linked.loc[~linked["device_id"].astype(str).isin(mule_devices)]
+    holder_n = ordinary.groupby("device_id")["holder_name_ascii"].nunique()
+    family_of_holder = ordinary.groupby("device_id")["family_group_id"].nunique()
     two_holders = holder_n[holder_n == 2].index
     holder_ok = bool((holder_n <= 2).all()) and (len(two_holders) == 0 or bool((family_of_holder.loc[two_holders] == 1).all()))
+    if mule_devices:
+        farm = linked.loc[linked["device_id"].astype(str).isin(mule_devices)]
+        pure = farm.groupby("device_id")["account_id"].apply(lambda col: set(col.astype(str)) <= mule_accounts)
+        holder_ok = holder_ok and bool(pure.all())
     report.add(
         "Holder khác nhau trên một thiết bị",
         f"tối đa {int(holder_n.max()) if len(holder_n) else 0}, {len(two_holders)} máy có 2 holder",
         "≤ 2, và = 2 chỉ khi cùng family_group_id",
-        "-",
+        "máy trang trại mule tách riêng" if mule_devices else "-",
         holder_ok,
     )
 
-    family_count = linked.groupby("device_id")["family_group_id"].nunique()
-    customer_count = linked.groupby("device_id")["customer_id"].nunique()
+    family_count = ordinary.groupby("device_id")["family_group_id"].nunique()
+    customer_count = ordinary.groupby("device_id")["customer_id"].nunique()
     shared = customer_count[customer_count > 1].index
     if len(shared) == 0:
         shared_ok = False
@@ -160,7 +184,7 @@ def main() -> None:
     report.add("opened_at < sim_end, múi giờ VN", "đạt" if before(accounts["opened_at"], sim_end) else "lỗi", "đạt", "-", before(accounts["opened_at"], sim_end))
     report.add("first_seen < sim_end, múi giờ VN", "đạt" if before(devices["first_seen"], sim_end) else "lỗi", "đạt", "-", before(devices["first_seen"], sim_end))
     sim_start = as_timestamp(cfg["sim_start"])
-    marked = devices.copy()
+    marked = devices.dropna(subset=["customer_id"]).copy()
     marked["in_window"] = (marked["first_seen"] >= sim_start) & (marked["first_seen"] < sim_end)
     new_first = marked.loc[marked["in_window"]].groupby("customer_id")["first_seen"].min()
     retired = marked.loc[marked["last_seen"].notna(), ["customer_id", "last_seen"]]
@@ -193,8 +217,14 @@ def main() -> None:
         f"{100 * (replace_rate - float(block['new_device_in_window_share'])):+.2f} đ.p",
         abs(replace_rate - float(block["new_device_in_window_share"])) < 0.01,
     )
-    active_ok = set(accounts["status"].unique()) == {"active"}
-    report.add("Chưa có tài khoản mule", "active" if active_ok else "có trạng thái khác", "active", "-", active_ok)
+    frozen = set(accounts.loc[accounts["status"].astype(str) == "frozen", "account_id"].astype(str))
+    old_mules = old_mule_account_ids(sim_start)
+    if not old_mules:
+        active_ok = not frozen and set(accounts["status"].astype(str).unique()) == {"active"}
+        report.add("Chưa có tài khoản mule", "active" if active_ok else "có trạng thái khác", "active", "-", active_ok)
+    else:
+        active_ok = frozen == old_mules
+        report.add("Tài khoản đóng băng đúng đường dây cũ", f"{len(frozen)} đóng băng", f"{len(old_mules)} mule cũ", "-", active_ok)
 
     observed_cols: set[str] = set()
     truth_cols: set[str] = set()
@@ -206,7 +236,8 @@ def main() -> None:
     report.add("Cột observed ∩ truth", "{" + ", ".join(sorted(overlap)) + "}", "chỉ khóa", "-", overlap <= KEYS and "device_id" in overlap)
 
     fk_ok = bool(personal["customer_id"].isin(customers["customer_id"]).all())
-    fk_ok = fk_ok and bool(devices["customer_id"].isin(customers["customer_id"]).all())
+    device_owners = devices["customer_id"].dropna()
+    fk_ok = fk_ok and bool(device_owners.isin(customers["customer_id"]).all())
     fk_ok = fk_ok and bool(links["account_id"].isin(accounts["account_id"]).all())
     fk_ok = fk_ok and bool(links["device_id"].isin(devices["device_id"]).all())
     fk_ok = fk_ok and bool(devices_latent["device_id"].isin(devices["device_id"]).all())

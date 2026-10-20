@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 
 TZ = "Asia/Ho_Chi_Minh"
 SCHOOL_AGE = 22
-KEYS = {"customer_id", "device_id", "number_id", "relation"}
+KEYS = {"customer_id", "device_id", "number_id", "account_id"}
 ANCHORS = (5, 10, 15, 25)
 
 
@@ -195,9 +195,27 @@ def main() -> None:
     report.add(
         "Phân bố giờ",
         f"0–6h {pct(night)}",
-        "đỉnh trưa và tối, 0–6h < 5%",
+        "đỉnh trưa và tối, 0–6h trong 3–8%",
         f"trưa {'có' if noon_peak else 'không'}, tối {'có' if eve_peak else 'không'}",
-        night < 0.05 and bool(noon_peak) and bool(eve_peak),
+        0.03 <= night <= 0.08 and bool(noon_peak) and bool(eve_peak),
+    )
+    smooth_bad = []
+    for hour_i in range(24):
+        # 6–8h là bậc sáng. 20–22h và 0–1h dốc xuống đáy đêm để 0–6h còn 3–8%.
+        if hour_i in (0, 1, 6, 7, 8, 20, 21, 22):
+            continue
+        for neighbor in ((hour_i - 1) % 24, (hour_i + 1) % 24):
+            if hist_hour[hour_i] > hist_hour[neighbor] * 1.25:
+                smooth_bad.append(hour_i)
+                break
+    others = np.concatenate([hist_hour[:3], hist_hour[5:]])
+    lowest_ok = int(hist_hour[3]) <= int(others.min()) and int(hist_hour[4]) <= int(others.min())
+    report.add(
+        "Giờ liền kề và đáy đêm",
+        f"3h {int(hist_hour[3])}, 4h {int(hist_hour[4])}",
+        "≤ 25% liền kề, trừ 6–8h; 3–4h thấp nhất",
+        "mượt" if not smooth_bad else "vượt ở " + ",".join(str(item) for item in smooth_bad),
+        not smooth_bad and lowest_ok,
     )
 
     round_rate = float((transactions["amount"] % 1000 == 0).mean())
@@ -278,12 +296,96 @@ def main() -> None:
         print(f"    {name}: {pct(rate)}")
     school_new = new_rates.get("school_fee", 0.0)
     large_new = new_rates.get("large_oneoff", 0.0)
+    school_tx = transactions.loc[transactions["tx_type"] == "school_fee", ["from_account", "to_account", "ts", "amount"]].copy()
+    school_tx["from_account"] = school_tx["from_account"].astype(str)
+    school_tx["to_account"] = school_tx["to_account"].astype(str)
+    school_tx["payer"] = school_tx["from_account"].map(acc_cust)
+    cust_family = dict(zip(latent["customer_id"].astype(str), latent["family_group_id"].astype(str)))
+    school_tx["family"] = school_tx["payer"].map(cust_family)
+    paying_families = set(school_tx["family"].dropna())
+    child_rows = household.loc[(household["role"] == "child") & (household["age"] <= SCHOOL_AGE)].copy()
+    child_rows["family_group_id"] = child_rows["family_group_id"].astype(str)
+    paying_children = child_rows.loc[child_rows["family_group_id"].isin(paying_families)]
+    window_days = max((sim_end - sim_start).days, 1)
+    per_child_year = (len(school_tx) / len(paying_children) * (365 / window_days)) if len(paying_children) else 0.0
     report.add(
-        "Học phí và large_oneoff tới người nhận mới",
-        f"học phí {pct(school_new)}, oneoff {pct(large_new)}",
+        "Học phí tới người nhận mới",
+        pct(school_new),
+        "5–15%",
+        f"{per_child_year:.2f} lần/con/năm",
+        0.05 <= school_new <= 0.15 and len(school_tx) > 0,
+    )
+    payee_added = payees.copy()
+    payee_added["from_account"] = payee_added["from_account"].astype(str)
+    payee_added["to_account"] = payee_added["to_account"].astype(str)
+    school_pairs = school_tx.merge(payee_added[["from_account", "to_account", "added_at"]], on=["from_account", "to_account"], how="left")
+    new_schools = school_pairs.loc[school_pairs["added_at"] >= sim_start, ["from_account", "to_account", "added_at"]].drop_duplicates(["from_account", "to_account"])
+    new_months = new_schools["added_at"].dt.month if len(new_schools) else pd.Series(dtype=int)
+    aug_oct = float(new_months.isin([8, 9, 10]).mean()) if len(new_months) else 0.0
+    print("  Người nhận trường mới theo tháng:")
+    if len(new_months):
+        for month, count in new_months.value_counts().sort_index().items():
+            print(f"    tháng {int(month)}: {int(count)}")
+    else:
+        print("    không có")
+    print(f"  Học phí: {per_child_year:.2f} lần/con/năm, người nhận mới {pct(school_new)}")
+    report.add(
+        "Người nhận trường mới trong tháng 8–10",
+        pct(aug_oct),
+        "≥ 70%",
+        f"{len(new_schools)} người nhận mới",
+        len(new_schools) > 0 and aug_oct >= 0.70,
+    )
+    n_aug = int((new_months == 8).sum()) if len(new_months) else 0
+    n_sep = int((new_months == 9).sum()) if len(new_months) else 0
+    report.add(
+        "Người nhận trường mới ở tháng 8 và 9",
+        f"tháng 8: {n_aug}, tháng 9: {n_sep}",
+        "cả hai tháng",
+        "-",
+        n_aug > 0 and n_sep > 0,
+    )
+    fee_amounts = school_tx["amount"].to_numpy().astype(np.int64)
+    n_fee_levels = int(pd.Series(fee_amounts).nunique()) if len(fee_amounts) else 0
+    fee_cv = float(fee_amounts.std() / fee_amounts.mean()) if len(fee_amounts) and fee_amounts.mean() else 0.0
+    report.add(
+        "Học phí nhiều mức tiền",
+        f"{n_fee_levels} mức, CV {fee_cv:.2f}",
+        "> 50 mức, CV > 0.4",
+        "-",
+        n_fee_levels > 50 and fee_cv > 0.4,
+    )
+    if len(school_tx):
+        day_share = float(school_tx["ts"].dt.floor("D").value_counts(normalize=True).max())
+        busiest = school_tx["ts"].dt.floor("D").value_counts().index[0]
+        busiest_label = str(pd.Timestamp(busiest).date())
+    else:
+        day_share = 1.0
+        busiest_label = "-"
+    report.add(
+        "Học phí không dồn một ngày",
+        pct(day_share),
+        "≤ 15%",
+        busiest_label,
+        len(school_tx) > 0 and day_share <= 0.15,
+    )
+    schools_per_family = school_tx.groupby("family")["to_account"].nunique()
+    children_per_family = child_rows.groupby("family_group_id").size()
+    compared = schools_per_family.to_frame("schools").join(children_per_family.rename("children"), how="left")
+    too_many = int((compared["schools"] > compared["children"].fillna(0)).sum())
+    report.add(
+        "Mỗi con một trường tại một thời điểm",
+        f"{too_many} hộ vượt",
+        "0",
+        "-",
+        too_many == 0,
+    )
+    report.add(
+        "large_oneoff tới người nhận mới",
+        pct(large_new),
         "> 80%",
         "-",
-        school_new > 0.80 and large_new > 0.80,
+        large_new > 0.80,
     )
 
     methods = payees["add_method"].value_counts(normalize=True)
@@ -323,7 +425,7 @@ def main() -> None:
         "Cột observed ∩ truth",
         "{" + ", ".join(sorted(overlap)) + "}",
         "chỉ khóa",
-        "relation trùng tên với guardians bước 1",
+        "không còn relation",
         overlap <= KEYS and "customer_id" in overlap,
     )
 

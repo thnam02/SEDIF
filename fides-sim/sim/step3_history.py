@@ -6,6 +6,7 @@ Số dư khách hàng chạy theo thời gian; thiếu tiền thì giảm hoặc
 
 from __future__ import annotations
 
+import heapq
 import sys
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from sim.io import write
 
 TZ = "Asia/Ho_Chi_Minh"
 SCHOOL_AGE = 22
+# Lớp 1, lớp 6, lớp 10 và năm nhất đại học.
+ENTRY_AGES = (6, 11, 15, 18)
 TX_SIGMA = 0.7
 # kind
 SALARY, BUSINESS_IN, BILL, RENT, CARD, CASH, TRANSFER, OWN, SCHOOL, LARGE, DRAIN, PASS_IN, PASS_OUT = range(13)
@@ -33,14 +36,13 @@ KIND_NAME = np.array(
     dtype=object,
 )
 INBOUND = {SALARY, BUSINESS_IN, PASS_IN}
+# 23h giảm dần tới đáy 3–4h, rồi tăng từ 5h. 0–6h khoảng 5,5% tổng trọng số.
+# Bậc tối 20–22h và 0–1h dốc hơn 25% để đáy đêm đủ thấp; 6–8h là bậc sáng.
 WEEKDAY_HOUR = np.array(
-    [1, 1, 1, 1, 1, 1, 4, 8, 12, 14, 16, 22, 22, 18, 14, 12, 14, 16, 18, 26, 26, 22, 14, 6],
+    [100, 72, 54, 46, 46, 54, 200, 265, 340, 400, 460, 530, 530, 460, 390, 340, 370, 400, 420, 460, 460, 280, 170, 110],
     dtype=float,
 )
-WEEKEND_HOUR = np.array(
-    [1, 1, 1, 1, 1, 1, 2, 3, 6, 10, 16, 22, 24, 22, 18, 16, 16, 18, 20, 28, 28, 24, 16, 8],
-    dtype=float,
-)
+WEEKEND_HOUR = WEEKDAY_HOUR.copy()
 WEEKDAY_HOUR /= WEEKDAY_HOUR.sum()
 WEEKEND_HOUR /= WEEKEND_HOUR.sum()
 PURPOSE = {
@@ -52,7 +54,7 @@ PURPOSE = {
     CASH: ["rut tien", "rut tien mat", "rut atm"],
     TRANSFER: ["chuyen tien", "ck", "chuyen khoan", "gui tien", "tra no"],
     OWN: ["chuyen tien", "chuyen khoan", "gui tiet kiem", "chuyen noi bo"],
-    SCHOOL: ["hoc phi", "nop hoc phi", "hoc phi thang 8", "hoc phi thang 9"],
+    SCHOOL: ["hoc phi", "nop hoc phi", "hoc phi thang", "giu cho", "nhap hoc"],
     LARGE: ["dat coc", "coc nha", "coc xe", "vien phi", "nhap vien"],
     DRAIN: ["chuyen tien", "chuyen khoan", "ck"],
     PASS_IN: ["gop tien", "dong quy", "chuyen tien", "dong tien"],
@@ -214,7 +216,7 @@ def choose_primary(accounts: pd.DataFrame, n_customers: int):
     return primary, alt, drain_to
 
 
-def build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim_end):
+def build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim_end, hist):
     n = len(customers)
     phones_of = customers["phone_number_id"].astype(str).to_numpy()
     family = latent["family_group_id"].astype(str).to_numpy()
@@ -297,21 +299,18 @@ def build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim
     school_hh = np.array(school_households, dtype=object)
     chosen_hh = np.array([], dtype=object)
     if len(school_hh):
-        take = int(round(0.25 * len(school_hh)))
+        take = int(round(float(hist["school_fee_parent_share"]) * len(school_hh)))
         chosen_hh = rng.choice(school_hh, size=take, replace=False) if take else np.array([], dtype=object)
-    # Phụ huynh nào cũng có trường trong danh bạ; chỉ một phần đóng học phí.
-    school_parents = [head_of[group_id] for group_id in school_hh if group_id in head_of]
-    if school_parents:
-        parent_idx = np.array(school_parents, dtype=np.int32)
-        school_rows = pools["school"][np.arange(len(parent_idx)) % len(pools["school"])]
-        merch_c = np.concatenate([merch_c, parent_idx])
-        merch_num = np.concatenate([merch_num, np.array([merchant_phone[int(row)] for row in school_rows], dtype=object)])
+    holder = accounts["holder_name_ascii"].astype(str).to_numpy()
+    school_plan = plan_school_fees(
+        chosen_hh, head_of, child_of, age, pools["school"], merchant_phone, holder, hist, rng,
+    )
 
     contacts = pd.DataFrame(
         {
             "cidx": np.concatenate([np.asarray(fam_c, dtype=np.int32), friend_c[0], merch_c]),
             "number_id": np.concatenate([np.asarray(fam_num, dtype=object), friend_num[0], merch_num]),
-            "relation": np.concatenate([
+            "contact_type": np.concatenate([
                 np.full(len(fam_c), "family", dtype=object),
                 friend_rel[0],
                 np.full(len(merch_c), "merchant", dtype=object),
@@ -323,7 +322,7 @@ def build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim
     strength = np.empty(len(contacts), dtype=float)
     low = {"family": 0.75, "friend": 0.35, "work": 0.25, "merchant": 0.45}
     high = {"family": 1.0, "friend": 0.85, "work": 0.70, "merchant": 0.95}
-    rel_arr = contacts["relation"].to_numpy()
+    rel_arr = contacts["contact_type"].to_numpy()
     draw = rng.random(len(contacts))
     for name in low:
         mask = rel_arr == name
@@ -340,10 +339,33 @@ def build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim
     contacts["strength"] = strength
     contacts["first_contact"] = first.to_numpy()
     contacts["customer_id"] = customers["customer_id"].to_numpy()[contacts["cidx"].to_numpy()]
-    out = contacts[["customer_id", "number_id", "relation", "strength", "first_contact"]].reset_index(drop=True)
+    if school_plan:
+        school_contacts = pd.DataFrame(school_plan)[["cidx", "number_id", "is_new"]].drop_duplicates(["cidx", "number_id"])
+        school_contacts["contact_type"] = "merchant"
+        school_contacts["strength"] = 0.70
+        school_contacts["customer_id"] = customers["customer_id"].to_numpy()[school_contacts["cidx"].to_numpy()]
+        old_start = as_timestamp("2023-09-01")
+        old_end = as_timestamp("2026-06-01")
+        old_span = max(int((old_end - old_start).total_seconds()), 1)
+        new_start = as_timestamp("2026-08-01")
+        first_school = pd.Series(pd.NaT, index=school_contacts.index, dtype=f"datetime64[ns, {TZ}]")
+        is_new = school_contacts["is_new"].to_numpy()
+        n_old_school = int((~is_new).sum())
+        n_new_school = int(is_new.sum())
+        if n_old_school:
+            first_school.iloc[np.flatnonzero(~is_new)] = old_start + pd.to_timedelta(rng.integers(0, old_span, size=n_old_school), unit="s")
+        if n_new_school:
+            first_school.iloc[np.flatnonzero(is_new)] = new_start + pd.to_timedelta(rng.integers(0, 10 * 86400, size=n_new_school), unit="s")
+        school_contacts["first_contact"] = first_school.to_numpy()
+        contacts = pd.concat(
+            [contacts, school_contacts[["customer_id", "cidx", "number_id", "contact_type", "strength", "first_contact"]]],
+            ignore_index=True,
+        )
+        contacts = contacts.drop_duplicates(["cidx", "number_id"], keep="first")
+    out = contacts[["customer_id", "number_id", "contact_type", "strength", "first_contact"]].reset_index(drop=True)
     out["customer_id"] = out["customer_id"].astype("string")
     out["number_id"] = out["number_id"].astype("string")
-    out["relation"] = out["relation"].astype("string")
+    out["contact_type"] = out["contact_type"].astype("string")
 
     directory = {
         "pools": pools,
@@ -352,11 +374,106 @@ def build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim
         "head_of": head_of,
         "child_of": child_of,
         "groups": groups,
-        "school_rows_for_parent": {},
+        "school_plan": school_plan,
     }
-    if school_parents:
-        directory["school_rows_for_parent"] = dict(zip(parent_idx.tolist(), school_rows.tolist()))
     return out, directory
+
+
+FEE_BAND = {
+    "preschool": (2_000_000, 5_000_000),
+    "basic": (1_000_000, 8_000_000),
+    "high": (2_000_000, 10_000_000),
+    "university": (8_000_000, 30_000_000),
+}
+
+
+def school_level(name: str) -> str:
+    if name.startswith("DAI HOC"):
+        return "university"
+    if "THPT" in name:
+        return "high"
+    if "MAM NON" in name:
+        return "preschool"
+    return "basic"
+
+
+def plan_school_fees(chosen_hh, head_of, child_of, age, school_pool, merchant_phone, holder, hist, rng) -> list[dict]:
+    """Mỗi con một trường. Người nhận mới chỉ khi vào cấp mới, đổi trường, hoặc em bắt đầu đi học."""
+    if len(chosen_hh) == 0:
+        return []
+    levels = [school_level(holder[int(row)]) for row in school_pool]
+    low = np.array([FEE_BAND[level][0] for level in levels], dtype=float)
+    high = np.array([FEE_BAND[level][1] for level in levels], dtype=float)
+    center = np.sqrt(low * high)
+    sigma = np.log(high / low) / 3.0
+    base = np.clip(np.rint(center * np.exp(sigma * rng.standard_normal(len(school_pool)))), low, high).astype(np.int64)
+    monthly_flag = rng.random(len(school_pool)) < float(hist["school_fee_monthly_share"])
+    due_day = rng.integers(1, 21, size=len(school_pool))
+    enroll = rng.random(len(school_pool)) < float(hist["school_enrollment_fee_share"])
+    enroll_base = np.rint(base * rng.uniform(0.25, 0.55, size=len(school_pool))).astype(np.int64)
+    profile = {}
+    for index, row in enumerate(school_pool):
+        key = int(row)
+        profile[key] = {
+            "level": levels[index],
+            "base": int(base[index]),
+            "enroll_base": int(enroll_base[index]),
+            "due_day": int(due_day[index]),
+            "enrollment": bool(enroll[index]),
+            "monthly": bool(monthly_flag[index]) and levels[index] != "university",
+        }
+    change_p = float(hist["school_change_yearly_share"])
+    plan = []
+    for group_id in sorted((str(value) for value in chosen_hh)):
+        head = head_of.get(group_id)
+        children = sorted(child_of.get(group_id, []))
+        if head is None or not children:
+            continue
+        youngest = min(children, key=lambda person: (int(age[person]), person))
+        assigned: list[tuple[int, bool]] = []
+        for child in children:
+            entry = int(age[child]) in ENTRY_AGES
+            sibling_start = child == youngest and len(children) >= 2 and entry
+            change = (not entry) and (not sibling_start) and (rng.random() < change_p)
+            is_new = bool(entry or sibling_start or change)
+            blocked = {row for row, new in assigned if new != is_new}
+            start = (int(child) * 7 + (11 if is_new else 3)) % len(school_pool)
+            school_row = int(school_pool[start])
+            for step in range(len(school_pool)):
+                candidate = int(school_pool[(start + step) % len(school_pool)])
+                if candidate not in blocked:
+                    school_row = candidate
+                    break
+            assigned.append((school_row, is_new))
+            info = profile[school_row]
+            plan.append(
+                {
+                    "cidx": int(head),
+                    "child": int(child),
+                    "school_row": school_row,
+                    "number_id": merchant_phone[school_row],
+                    "is_new": is_new,
+                    "monthly": info["monthly"],
+                    "level": info["level"],
+                    "base": info["base"],
+                    "enroll_base": info["enroll_base"],
+                    "due_day": info["due_day"],
+                    "enrollment": info["enrollment"],
+                }
+            )
+    return plan
+
+
+def school_payment_slots(monthly: bool, is_new: bool, enrollment: bool, level: str) -> list[tuple[int, str]]:
+    """Học kỳ và đại học thu tháng 9. Trường thu tháng đóng thêm tháng 7–8 nếu đã nhập học.
+
+    Học sinh mới có thể đóng thêm phí giữ chỗ trong tháng 8.
+    """
+    semester = level == "university" or not monthly
+    slots = [(9, "tuition")] if semester or is_new else [(7, "tuition"), (8, "tuition"), (9, "tuition")]
+    if is_new and enrollment:
+        slots.append((8, "enroll"))
+    return slots
 
 
 def _clock(n, day, weekend, rng):
@@ -405,7 +522,6 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
         amount = np.rint(base * factor).astype(np.int64)
         amount = round_vnd(amount, _round_flags(len(amount), share_round, rng))
         day, hour, minute, second = _clock(len(actor), day, weekend, rng)
-        hour = np.clip(hour, 8, 11).astype(np.int16)
         employer = directory["pools"]["utility"][actor % len(directory["pools"]["utility"])]
         events.add(
             from_row=employer.astype(np.int32),
@@ -538,33 +654,50 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
             do_round=np.zeros(len(actor), dtype=bool),
         )
 
-    # Học phí tháng 8 và 9, người nhận mới.
-    fee_parents = []
-    for group_id in directory["chosen_school_hh"]:
-        head = directory["head_of"].get(group_id)
-        if head is None or primary[head] < 0:
+    # Học phí: cùng một trường cho mỗi con. Con đã nhập học từ trước thì người nhận là payee cũ.
+    fee_actor, fee_school, fee_day, fee_new, fee_amount = [], [], [], [], []
+    med_income = float(np.median(income))
+
+    def fee_day_index(month: int, due_day: int, offset: int):
+        match = np.flatnonzero((dates.month == month) & (dates.day == due_day))
+        if len(match) == 0:
+            return None
+        index = int(match[0])
+        room_before = index
+        room_after = len(dates) - 1 - index
+        offset = int(np.clip(offset, -room_before, room_after))
+        return index + offset
+
+    for item in directory["school_plan"]:
+        head = int(item["cidx"])
+        if primary[head] < 0:
             continue
-        fee_parents.append(head)
-    if fee_parents:
-        parents = np.asarray(fee_parents, dtype=np.int32)
-        fee_days = []
-        for month in (8, 9):
-            hits = np.flatnonzero((dates.month == month) & (dates.day == 12))
-            if len(hits):
-                fee_days.append(int(hits[0]))
-        actor = np.repeat(parents, len(fee_days))
-        amount = np.rint(np.exp(np.log(10_000_000) + rng.random(len(actor)) * np.log(5))).astype(np.int64)
-        day = np.tile(np.asarray(fee_days, dtype=np.int16), len(parents))
-        school_acct = np.array([directory["school_rows_for_parent"].get(int(person), directory["pools"]["school"][int(person) % len(directory["pools"]["school"])]) for person in actor], dtype=np.int32)
-        day, hour, minute, second = _clock(len(actor), day, weekend, rng)
+        factor = float(np.clip((float(income[head]) / med_income) ** 0.45, 0.65, 1.70))
+        slots = school_payment_slots(bool(item["monthly"]), bool(item["is_new"]), bool(item["enrollment"]), str(item["level"]))
+        for month, slot in slots:
+            on_time = rng.random() < 0.70
+            offset = int(rng.integers(-3, 4) if on_time else rng.integers(1, 15))
+            day_index = fee_day_index(month, int(item["due_day"]), offset)
+            if day_index is None:
+                continue
+            raw = item["enroll_base"] if slot == "enroll" else item["base"]
+            fee_actor.append(head)
+            fee_school.append(int(item["school_row"]))
+            fee_day.append(day_index)
+            fee_new.append(bool(item["is_new"]))
+            fee_amount.append(max(1_000, int(round(raw * factor))))
+    if fee_actor:
+        actor = np.asarray(fee_actor, dtype=np.int32)
+        amount = np.asarray(fee_amount, dtype=np.int64)
+        day, hour, minute, second = _clock(len(actor), np.asarray(fee_day, dtype=np.int16), weekend, rng)
         events.add(
             from_row=primary[actor],
-            to_row=school_acct,
+            to_row=np.asarray(fee_school, dtype=np.int32),
             actor=actor,
             amount=amount,
             kind=np.full(len(actor), SCHOOL, dtype=np.int8),
             day=day, hour=hour, minute=minute, second=second,
-            old_payee=np.zeros(len(actor), dtype=bool),
+            old_payee=~np.asarray(fee_new, dtype=bool),
             do_round=np.zeros(len(actor), dtype=bool),
         )
 
@@ -735,23 +868,11 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
         if card.any():
             cards = frame.loc[card].copy()
             rest = frame.loc[~card]
-            cards["sec"] = cards["day"].to_numpy().astype(np.int64) * 86400 + cards["hour"].to_numpy().astype(np.int64) * 3600 + cards["minute"].to_numpy().astype(np.int64) * 60 + cards["second"].to_numpy().astype(np.int64)
             grouped = cards.groupby(["from_row", "day"], sort=False)
-            sec = grouped["sec"].min()
-            amount = grouped["amount"].sum()
-            first = grouped.agg(
-                to_row=("to_row", "first"),
-                actor=("actor", "first"),
-                old_payee=("old_payee", "max"),
-                do_round=("do_round", "max"),
-                kind=("kind", "first"),
-            )
-            packed = first.reset_index()
-            packed["amount"] = amount.to_numpy().astype(np.int64)
-            total = sec.to_numpy()
-            packed["hour"] = ((total % 86400) // 3600).astype(np.int16)
-            packed["minute"] = ((total % 3600) // 60).astype(np.int16)
-            packed["second"] = (total % 60).astype(np.int16)
+            chosen = cards.loc[grouped["amount"].idxmax()].drop(columns=["amount", "old_payee", "do_round"])
+            totals = grouped.agg(amount=("amount", "sum"), old_payee=("old_payee", "max"), do_round=("do_round", "max")).reset_index()
+            packed = chosen.merge(totals, on=["from_row", "day"], how="left")
+            packed["amount"] = packed["amount"].to_numpy().astype(np.int64)
             frame = pd.concat([rest, packed[rest.columns]], ignore_index=True)
     return frame
 
@@ -776,7 +897,106 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
     keep = np.ones(n, dtype=bool)
     dropped_open = 0
     fbb = np.zeros(n, dtype=np.int64)
-    for i in order:
+    day_col = frame["day"].to_numpy().astype(np.int16)
+    hour_col = frame["hour"].to_numpy().astype(np.int16)
+    minute_col = frame["minute"].to_numpy().astype(np.int16)
+    second_col = frame["second"].to_numpy().astype(np.int16)
+    actor_col = frame["actor"].to_numpy().astype(np.int32)
+    old_col = frame["old_payee"].to_numpy().astype(bool)
+    probe = stamp_from_parts(origin, np.array([0]), np.array([0]), np.array([0]), np.array([0]))
+    origin_s = int(unix_seconds(probe.astype("int64").to_numpy())[0])
+    deferred: list[tuple] = []
+    extras: list[dict] = []
+    seq = 0
+
+    def delay_within(day_i: int, want: int) -> int | None:
+        room = 89 - int(day_i)
+        if room < 1:
+            return None
+        return min(int(want), room)
+
+    def push_school(day_i, amt, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts) -> bool:
+        nonlocal seq
+        if amt < 1_000 or not (0 <= int(day_i) < 90) or attempts > 2:
+            return False
+        ts_i = origin_s + int(day_i) * 86400 + int(hour_i) * 3600 + int(minute_i) * 60 + int(second_i)
+        seq += 1
+        heapq.heappush(
+            deferred,
+            (ts_i, seq, int(day_i), int(amt), int(fr), int(tr), int(actor_i), int(hour_i), int(minute_i), int(second_i), bool(old_i), int(attempts)),
+        )
+        return True
+
+    def settle_school(day_i, amt, avail, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts):
+        """Thiếu số dư thì chia đôi hoặc dời nguyên số tiền. Không hạ học phí xuống đúng số dư."""
+        half = int(amt) // 2
+        split_delay = delay_within(day_i, 10)
+        late_delay = delay_within(day_i, 7 + (int(fr) % 8))
+        if attempts < 2 and half >= 1_000 and avail >= half and split_delay is not None:
+            push_school(int(day_i) + split_delay, int(amt) - half, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts + 1)
+            return half
+        if attempts < 2 and late_delay is not None:
+            push_school(int(day_i) + late_delay, amt, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts + 1)
+        return None
+
+    def apply_outbound(fr, tr, k, amt, avail, day_i, hour_i, minute_i, second_i, actor_i, old_i, do_round_i, attempts):
+        if k == SCHOOL and amt > avail:
+            paid = settle_school(day_i, amt, avail, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts)
+            if paid is None:
+                return None
+            amt = paid
+        elif amt > avail:
+            floor = 50_000_000 if k == LARGE else 1_000
+            if avail < floor:
+                return None
+            amt = avail
+        if do_round_i and k not in (SCHOOL, LARGE, DRAIN):
+            unit = 100_000 if amt >= 1_000_000 else 1_000
+            snapped = (amt // unit) * unit
+            if snapped >= 1_000:
+                amt = snapped
+        if amt <= 0 or amt > avail:
+            return None
+        if k == LARGE and amt < 50_000_000:
+            return None
+        return int(amt)
+
+    pos = 0
+    n_order = len(order)
+    while pos < n_order or deferred:
+        next_orig = int(ts_s[order[pos]]) if pos < n_order else 2**62
+        if deferred and deferred[0][0] < next_orig:
+            ts_i, _, day_i, amt, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts = heapq.heappop(deferred)
+            if ts_i < opened_s[fr] or (tr >= 0 and ts_i < opened_s[tr]):
+                dropped_open += 1
+                continue
+            avail = int(bal[fr])
+            paid = apply_outbound(fr, tr, SCHOOL, amt, avail, day_i, hour_i, minute_i, second_i, actor_i, old_i, False, attempts)
+            if paid is None:
+                continue
+            bal[fr] = avail - paid
+            if tr >= 0 and tracked[tr]:
+                bal[tr] += paid
+            extras.append(
+                {
+                    "from_row": fr,
+                    "to_row": tr,
+                    "actor": actor_i,
+                    "amount": paid,
+                    "kind": SCHOOL,
+                    "day": day_i,
+                    "hour": hour_i,
+                    "minute": minute_i,
+                    "second": second_i,
+                    "old_payee": old_i,
+                    "do_round": False,
+                    "from_balance_before": avail,
+                    "ts": origin + pd.to_timedelta(int(day_i) * 86400 + int(hour_i) * 3600 + int(minute_i) * 60 + int(second_i), unit="s"),
+                }
+            )
+            continue
+        i = int(order[pos])
+        pos += 1
         fr = int(from_row[i])
         tr = int(to_row[i])
         k = int(kind[i])
@@ -800,32 +1020,20 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
                 keep[i] = False
             continue
         avail = int(bal[fr])
-        if amt > avail:
-            floor = 10_000_000 if k == SCHOOL else 50_000_000 if k == LARGE else 1_000
-            if avail < floor:
-                keep[i] = False
-                continue
-            amt = avail
-        if do_round[i] and k not in (SCHOOL, LARGE, DRAIN):
-            unit = 100_000 if amt >= 1_000_000 else 1_000
-            snapped = (amt // unit) * unit
-            if snapped >= 1_000:
-                amt = snapped
-        if amt <= 0 or amt > avail:
-            keep[i] = False
-            continue
-        if k == SCHOOL and amt < 10_000_000:
-            keep[i] = False
-            continue
-        if k == LARGE and amt < 50_000_000:
+        paid = apply_outbound(
+            fr, tr, k, amt, avail,
+            int(day_col[i]), int(hour_col[i]), int(minute_col[i]), int(second_col[i]),
+            int(actor_col[i]), bool(old_col[i]), bool(do_round[i]), 0,
+        )
+        if paid is None:
             keep[i] = False
             continue
         fbb[i] = avail
-        amount[i] = amt
-        bal[fr] = avail - amt
+        amount[i] = paid
+        bal[fr] = avail - paid
         if tr >= 0 and tracked[tr]:
-            bal[tr] += amt
-    if not keep.any():
+            bal[tr] += paid
+    if not keep.any() and not extras:
         raise RuntimeError(
             f"Mọi giao dịch bị loại. n={n}, mở sau ts={dropped_open}, "
             f"ts0={int(ts_s[int(order[0])])}, opened0={int(opened_s[int(from_row[int(order[0])])])}"
@@ -834,6 +1042,8 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
     kept["amount"] = amount[keep]
     kept["from_balance_before"] = fbb[keep]
     kept["ts"] = ts[keep].to_numpy()
+    if extras:
+        kept = pd.concat([kept, pd.DataFrame(extras)], ignore_index=True)
     kept = kept.sort_values(["ts"], kind="mergesort").reset_index(drop=True)
     # Giữ thứ tự xử lý số dư: sort theo ts là ổn vì lexsort đã theo ts, và các dòng bị loại không đổi thứ tự tương đối.
     return kept.reset_index(drop=True)
@@ -955,7 +1165,7 @@ def main() -> None:
     primary, alt, drain_to = choose_primary(accounts, len(customers))
     if np.any(primary < 0):
         raise RuntimeError("Có khách hàng không có tài khoản personal")
-    contacts, directory = build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim_end)
+    contacts, directory = build_contacts(customers, latent, phones, accounts, age, rng, sim_start, sim_end, cfg["history"])
     dates = pd.date_range(sim_start, periods=90, freq="D")
     weekend = dates.dayofweek.to_numpy() >= 5
     anchors = rng.choice(np.array([5, 10, 15, 25]), size=len(customers))
