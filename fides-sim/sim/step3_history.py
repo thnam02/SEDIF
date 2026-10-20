@@ -707,8 +707,12 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
     n_drain = int(round(float(hist["own_transfer_drain_share"]) * n))
     n_pass = int(round(float(hist["legit_passthrough_share"]) * n))
     large_who = rng.choice(rich, size=min(n_large, len(rich)), replace=False) if n_large and len(rich) else np.array([], dtype=int)
-    multi = np.flatnonzero((drain_to >= 0) & (drain_to != primary) & ~np.isin(cidx, large_who))
-    drain_who = rng.choice(multi, size=min(n_drain, len(multi)), replace=False) if n_drain and len(multi) else np.array([], dtype=int)
+    multi = np.flatnonzero((drain_to >= 0) & (primary >= 0) & (drain_to != primary) & ~np.isin(cidx, large_who))
+    # Ưu tiên ngân hàng B01 để phiên rút gần hết đủ mẫu, tỷ lệ khách không đổi.
+    primary_bank = accounts["bank_id"].astype(str).to_numpy()
+    multi_home = multi[primary_bank[primary[multi]] == "B01"] if len(multi) else multi
+    drain_pool = multi_home if len(multi_home) >= n_drain else multi
+    drain_who = rng.choice(drain_pool, size=min(n_drain, len(drain_pool)), replace=False) if n_drain and len(drain_pool) else np.array([], dtype=int)
     blocked = np.zeros(n, dtype=bool)
     blocked[large_who] = True
     blocked[drain_who] = True
@@ -751,54 +755,81 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
         )
 
     if len(pass_who):
-        actor = pass_who.astype(np.int32)
-        n_src = rng.integers(4, 8, size=len(actor))
-        sender_actor = np.repeat(actor, n_src)
-        n_in = len(sender_actor)
-        piece = np.rint(rng.uniform(800_000, 4_000_000, size=n_in)).astype(np.int64)
-        day0 = rng.integers(15, 75, size=len(actor), dtype=np.int16)
-        day_in = np.repeat(day0, n_src)
-        hour_in = np.full(n_in, 10, dtype=np.int16)
-        minute = rng.integers(0, 50, size=n_in, dtype=np.int16)
-        second = rng.integers(0, 60, size=n_in, dtype=np.int16)
-        ext_pool = accounts.index[(accounts["cidx"] < 0) & accounts["phone_number_id"].notna() & (accounts["account_type"] == "personal")].to_numpy()
-        events.add(
-            from_row=rng.choice(ext_pool, size=n_in).astype(np.int32),
-            to_row=primary[sender_actor],
-            actor=sender_actor,
-            amount=piece,
-            kind=np.full(n_in, PASS_IN, dtype=np.int8),
-            day=day_in, hour=hour_in, minute=minute, second=second,
-            old_payee=np.zeros(n_in, dtype=bool), do_round=np.zeros(n_in, dtype=bool),
-        )
-        received = np.bincount(np.repeat(np.arange(len(actor)), n_src), weights=piece, minlength=len(actor))
-        out_amt = np.rint(received * rng.uniform(0.88, 0.97, size=len(actor))).astype(np.int64)
-        # Chuyển cho con nếu có, không thì một khách khác.
-        dest_cust = (actor + 997) % n
-        for index, person in enumerate(actor):
-            kids = []
-            # family id via latent alignment
-            dest_cust[index] = (int(person) + 997) % n
+        # Mỗi thủ quỹ có 3–15 người quen. Mỗi lần nhận được chuyển 70–95% đi sau 1–12 giờ,
+        # và các lần cách nhau hơn 24 giờ để tỷ lệ 24h của từng khoản vào không bị cộng dồn.
+        ext_pool = accounts.index[
+            (accounts["cidx"] < 0) & accounts["phone_number_id"].notna() & (accounts["account_type"] == "personal")
+        ].to_numpy()
         fam = latent["family_group_id"].astype(str).to_numpy()
-        for index, person in enumerate(actor):
-            children = directory["child_of"].get(fam[person], [])
-            others = [child for child in children if child != person and primary[child] >= 0]
-            if others:
-                dest_cust[index] = others[0]
-            elif dest_cust[index] == person:
-                dest_cust[index] = (person + 1) % n
-        events.add(
-            from_row=primary[actor],
-            to_row=primary[dest_cust],
-            actor=actor,
-            amount=out_amt,
-            kind=np.full(len(actor), PASS_OUT, dtype=np.int8),
-            day=day0, hour=np.full(len(actor), 13, dtype=np.int16),
-            minute=rng.integers(0, 60, size=len(actor), dtype=np.int16),
-            second=rng.integers(0, 60, size=len(actor), dtype=np.int16),
-            old_payee=np.ones(len(actor), dtype=bool),
-            do_round=np.zeros(len(actor), dtype=bool),
-        )
+        in_from, in_to, in_actor, in_amt = [], [], [], []
+        in_day, in_hour, in_min, in_sec = [], [], [], []
+        out_from, out_to, out_actor, out_amt = [], [], [], []
+        out_day, out_hour, out_min, out_sec = [], [], [], []
+        for person in pass_who.astype(int):
+            if primary[person] < 0 or len(ext_pool) < 3:
+                continue
+            n_friends = int(rng.integers(3, 16))
+            friends = rng.choice(ext_pool, size=min(n_friends, len(ext_pool)), replace=False)
+            children = [child for child in directory["child_of"].get(fam[person], []) if child != person and primary[child] >= 0]
+            dest = int(children[0]) if children else int((person + 997) % n)
+            if dest == person or primary[dest] < 0:
+                dest = int((person + 1) % n)
+            n_slots = 48
+            for slot in range(n_slots):
+                when_h = 20 + slot * 32
+                delay_h = int(rng.integers(1, 13))
+                out_h = when_h + delay_h
+                if out_h >= 89 * 24:
+                    break
+                amount = int(rng.integers(20_000, 50_001)) * 1000
+                sent = int(amount * float(rng.uniform(0.70, 0.95)) // 1000 * 1000)
+                if sent < 1000:
+                    continue
+                in_from.append(int(friends[slot % len(friends)]))
+                in_to.append(int(primary[person]))
+                in_actor.append(person)
+                in_amt.append(amount)
+                in_day.append(when_h // 24)
+                in_hour.append(when_h % 24)
+                in_min.append(int(rng.integers(0, 50)))
+                in_sec.append(int(rng.integers(0, 60)))
+                out_from.append(int(primary[person]))
+                out_to.append(int(primary[dest]))
+                out_actor.append(person)
+                out_amt.append(sent)
+                out_day.append(out_h // 24)
+                out_hour.append(out_h % 24)
+                out_min.append(int(rng.integers(0, 50)))
+                out_sec.append(int(rng.integers(0, 60)))
+        if in_from:
+            n_in = len(in_from)
+            events.add(
+                from_row=np.asarray(in_from, dtype=np.int32),
+                to_row=np.asarray(in_to, dtype=np.int32),
+                actor=np.asarray(in_actor, dtype=np.int32),
+                amount=np.asarray(in_amt, dtype=np.int64),
+                kind=np.full(n_in, PASS_IN, dtype=np.int8),
+                day=np.asarray(in_day, dtype=np.int16),
+                hour=np.asarray(in_hour, dtype=np.int16),
+                minute=np.asarray(in_min, dtype=np.int16),
+                second=np.asarray(in_sec, dtype=np.int16),
+                old_payee=np.ones(n_in, dtype=bool),
+                do_round=np.zeros(n_in, dtype=bool),
+            )
+            n_out = len(out_from)
+            events.add(
+                from_row=np.asarray(out_from, dtype=np.int32),
+                to_row=np.asarray(out_to, dtype=np.int32),
+                actor=np.asarray(out_actor, dtype=np.int32),
+                amount=np.asarray(out_amt, dtype=np.int64),
+                kind=np.full(n_out, PASS_OUT, dtype=np.int8),
+                day=np.asarray(out_day, dtype=np.int16),
+                hour=np.asarray(out_hour, dtype=np.int16),
+                minute=np.asarray(out_min, dtype=np.int16),
+                second=np.asarray(out_sec, dtype=np.int16),
+                old_payee=np.ones(n_out, dtype=bool),
+                do_round=np.zeros(n_out, dtype=bool),
+            )
 
     # Giao dịch tùy ý: thẻ, chuyển khoản, rút tiền, chuyển nội bộ.
     # Bắt buộc (lương, hóa đơn) đã chiếm khoảng 5 giao dịch/tháng; phần còn lại đạt trung vị 25.

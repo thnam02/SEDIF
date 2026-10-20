@@ -19,7 +19,6 @@ if str(ROOT) not in sys.path:
 
 from sim.io import write
 from sim.step4_mules import as_timestamp, next_ids
-from sim.step5_cases import to_ns
 
 TZ = "Asia/Ho_Chi_Minh"
 VAGUE = ["chuyen tien", "ck", "thanh toan", "chuyen khoan"]
@@ -71,6 +70,21 @@ def stamp_ns(value: pd.Timestamp) -> int:
     return int(value.value)
 
 
+def as_ns(values: np.ndarray) -> np.ndarray:
+    """Đưa mốc int64 về nano giây, kể cả khi parquet lưu micro giây."""
+    values = values.astype(np.int64, copy=False)
+    if len(values) == 0:
+        return values
+    sample = float(np.nanmedian(np.abs(values[: min(len(values), 1000)])))
+    if sample < 1e11:
+        return values * 1_000_000_000
+    if sample < 1e14:
+        return values * 1_000_000
+    if sample < 1e17:
+        return values * 1_000
+    return values
+
+
 def lognormal_seconds(median: float, n: int, rng, low: float = 2.0, high: float = 90.0) -> np.ndarray:
     draw = np.exp(np.log(median) + 0.62 * rng.standard_normal(n))
     return np.clip(draw, low, high)
@@ -96,9 +110,9 @@ def reset_previous(transactions: pd.DataFrame, accounts: pd.DataFrame, observed:
 def device_table(links: pd.DataFrame) -> dict[str, list[tuple[str, int, int | None]]]:
     table: dict[str, list[tuple[str, int, int | None]]] = {}
     ordered = links.sort_values("login_count", ascending=False)
-    first = to_ns(ordered["first_seen"].astype("int64").to_numpy())
+    first = as_ns(ordered["first_seen"].astype("int64").to_numpy())
     last_raw = ordered["last_seen"]
-    last_ns = to_ns(last_raw.astype("int64").to_numpy()) if last_raw.notna().any() else np.zeros(len(ordered), dtype=np.int64)
+    last_ns = as_ns(last_raw.astype("int64").to_numpy()) if last_raw.notna().any() else np.zeros(len(ordered), dtype=np.int64)
     missing_last = last_raw.isna().to_numpy()
     accounts = ordered["account_id"].astype(str).to_numpy()
     devices = ordered["device_id"].astype(str).to_numpy()
@@ -129,7 +143,7 @@ def assign_legit_sessions(transactions: pd.DataFrame, banks: set[str], kinds: se
     if sub.empty:
         return {}
     account = sub["from_account"].astype(str).to_numpy()
-    stamps = to_ns(sub["ts"].astype("int64").to_numpy())
+    stamps = as_ns(sub["ts"].astype("int64").to_numpy())
     tx_ids = sub["tx_id"].astype(str).to_numpy()
     assigned: dict[str, str] = {}
     session_no = 0
@@ -268,6 +282,104 @@ def scale_investment(extra: list[dict], transactions: pd.DataFrame, opening: dic
             inserted[str(row["from_account"])].append((row["ts"], -int(amount)))
 
 
+def ending_balances(transactions: pd.DataFrame, opening: dict[str, int], wanted: set[str]) -> tuple[dict[str, int], dict[str, pd.Timestamp]]:
+    balance = {account: int(opening.get(account, 0)) for account in wanted}
+    last: dict[str, pd.Timestamp] = {}
+    source = transactions["from_account"].astype(str)
+    dest = transactions["to_account"].astype(str)
+    mask = source.isin(wanted) | dest.isin(wanted)
+    sub = transactions.loc[mask, ["tx_id", "ts", "from_account", "to_account", "amount"]].sort_values(["ts", "tx_id"], kind="mergesort")
+    for row in sub.itertuples(index=False):
+        sender = str(row.from_account)
+        receiver = "" if pd.isna(row.to_account) else str(row.to_account)
+        amount = int(row.amount)
+        if sender in balance:
+            balance[sender] = max(0, balance[sender] - amount)
+            last[sender] = row.ts
+        if receiver in balance and receiver != sender:
+            balance[receiver] += amount
+            last[receiver] = row.ts
+    return balance, last
+
+
+def hard_negative_transfers(
+    transactions: pd.DataFrame,
+    accounts: pd.DataFrame,
+    opening: dict[str, int],
+    devices,
+    victims: set[str],
+    blocked_accounts: set[str],
+    home: str,
+    minimum: int,
+    sim_start: pd.Timestamp,
+    sim_end: pd.Timestamp,
+    take_id,
+    session_no: int,
+) -> tuple[list[dict], int]:
+    """Thêm phiên người nhận mới số tiền lớn cho đủ mẫu. Không đụng các loại đã đủ."""
+    present = transactions.loc[transactions["session_id"].notna(), ["session_id", "tx_type", "amount", "from_account", "to_account", "ts"]]
+    have = 0
+    if len(present):
+        owners = dict(zip(accounts["account_id"], accounts["customer_id"].astype(str)))
+        ordered = present.sort_values(["ts", "session_id"], kind="mergesort")
+        seen: set[tuple[str, str]] = set()
+        large_sessions: set[str] = set()
+        blocked: set[str] = set()
+        for row in ordered.itertuples(index=False):
+            kind = str(row.tx_type)
+            session_id = str(row.session_id)
+            if kind in {"own_transfer_drain", "passthrough_out"}:
+                blocked.add(session_id)
+            customer = owners.get(str(row.from_account), "")
+            dest = "" if pd.isna(row.to_account) else str(row.to_account)
+            key = (customer, dest)
+            is_new = dest != "" and dest != str(row.from_account) and key not in seen
+            if dest:
+                seen.add(key)
+            if is_new and (kind == "large_oneoff" or int(row.amount) >= 20_000_000):
+                large_sessions.add(session_id)
+        have = len(large_sessions - blocked)
+    short = max(0, int(minimum) + 40 - have)
+    if short == 0:
+        return [], session_no
+    personal = accounts.loc[
+        accounts["customer_id"].notna()
+        & accounts["bank_id"].astype(str).eq(home)
+        & accounts["account_type"].astype(str).eq("personal")
+        & accounts["status"].astype(str).eq("active")
+    ].copy()
+    personal = personal.loc[~personal["customer_id"].astype(str).isin(victims)]
+    external = accounts.loc[
+        accounts["customer_id"].isna()
+        & accounts["account_type"].astype(str).eq("personal")
+        & ~accounts["account_id"].astype(str).isin(blocked_accounts),
+        "account_id",
+    ].astype(str).to_numpy()
+    if personal.empty or len(external) == 0:
+        return [], session_no
+    wanted = set(personal["account_id"].astype(str))
+    balance, last = ending_balances(transactions, opening, wanted)
+    rich = [account for account in wanted if balance.get(account, 0) >= 25_000_000 and device_at(devices, account, sim_end - pd.Timedelta(days=1))]
+    rich.sort()
+    rows = []
+    cursor = 0
+    for account in rich:
+        if len(rows) >= short:
+            break
+        stamp = last.get(account, sim_start) + pd.Timedelta(hours=2)
+        if stamp >= sim_end - pd.Timedelta(hours=1):
+            stamp = sim_end - pd.Timedelta(hours=2)
+        if stamp <= sim_start:
+            continue
+        session_no += 1
+        dest = str(external[cursor % len(external)])
+        cursor += 1
+        if dest == account:
+            continue
+        rows.append(make_tx(take_id(), stamp, account, dest, 22_000_000, "transfer", "thanh toan", f"S{session_no:08d}"))
+    return rows, session_no
+
+
 def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[str, dict], rng, sim_end: pd.Timestamp, tx_ids: list[str], cursor: int) -> tuple[list[dict], int]:
     """Mỗi khoản vào lớp 1 đi theo forward_to, giữ 2–10% phí, rồi cashout."""
     rows = []
@@ -280,17 +392,22 @@ def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[s
         if meta is None or amount < 1000 or ts >= sim_end:
             continue
         fee = float(rng.uniform(0.02, 0.10))
-        send = int(amount * (1.0 - fee) // 1000 * 1000)
-        if send < 1000:
+        raw = int(amount * (1.0 - fee))
+        if raw < 1:
+            continue
+        low = max(1, int(amount * 0.90))
+        high = max(low, int(amount * 0.98))
+        send = (raw // 1000) * 1000
+        if send < low or send > high:
+            send = min(max(raw, low), high)
+        if send < 1:
             continue
         dests = [str(item) for item in meta["forward_to"] if str(item)]
         if meta["layer"] == "cashout" or not dests:
             method = meta["cashout_method"] if meta["cashout_method"] in {"cash_withdrawal", "crypto_purchase"} else "cash_withdrawal"
             delay = int(rng.integers(5, 41))
             when = ts + pd.Timedelta(minutes=delay)
-            if when >= sim_end:
-                when = sim_end - pd.Timedelta(seconds=30)
-            if when <= ts:
+            if when >= sim_end or when <= ts:
                 continue
             purpose = "rut tien mat" if method == "cash_withdrawal" else "mua crypto"
             tx_type = "cash_withdrawal" if method == "cash_withdrawal" else "crypto_purchase"
@@ -299,15 +416,13 @@ def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[s
             continue
         delay = int(meta["delay"]) if meta["delay"] else int(rng.integers(2, 31))
         when = ts + pd.Timedelta(minutes=delay)
-        if when >= sim_end:
-            when = sim_end - pd.Timedelta(seconds=20)
-        if when <= ts:
+        if when >= sim_end or when <= ts:
             continue
         base = send // len(dests)
         parts = [base] * (len(dests) - 1)
         parts.append(send - base * (len(dests) - 1))
         for dest, part in zip(dests, parts):
-            if part < 1000:
+            if part < 1:
                 continue
             rows.append(make_tx(tx_ids[cursor], when, account, dest, int(part), "transfer", "chuyen tiep", pd.NA))
             cursor += 1
@@ -359,6 +474,102 @@ def replay(transactions: pd.DataFrame, opening: dict[str, int], tracked: set[str
     return kept.reset_index(drop=True)
 
 
+def defer_blockers(transactions: pd.DataFrame, forwards: list[dict], opening: dict[str, int], tracked: set[str], sim_end) -> pd.DataFrame:
+    """Dời khoản chi thường của mule ra sau chuyển tiếp nếu không thì chuyển tiếp bị hụt số dư."""
+    if not forwards:
+        return transactions
+    work = transactions.copy()
+    for _ in range(6):
+        if _defer_once(work, forwards, opening, tracked, sim_end) == 0:
+            break
+    return work
+
+
+def _defer_once(work: pd.DataFrame, forwards: list[dict], opening: dict[str, int], tracked: set[str], sim_end) -> int:
+    sticky = {"school_fee", "own_transfer_drain", "large_oneoff", "passthrough_out"}
+    frame = work.sort_values(["ts", "tx_id"], kind="mergesort")
+    labels = frame.index.to_numpy()
+    sender = frame["from_account"].astype(str).to_numpy()
+    raw_to = frame["to_account"]
+    receiver = raw_to.astype(str).to_numpy()
+    receiver[raw_to.isna().to_numpy()] = ""
+    amount = frame["amount"].to_numpy().astype(np.int64)
+    kind = frame["tx_type"].astype(str).to_numpy()
+    frame_ns = as_ns(frame["ts"].astype("int64").to_numpy())
+    fw = sorted(forwards, key=lambda row: int(pd.Timestamp(row["ts"]).value))
+    fw_ns = [int(pd.Timestamp(row["ts"]).value) for row in fw]
+    balance = {account: int(opening.get(account, 0)) for account in tracked}
+    stack: dict[str, list[tuple[int, int, str]]] = {}
+    moves: list[tuple[object, pd.Timestamp]] = []
+    taken: set[object] = set()
+    pos = 0
+    fi = 0
+    n = len(frame)
+    end_ns = int(pd.Timestamp(sim_end).value)
+    while pos < n or fi < len(fw):
+        use_forward = fi < len(fw) and (pos >= n or fw_ns[fi] < int(frame_ns[pos]))
+        if use_forward:
+            row = fw[fi]
+            fi += 1
+            source = str(row["from_account"])
+            dest = "" if row["to_account"] is None or pd.isna(row["to_account"]) else str(row["to_account"])
+            amt = int(row["amount"])
+            avail = balance.get(source, 0)
+            if source in balance and amt > avail:
+                need = amt - avail
+                hist = stack.get(source, [])
+                step = 1
+                while need > 0 and hist:
+                    old_pos, old_amt, old_dest = hist.pop()
+                    label = labels[old_pos]
+                    if label in taken:
+                        continue
+                    need -= old_amt
+                    balance[source] = balance.get(source, 0) + old_amt
+                    if old_dest in balance:
+                        balance[old_dest] -= old_amt
+                    taken.add(label)
+                    stamp_ns = min(fw_ns[fi - 1] + step * 1_000_000_000, end_ns - 1_000_000_000)
+                    moves.append((label, pd.Timestamp(stamp_ns, unit="ns", tz="UTC").tz_convert(TZ)))
+                    step += 1
+                avail = balance.get(source, 0)
+            if source in balance and amt <= avail:
+                balance[source] = avail - amt
+                if dest in balance:
+                    balance[dest] = balance.get(dest, 0) + amt
+            continue
+        source = sender[pos]
+        dest = receiver[pos]
+        amt = int(amount[pos])
+        if source in balance and amt > 0 and kind[pos] not in sticky and labels[pos] not in taken:
+            avail = balance[source]
+            if amt <= avail:
+                balance[source] = avail - amt
+                stack.setdefault(source, []).append((pos, amt, dest))
+                if dest in balance:
+                    balance[dest] = balance.get(dest, 0) + amt
+            else:
+                reduced = int(avail // 1000) * 1000
+                if reduced >= 1000:
+                    balance[source] = avail - reduced
+                    stack.setdefault(source, []).append((pos, reduced, dest))
+                    if dest in balance:
+                        balance[dest] = balance.get(dest, 0) + reduced
+        elif source in balance and amt > 0:
+            avail = balance[source]
+            take = amt if amt <= avail else int(avail // 1000) * 1000
+            if take >= 1000 or (amt <= avail and amt > 0):
+                balance[source] = avail - take
+                if dest in balance:
+                    balance[dest] = balance.get(dest, 0) + take
+        elif source not in balance and dest in balance and amt > 0:
+            balance[dest] = balance.get(dest, 0) + amt
+        pos += 1
+    if moves:
+        work.loc[[label for label, _stamp in moves], "ts"] = [stamp for _label, stamp in moves]
+    return len(moves)
+
+
 def event_chain(tx_rows: list[dict], new_flags: list[bool], paste_flags: list[bool], fraud: bool, rng, sim_start, sim_end) -> list[tuple[str, pd.Timestamp]]:
     events: list[tuple[str, pd.Timestamp]] = []
     previous = sim_start
@@ -382,15 +593,15 @@ def event_chain(tx_rows: list[dict], new_flags: list[bool], paste_flags: list[bo
             median = enter_median if name == "enter_amount" else 8.0
             gaps.append(float(lognormal_seconds(median, 1, rng)[0]))
         total = sum(gaps)
-        room = (submit - previous).total_seconds() - 1.0
-        if room < len(gaps) * 1.5:
-            room = max(len(gaps) * 1.5, 1.0)
-            submit = previous + pd.Timedelta(seconds=room + 1.0)
+        room = (submit - previous).total_seconds() - 0.05
+        if room < len(gaps) * 0.05:
+            room = len(gaps) * 0.05
+            submit = previous + pd.Timedelta(seconds=room + 0.05)
             if submit >= sim_end:
                 submit = sim_end - pd.Timedelta(seconds=1)
-        if total > room:
-            scale = room / total
-            gaps = [max(1.5, gap * scale) for gap in gaps]
+                room = max((submit - previous).total_seconds() - 0.05, 0.01 * len(gaps))
+        if total > room and room > 0:
+            gaps = [room / len(gaps)] * len(gaps)
         cursor = submit
         staged = [("submit", submit)]
         for name, gap in zip(reversed(steps[:-1]), reversed(gaps)):
@@ -471,7 +682,12 @@ def main() -> None:
         cursor += 1
         return tx_id
 
-    inbound_for_forward = []
+    victims = set(cases["victim_customer_id"].astype(str))
+    hard_rows, session_no = hard_negative_transfers(
+        transactions, accounts, opening, devices, victims, mule_ids, home,
+        int(spec["hard_negative_min_sessions"]), sim_start, sim_end, take_id, session_no,
+    )
+    extra.extend(hard_rows)
     for record in plans.sort_values(["planned_ts", "case_id", "seq"], kind="mergesort").itertuples(index=False):
         case = case_meta.loc[record.case_id]
         customer = str(case.victim_customer_id)
@@ -531,20 +747,31 @@ def main() -> None:
         extra.append(payment)
 
     scale_investment(extra, transactions, opening)
-    for row in extra:
-        if row.get("_case") and int(row["amount"]) >= 1000 and str(row["to_account"]) in l1_ids and str(row["tx_type"]) == "transfer":
-            inbound_for_forward.append((str(row["to_account"]), int(row["amount"]), row["ts"]))
     extra = [row for row in extra if int(row["amount"]) >= 1000]
     for row in extra:
         row.pop("_case", None)
         row.pop("_invest", None)
-
-    forwards, cursor = forward_chain(inbound_for_forward, ring_of, rng, sim_end, tx_ids, cursor)
-    extra.extend(forwards)
     if extra:
         transactions = pd.concat([transactions, pd.DataFrame(extra)], ignore_index=True)
     tracked = set(accounts.loc[accounts["customer_id"].notna(), "account_id"].astype(str)) | mule_ids
     transactions = replay(transactions, opening, tracked)
+    fresh = transactions["tx_id"].astype(str).str[1:].astype(np.int64) >= first_tx_num
+    arrived = transactions.loc[
+        fresh
+        & transactions["to_account"].astype(str).isin(l1_ids)
+        & ~transactions["from_account"].astype(str).isin(mule_ids)
+        & transactions["tx_type"].astype(str).eq("transfer")
+        & transactions["purpose_text"].astype(str).ne("tra lai")
+        & (transactions["amount"] > 0)
+    ]
+    inbound_for_forward = [
+        (str(row.to_account), int(row.amount), row.ts) for row in arrived.itertuples(index=False)
+    ]
+    forwards, cursor = forward_chain(inbound_for_forward, ring_of, rng, sim_end, tx_ids, cursor)
+    if forwards:
+        transactions = defer_blockers(transactions, forwards, opening, tracked, sim_end)
+        transactions = pd.concat([transactions, pd.DataFrame(forwards)], ignore_index=True)
+        transactions = replay(transactions, opening, tracked)
     live_sessions = set(transactions["session_id"].dropna().astype(str))
     fraud_sessions = {key: value for key, value in fraud_sessions.items() if key in live_sessions}
 
@@ -661,6 +888,7 @@ def main() -> None:
         call_no += 1
 
     placed = {"known": 0, "unknown": 0, "ott": 0}
+    call_kind: dict[str, str] = {}
     for index in order:
         if placed["known"] >= n_known and placed["unknown"] >= n_unknown and placed["ott"] >= n_ott:
             break
@@ -673,6 +901,7 @@ def main() -> None:
                 duration = int(rng.integers(40, 420))
                 began = start - pd.Timedelta(seconds=int(rng.integers(0, 25)))
                 add_call(row.session_id, began if began >= sim_start else sim_start, duration, "cellular", str(rng.choice(pool)), "outbound")
+                call_kind[str(row.session_id)] = "known"
                 placed["known"] += 1
                 continue
         if placed["unknown"] < n_unknown and len(stranger_pool):
@@ -687,6 +916,7 @@ def main() -> None:
                 duration = int(rng.integers(30, 240))
                 began = start - pd.Timedelta(seconds=int(rng.integers(0, 20)))
                 add_call(row.session_id, began if began >= sim_start else sim_start, duration, "cellular", number, "inbound")
+                call_kind[str(row.session_id)] = "unknown"
                 placed["unknown"] += 1
                 continue
         if placed["ott"] < n_ott:
@@ -695,19 +925,39 @@ def main() -> None:
                 duration = int(rng.integers(30, 300))
                 began = start - pd.Timedelta(seconds=int(rng.integers(0, 15)))
                 add_call(row.session_id, began if began >= sim_start else sim_start, duration, "ott", str(rng.choice(pool)), "outbound")
+                call_kind[str(row.session_id)] = "ott"
                 placed["ott"] += 1
 
-    fraud_ids = set(fraud_sessions)
+    voice_types = {"police", "bank_staff", "relative"}
     case_contacts["case_id"] = case_contacts["case_id"].astype(str)
+    voice_of: dict[str, object] = {}
+    voiced = case_contacts.loc[case_contacts["channel"].astype(str).isin(["cellular", "ott"])]
+    for case_id, part in voiced.groupby(voiced["case_id"].astype(str), sort=False):
+        voice_of[str(case_id)] = part.iloc[0]
     for session_id, info in fraud_sessions.items():
         window = sessions.loc[sessions["session_id"] == session_id].iloc[0]
         start = window.start_ts
         end = window.end_ts
+        hang = bool(case_meta.loc[info["case_id"]].hangs_up_before_transfer)
+        spoofed = bool(case_meta.loc[info["case_id"]].spoofed)
+        template = voice_of.get(str(info["case_id"])) if info["scam_type"] in voice_types else None
+        if template is not None:
+            number = str(template.number_id)
+            if spoofed and spoof_flag.get(number) and isinstance(spoof_as.get(number), str) and spoof_as.get(number) not in {"", "nan", "<NA>"}:
+                number = spoof_as[number]
+            duration = int(template.duration_s) if int(template.duration_s) > 0 else 60
+            if hang:
+                when = start - pd.Timedelta(minutes=int(rng.integers(1, 21))) - pd.Timedelta(seconds=duration)
+            else:
+                when = start - pd.Timedelta(seconds=int(rng.integers(5, 40)))
+            if when < sim_start:
+                when = sim_start
+            if when < sim_end:
+                add_call(session_id, when, duration, str(template.channel), number, "inbound")
+            continue
         related = case_contacts.loc[case_contacts["case_id"] == info["case_id"]]
         near = related.loc[(related["ts"] >= start - pd.Timedelta(hours=2)) & (related["ts"] <= end + pd.Timedelta(hours=2))]
         calls = near.loc[near["channel"].astype(str).isin(["cellular", "ott"])]
-        hang = bool(case_meta.loc[info["case_id"]].hangs_up_before_transfer)
-        spoofed = bool(case_meta.loc[info["case_id"]].spoofed)
         if calls.empty:
             continue
         first = True
@@ -838,6 +1088,12 @@ def main() -> None:
                 "large_oneoff" in types or int(part["amount"].max()) >= 20_000_000
             ):
                 scenario = "legit_new_payee_large"
+            elif on_call and call_kind.get(str(session.session_id)) == "unknown":
+                scenario = "legit_on_call_unknown"
+            elif on_call and call_kind.get(str(session.session_id)) == "known":
+                scenario = "legit_on_call_known"
+            elif on_call and call_kind.get(str(session.session_id)) == "ott":
+                scenario = "legit_on_call_ott"
             elif on_call:
                 scenario = "legit_on_call"
             else:
@@ -871,6 +1127,20 @@ def main() -> None:
 
     scenarios = pd.DataFrame(scenario_rows)
     responses = pd.DataFrame(response_rows)
+    hard_types = {"legit_drain", "legit_new_payee_large", "legit_passthrough", "legit_on_call_unknown"}
+    tx_num = transactions["tx_id"].astype(str).str[1:].astype(np.int64)
+    injected_sessions = set(transactions.loc[tx_num >= first_tx_num, "session_id"].dropna().astype(str))
+    natural_session = ~scenarios["session_id"].astype(str).isin(injected_sessions)
+    total_natural = max(int(natural_session.sum()), 1)
+    total_after = max(len(scenarios), 1)
+    weights = np.ones(len(scenarios), dtype=float)
+    kind_series = scenarios["scenario_type"].astype(str)
+    for kind in hard_types:
+        natural_count = int((natural_session & kind_series.eq(kind)).sum())
+        after_count = int(kind_series.eq(kind).sum())
+        if after_count > natural_count and natural_count > 0:
+            weights[kind_series.eq(kind).to_numpy()] = (natural_count / total_natural) / (after_count / total_after)
+    scenarios["sample_weight"] = weights
     sessions_out = sessions.drop(columns=["fraud"])
     for frame, cols in (
         (sessions_out, ["session_id", "customer_id", "account_id", "device_id"]),

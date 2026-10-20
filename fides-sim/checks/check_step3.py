@@ -127,13 +127,20 @@ def main() -> None:
     transactions = pd.read_parquet(observed / "transactions.parquet")
     payees = pd.read_parquet(observed / "payees.parquet")
     contacts = pd.read_parquet(truth / "contacts.parquet")
+    ledger = transactions
+    floor_path = truth / "step6_floor.parquet"
+    if floor_path.exists():
+        floor = int(pd.read_parquet(floor_path)["first_tx_num"].iloc[0])
+        numbers = ledger["tx_id"].astype(str).str[1:].astype(np.int64)
+        transactions = ledger.loc[numbers < floor].copy()
+    guardians = pd.read_parquet(observed / "guardians.parquet")
     report = Report()
 
-    nonneg = bool((transactions["from_balance_before"] >= 0).all() and (transactions["amount"] > 0).all())
+    nonneg = bool((ledger["from_balance_before"] >= 0).all() and (ledger["amount"] > 0).all())
     customer_accounts = set(accounts.loc[accounts["customer_id"].notna(), "account_id"].astype(str))
-    outbound = transactions.loc[transactions["from_account"].astype(str).isin(customer_accounts)]
+    outbound = ledger.loc[ledger["from_account"].astype(str).isin(customer_accounts)]
     covered = bool((outbound["from_balance_before"] >= outbound["amount"]).all())
-    checked, bad = replay(transactions, accounts, rng)
+    checked, bad = replay(ledger, accounts, rng)
     report.add(
         "Không số dư âm, from_balance_before khớp số dư chạy",
         f"{bad} lệch / {checked} tài khoản" if bad else f"0 lệch / {checked} tài khoản",
@@ -400,27 +407,27 @@ def main() -> None:
         method_ok = method_ok and ok
         report.add(f"add_method {name}", pct(actual), pct(float(target)), f"{100 * (actual - float(target)):+.2f} đ.p", ok)
 
-    time_ok = in_window(transactions["ts"], sim_start, sim_end)
+    time_ok = in_window(ledger["ts"], sim_start, sim_end)
     other_time = zone_name(payees["added_at"]) == TZ and zone_name(contacts["first_contact"]) == TZ
     other_time = other_time and bool(payees["added_at"].max() < sim_end) and bool(contacts["first_contact"].max() < sim_end)
     report.add("ts giao dịch trong cửa sổ, giờ VN", "đạt" if time_ok else "lỗi", "đạt", "-", time_ok and other_time)
     sessions_path = observed / "sessions.parquet"
     if sessions_path.exists():
         known_sessions = set(pd.read_parquet(sessions_path, columns=["session_id"])["session_id"].astype(str))
-        filled = transactions["session_id"].notna()
-        session_ok = bool(transactions.loc[filled, "session_id"].astype(str).isin(known_sessions).all()) and bool(filled.any())
+        filled = ledger["session_id"].notna()
+        session_ok = bool(ledger.loc[filled, "session_id"].astype(str).isin(known_sessions).all()) and bool(filled.any())
         session_label = f"{int(filled.sum())} giao dịch có phiên"
         session_target = "session_id thuộc observed/sessions"
     else:
-        session_ok = bool(transactions["session_id"].isna().all())
+        session_ok = bool(ledger["session_id"].isna().all())
         session_label = "null" if session_ok else "có giá trị"
         session_target = "null"
     report.add("session_id trống", session_label, session_target, "-", session_ok)
-    money_ok = str(transactions["amount"].dtype) == "int64" and str(transactions["from_balance_before"].dtype) == "int64"
-    report.add("Tiền là int64 VND", f"{transactions['amount'].dtype}, {transactions['from_balance_before'].dtype}", "int64", "-", money_ok)
+    money_ok = str(ledger["amount"].dtype) == "int64" and str(ledger["from_balance_before"].dtype) == "int64"
+    report.add("Tiền là int64 VND", f"{ledger['amount'].dtype}, {ledger['from_balance_before'].dtype}", "int64", "-", money_ok)
 
-    fk_ok = bool(transactions["from_account"].astype(str).isin(accounts["account_id"].astype(str)).all())
-    to_id = transactions["to_account"].dropna().astype(str)
+    fk_ok = bool(ledger["from_account"].astype(str).isin(accounts["account_id"].astype(str)).all())
+    to_id = ledger["to_account"].dropna().astype(str)
     fk_ok = fk_ok and bool(to_id.isin(accounts["account_id"].astype(str)).all())
     fk_ok = fk_ok and bool(payees["from_account"].astype(str).isin(accounts["account_id"].astype(str)).all())
     fk_ok = fk_ok and bool(payees["to_account"].astype(str).isin(accounts["account_id"].astype(str)).all())

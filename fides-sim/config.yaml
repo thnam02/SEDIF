@@ -136,3 +136,4 @@ sessions:
   investment_non_monotonic_share: 0.15  # sửa bước 5: chững lại/giảm sau đỉnh
   bank_staff_remote_app: 0.60           # vụ giả nhân viên ngân hàng có cài app điều khiển từ xa
   coached_lie_yes_no: 0.60              # nạn nhân bị dặn nói dối khi được hỏi có/không
+  hard_negative_min_sessions: 400   # mỗi loại mẫu khó cần đủ bấy nhiêu phiên

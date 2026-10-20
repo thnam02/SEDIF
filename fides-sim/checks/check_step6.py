@@ -56,6 +56,16 @@ def pct(value: float) -> str:
     return f"{100 * value:.2f}%"
 
 
+def wilson(successes: float, total: float, z: float = 1.96) -> tuple[float, float, float]:
+    if total <= 0:
+        return 0.0, 0.0, 0.0
+    proportion = successes / total
+    denom = 1.0 + z * z / total
+    center = (proportion + z * z / (2.0 * total)) / denom
+    margin = z * np.sqrt(proportion * (1.0 - proportion) / total + z * z / (4.0 * total * total)) / denom
+    return proportion, max(0.0, center - margin), min(1.0, center + margin)
+
+
 def percentiles(values: np.ndarray) -> str:
     if len(values) == 0:
         return "trống"
@@ -219,7 +229,7 @@ def main() -> None:
     victim_plans = victim_plans.loc[victim_plans["to_mule_account_id"].astype(str).isin(l1)]
     victim_of_case = dict(zip(cases["case_id"].astype(str), cases["victim_customer_id"].astype(str)))
     owner_of = dict(zip(accounts["account_id"].astype(str), accounts["customer_id"].astype(str)))
-    forwards = transactions.loc[transactions["purpose_text"].astype(str).eq("chuyen tiep"), ["from_account", "ts", "amount"]].copy()
+    forwards = transactions.loc[transactions["purpose_text"].astype(str).eq("chuyen tiep"), ["from_account", "ts", "amount", "from_balance_before"]].copy()
     forwards["from_account"] = forwards["from_account"].astype(str)
     forward_groups = {account: part.sort_values("ts") for account, part in forwards.groupby("from_account", sort=False)}
     inflow_tx = transactions.loc[
@@ -229,7 +239,9 @@ def main() -> None:
     inflow_tx["from_account"] = inflow_tx["from_account"].astype(str)
     inflow_tx["to_account"] = inflow_tx["to_account"].astype(str)
     inflow_groups = {account: part for account, part in inflow_tx.groupby("to_account", sort=False)}
-    matched = 0
+    status_of = dict(zip(accounts["account_id"].astype(str), accounts["status"].astype(str)))
+    reasons = {"đúng hạn": 0, "gần cuối cửa sổ": 0, "mule đã frozen": 0, "thiếu số dư": 0, "khác": 0}
+    used_forward: set[tuple[str, int]] = set()
     checked = 0
     for row in victim_plans.itertuples(index=False):
         mule = str(row.to_mule_account_id)
@@ -245,26 +257,62 @@ def main() -> None:
         checked += 1
         pick = close_in.iloc[(close_in["ts"] - row.planned_ts).abs().argmin()]
         expected = pick.ts + pd.Timedelta(minutes=int(delay))
+        if status_of.get(mule) == "frozen":
+            reasons["mule đã frozen"] += 1
+            continue
+        if expected >= sim_end:
+            reasons["gần cuối cửa sổ"] += 1
+            continue
         part = forward_groups.get(mule)
         if part is None:
+            reasons["khác"] += 1
             continue
-        close = part.loc[(part["ts"] - expected).abs() <= pd.Timedelta(seconds=90)]
-        if close.empty:
+        stamps = part["ts"].drop_duplicates().sort_values()
+        free = [stamp for stamp in stamps if (mule, int(stamp.value)) not in used_forward]
+        if not free:
+            reasons["khác"] += 1
             continue
-        ratio = float(close["amount"].sum()) / max(int(pick.amount), 1)
+        free_ts = pd.Series(free)
+        gaps = (free_ts - expected).abs()
+        near_at = gaps <= pd.Timedelta(seconds=90)
+        if not bool(near_at.any()):
+            reasons["khác"] += 1
+            continue
+        chosen = free_ts.loc[gaps.loc[near_at].idxmin()]
+        used_forward.add((mule, int(chosen.value)))
+        bundle = part.loc[part["ts"] == chosen]
+        ratio = float(bundle["amount"].sum()) / max(int(pick.amount), 1)
+        before = int(bundle["from_balance_before"].min())
         if 0.88 <= ratio <= 0.99:
-            matched += 1
-    delay_rate = matched / checked if checked else 0.0
-    report.add("Mule lớp 1 chuyển tiếp đúng độ trễ", pct(delay_rate), "≥ 80%", f"{matched}/{checked}", delay_rate >= 0.80)
+            reasons["đúng hạn"] += 1
+        elif before < int(0.88 * int(pick.amount)):
+            reasons["thiếu số dư"] += 1
+        else:
+            reasons["khác"] += 1
+    delay_rate = reasons["đúng hạn"] / checked if checked else 0.0
+    print("  Chuyển tiếp mule không đúng độ trễ, theo nhóm:")
+    for name, count in reasons.items():
+        if name == "đúng hạn":
+            continue
+        print(f"    {name}: {count}")
+    acceptable = reasons["gần cuối cửa sổ"] + reasons["mule đã frozen"]
+    bad_forward = reasons["thiếu số dư"] + reasons["khác"]
+    report.add(
+        "Mule lớp 1 chuyển tiếp đúng độ trễ",
+        pct(delay_rate),
+        "≥ 80%, lỗi khác = 0",
+        f"{reasons['đúng hạn']}/{checked}, chấp nhận {acceptable}, lỗi {bad_forward}",
+        delay_rate >= 0.80 and bad_forward == 0,
+    )
 
+    print("  Định nghĩa pass-through 24h: với mỗi khoản vào, min(1, tổng tiền chuyển đi trong (ts, ts+24h] / số tiền vào). p50 trên các khoản vào, không trên từng ngày.")
     inbound = transactions.loc[
         transactions["to_account"].astype(str).isin(l1) & transactions["purpose_text"].astype(str).ne("chuyen tiep"),
         ["to_account", "ts", "amount", "from_account"],
     ]
-    # Chỉ khoản nạn nhân, không tính chuyển nội bộ mule.
     inbound = inbound.loc[~inbound["from_account"].astype(str).isin(mule_accounts)]
     outbound = transactions.loc[transactions["from_account"].astype(str).isin(l1), ["from_account", "ts", "amount"]]
-    l1_ratio = pass_through(inbound.rename(columns={"to_account": "to_account"}), outbound)
+    l1_ratio = pass_through(inbound, outbound)
     normal_accounts = set(customer_accounts) - mule_accounts - victim_accounts
     normal_in = transactions.loc[
         transactions["to_account"].astype(str).isin(normal_accounts) & transactions["tx_type"].astype(str).eq("transfer"),
@@ -298,8 +346,17 @@ def main() -> None:
     print(f"  Pass-through 24h người thường: {percentiles(normal_ratio)}")
     print(f"  Pass-through 24h legit_passthrough: {percentiles(pass_ratio)}")
     l1_mid = float(np.median(l1_ratio)) if len(l1_ratio) else 0.0
-    normal_mid = float(np.median(normal_ratio)) if len(normal_ratio) else 1.0
-    report.add("Pass-through lớp 1 cao hơn người thường", f"{l1_mid:.2f} so với {normal_mid:.2f}", "trung vị lớp 1 cao hơn", "-", l1_mid > normal_mid)
+    pass_mid = float(np.median(pass_ratio)) if len(pass_ratio) else 0.0
+    l1_low, l1_high = (np.quantile(l1_ratio, [0.1, 0.9]) if len(l1_ratio) else (0.0, 0.0))
+    pass_low, pass_high = (np.quantile(pass_ratio, [0.1, 0.9]) if len(pass_ratio) else (0.0, 0.0))
+    overlap = pass_low <= l1_high and l1_low <= pass_high
+    report.add(
+        "Pass-through legit và mule",
+        f"legit {pass_mid:.2f}, mule {l1_mid:.2f}",
+        "legit 0.60–0.95, mule cao hơn, phân phối chồng",
+        "p50 trên khoản vào",
+        0.60 <= pass_mid <= 0.95 and l1_mid > pass_mid and overlap,
+    )
 
     legit_sessions = set(joined.loc[~joined["scenario_type"].astype(str).isin(fraud_types), "session_id"].astype(str))
     fraud_sessions = set(joined.loc[joined["scenario_type"].astype(str).isin(fraud_types), "session_id"].astype(str))
@@ -319,34 +376,51 @@ def main() -> None:
     sig = signals.copy()
     sig["session_id"] = sig["session_id"].astype(str)
     sig = sig.merge(sessions[["session_id", "start_ts", "end_ts"]], on="session_id", how="left")
-    fraud_sig = sig.loc[sig["session_id"].isin(fraud_sessions)]
+    fraud_sig = sig.loc[sig["session_id"].isin(fraud_sessions)].merge(
+        joined[["session_id", "scenario_type"]], on="session_id", how="left"
+    )
     call_finish = calls["ts"] + pd.to_timedelta(calls["duration_s"], unit="s")
     calls = calls.assign(finish=call_finish)
-    telco = device_only = nobody = 0
     call_groups = {key: part for key, part in calls.groupby("session_id", sort=False)}
+    buckets = ["nhà mạng đang gọi", "nhà mạng vừa cúp ≤ 30 phút", "chỉ thiết bị (OTT)", "không ai thấy"]
+    table: dict[str, dict[str, int]] = {}
     for row in fraud_sig.itertuples(index=False):
+        kind = str(row.scenario_type)
+        counts = table.setdefault(kind, {name: 0 for name in buckets})
         part = call_groups.get(row.session_id)
         if part is None:
-            nobody += 1
+            counts["không ai thấy"] += 1
             continue
-        live = part.loc[(part["ts"] < row.end_ts) & (part["finish"] > row.start_ts)]
-        if (live["channel"].astype(str) == "cellular").any():
-            telco += 1
-        elif (live["channel"].astype(str) == "ott").any() or bool(row.in_call_audio_mode):
-            device_only += 1
+        cell = part.loc[part["channel"].astype(str) == "cellular"]
+        ott = part.loc[part["channel"].astype(str) == "ott"]
+        ongoing = bool(((cell["ts"] < row.end_ts) & (cell["finish"] > row.start_ts)).any()) if len(cell) else False
+        ended = bool(((cell["finish"] <= row.start_ts) & (cell["finish"] >= row.start_ts - pd.Timedelta(minutes=30))).any()) if len(cell) else False
+        device = bool(((ott["ts"] < row.end_ts) & (ott["finish"] > row.start_ts)).any()) if len(ott) else False
+        if ongoing:
+            counts["nhà mạng đang gọi"] += 1
+        elif ended:
+            counts["nhà mạng vừa cúp ≤ 30 phút"] += 1
+        elif device:
+            counts["chỉ thiết bị (OTT)"] += 1
         else:
-            nobody += 1
-    n_fraud = max(len(fraud_sig), 1)
-    print(
-        f"  Phiên lừa đảo: nhà mạng thấy {pct(telco / n_fraud)}, "
-        f"chỉ thiết bị thấy {pct(device_only / n_fraud)}, không ai thấy {pct(nobody / n_fraud)}"
-    )
+            counts["không ai thấy"] += 1
+    print("  Cuộc gọi theo kiểu lừa (nhà mạng thấy = đang gọi hoặc vừa cúp ≤ 30 phút):")
+    voice_ok = True
+    for kind in ["police", "investment", "bank_staff", "relative", "deposit", "romance"]:
+        counts = table.get(kind, {name: 0 for name in buckets})
+        total = sum(counts.values())
+        seen = counts["nhà mạng đang gọi"] + counts["nhà mạng vừa cúp ≤ 30 phút"] + counts["chỉ thiết bị (OTT)"]
+        rate = seen / total if total else 0.0
+        cells = " ".join(f"{name} {counts[name]}" for name in buckets)
+        print(f"    {kind}: {cells} | thấy {pct(rate)}")
+        if kind in {"police", "bank_staff", "relative"}:
+            voice_ok = voice_ok and rate >= 0.60 and total > 0
     report.add(
-        "Ba cách nhìn cuộc gọi lừa đảo",
-        f"{telco}/{device_only}/{nobody}",
-        "cả ba nhóm đều có",
-        "nhà mạng / chỉ thiết bị / không ai",
-        telco > 0 and device_only > 0 and nobody > 0,
+        "Police, bank_staff, relative được nhìn thấy",
+        "đạt" if voice_ok else "dưới 60%",
+        "≥ 60% nhà mạng hoặc thiết bị",
+        "gồm cuộc gọi cellular đã kết thúc ≤ 30 phút",
+        voice_ok,
     )
 
     invest_cases = set(cases.loc[cases["scam_type"].astype(str) == "investment", "case_id"].astype(str))
@@ -419,6 +493,12 @@ def main() -> None:
     age_hours = (feature["start_ts"] - enabled).dt.total_seconds() / 3600
     new_access = enabled.notna() & age_hours.between(0, 12)
     hour = feature["start_ts"].dt.tz_convert(TZ).dt.hour.fillna(0).to_numpy(dtype=float)
+    holder = dict(zip(accounts["account_id"].astype(str), accounts["holder_name_ascii"].astype(str)))
+    name_match = []
+    for row in feature.itertuples(index=False):
+        left = holder.get(str(row.from_account), "")
+        right = holder.get(str(row.to_account), "")
+        name_match.append(bool(left) and left == right and left not in {"nan", "<NA>", "None"})
     label = feature["scenario_type"].astype(str).isin(fraud_types).to_numpy()
     matrix = np.column_stack(
         [
@@ -429,24 +509,64 @@ def main() -> None:
             new_access.fillna(False).to_numpy(dtype=float),
             feature["remote_access_app_installed"].fillna(False).to_numpy(dtype=float),
             hour,
+            np.array(name_match, dtype=float),
         ]
     )
     score = fit_logit(matrix, label)
     auc = auc_score(label, score)
     print(f"  AUC logistic phiên: {auc:.3f}")
-    report.add("Baseline rò rỉ AUC", f"{auc:.3f}", "0.80–0.93", "amount/balance, người nhận mới, paste, cuộc gọi, accessibility, remote, giờ", 0.80 <= auc <= 0.93)
+    report.add(
+        "Baseline rò rỉ AUC",
+        f"{auc:.3f}",
+        "0.80–0.93",
+        "amount/balance, người nhận mới, paste, cuộc gọi, accessibility, remote, giờ, tên khớp chủ",
+        0.80 <= auc <= 0.93,
+    )
     fraud_scores = score[label]
+    hard_floor = int(spec["hard_negative_min_sessions"])
+    hard_types = ["legit_drain", "legit_new_payee_large", "legit_passthrough", "legit_on_call_unknown"]
+    hard_counts = joined["scenario_type"].astype(str).value_counts()
+    hard_ok = all(int(hard_counts.get(kind, 0)) >= hard_floor for kind in hard_types)
+    report.add(
+        "Mẫu khó đủ phiên",
+        ", ".join(f"{kind} {int(hard_counts.get(kind, 0))}" for kind in hard_types),
+        f"mỗi loại ≥ {hard_floor}",
+        "-",
+        hard_ok,
+    )
+    if "sample_weight" not in scenarios.columns:
+        report.add("sample_weight", "thiếu", "có", "-", False)
+        weight_of = pd.Series(1.0, index=feature.index)
+    else:
+        weight_of = feature["session_id"].astype(str).map(dict(zip(scenarios["session_id"].astype(str), scenarios["sample_weight"].astype(float)))).fillna(1.0)
     if len(fraud_scores):
         threshold = float(np.quantile(fraud_scores, 0.20))
         caught = float((fraud_scores >= threshold).mean())
         print(f"  Ngưỡng bắt {pct(caught)} lừa đảo")
-        print("  Báo nhầm theo loại hợp lệ:")
+        print("  Báo nhầm theo loại hợp lệ (khoảng tin cậy Wilson 95%):")
         legit_rows = feature.loc[~label]
         legit_scores = score[~label]
+        drain_rate = None
         for name, index in legit_rows.groupby(legit_rows["scenario_type"].astype(str)).groups.items():
             chosen = legit_scores[legit_rows.index.get_indexer(index)]
-            rate = float((chosen >= threshold).mean()) if len(chosen) else 0.0
-            print(f"    {name}: {pct(rate)} ({len(chosen)} phiên)")
+            hits = int((chosen >= threshold).sum()) if len(chosen) else 0
+            rate, low, high = wilson(hits, len(chosen))
+            print(f"    {name}: {pct(rate)} [{pct(low)}–{pct(high)}] ({hits}/{len(chosen)})")
+            if name == "legit_drain":
+                drain_rate = rate
+        legit_w = weight_of.loc[legit_rows.index].to_numpy(dtype=float)
+        legit_fp = (legit_scores >= threshold).astype(float)
+        overall = float(np.average(legit_fp, weights=legit_w)) if legit_w.sum() else 0.0
+        n_eff = float((legit_w.sum() ** 2) / np.square(legit_w).sum()) if legit_w.sum() else 0.0
+        _, low, high = wilson(overall * n_eff, n_eff)
+        print(f"  Báo nhầm chung có trọng số: {pct(overall)} [{pct(low)}–{pct(high)}], n hiệu dụng {n_eff:.0f}")
+        report.add(
+            "legit_drain báo nhầm",
+            pct(drain_rate if drain_rate is not None else 1.0),
+            "< 30%",
+            "có đặc trưng tên người nhận khớp tên chủ",
+            drain_rate is not None and drain_rate < 0.30,
+        )
     else:
         report.add("Ngưỡng 80% lừa đảo", "không có phiên lừa", "có", "-", False)
 
