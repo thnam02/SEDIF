@@ -85,6 +85,11 @@ accounts:
       median: 6.0
       sigma: 1.0
 
+limits:
+  per_txn: {normal: 100_000_000, elderly: 50_000_000, small_business: 500_000_000}
+  per_day: {normal: 300_000_000, elderly: 100_000_000, small_business: 2_000_000_000}
+  above_default_share: 0.15        # khách đã tự nâng hạn mức từ trước
+
 history:
   tx_per_month_median: 25          # theo activity_level, lognormal, sigma 0.7
   card_payments_aggregate_daily: true
@@ -98,6 +103,24 @@ history:
   legit_passthrough_share: 0.005    # thủ quỹ nhóm, cha mẹ nhận rồi chuyển cho con
   round_amount_share: 0.70          # số tiền tròn nghìn/trăm nghìn
   payee_add_method: {contact: 0.55, paste: 0.25, qr: 0.15, typed: 0.05}
+  limit_raise_share: 0.02           # khách có khoản vượt hạn mức để nâng hoặc chia
+  over_limit_split_share: 0.25      # lệnh hợp lệ vượt hạn mức thì chia nhỏ
+  over_limit_split_share_sme: 0.40  # doanh nghiệp nhỏ chia nhiều hơn
+  limit_raise_idle_share: 0.15      # nâng hạn mức nhưng không chi lớn trong 7 ngày sau
+  popular_payee_young_share: 0.20   # người nhận phổ biến có tuổi tài khoản < 180 ngày
+  phone_change_share: 0.005
+  savings_maturity_share: 0.03      # tất toán sổ đáo hạn, trên số sổ tiết kiệm, mỗi quý
+  savings_early_share: 0.003        # tất toán trước hạn (mua nhà, viện phí)
+  quick_loan_share: 0.005
+  card_cash_advance_share: 0.005
+  popular_payee_share: 0.003        # external_person nhận tiền lặp lại từ nhiều khách không liên quan
+  popular_payee_per_month: {min: 5, max: 40}
+  bank_calls_per_month: 0.015
+
+bank_call_log_completeness: 0.95  # 5% cuộc gọi qua đối tác không được ghi
+
+red_team:
+  one_mule_per_b01_victim: false    # bật để thử né T4b: mỗi nạn nhân B01 một mule riêng
 
 mules:
   n_active_rings: 40              # đường dây hoạt động trong cửa sổ

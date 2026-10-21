@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sim.io import write
+from sim.limits import assign_initial_limits
 from sim.names import sample_name_body, surname_table, to_name_ascii
 
 TZ = "Asia/Ho_Chi_Minh"
@@ -369,6 +370,9 @@ def assemble_accounts(people, phones, cfg, rng):
             "merchant_verified": verified,
         }
     )
+    # Seed riêng để hạn mức không đổi chuỗi số của tài khoản và thiết bị.
+    limit_rng = np.random.default_rng(np.random.SeedSequence([int(cfg["seed"]), 2]))
+    accounts = assign_initial_limits(accounts, people, cfg, limit_rng)
     return accounts, customer, merch_kind
 
 
@@ -781,6 +785,10 @@ def _sanity(accounts, devices, links, latent, people, cfg) -> None:
         raise RuntimeError("holder_name_ascii không khớp name_ascii của chủ")
     if accounts["opening_balance"].dtype != np.int64 or links["login_count"].dtype != np.int64:
         raise RuntimeError("Tiền hoặc login_count không phải int64")
+    if accounts["limit_per_txn"].dtype != np.int64 or accounts["limit_per_day"].dtype != np.int64:
+        raise RuntimeError("Hạn mức không phải int64")
+    if (accounts["limit_per_txn"] <= 0).any() or (accounts["limit_per_day"] < accounts["limit_per_txn"]).any():
+        raise RuntimeError("Hạn mức ngày phải ≥ hạn mức giao dịch và cả hai dương")
     sim_end = as_timestamp(cfg["sim_end"])
     if accounts["opened_at"].max() >= sim_end or devices["first_seen"].max() >= sim_end:
         raise RuntimeError("opened_at hoặc first_seen vượt sim_end")

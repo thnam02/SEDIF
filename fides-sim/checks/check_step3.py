@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from sim.limits import limit_report, over_limit_outcomes
+
 TZ = "Asia/Ho_Chi_Minh"
 SCHOOL_AGE = 22
 # ts, channel trùng tên với lịch liên lạc bước 5; không phải nhãn mule.
@@ -112,6 +114,36 @@ def replay(transactions: pd.DataFrame, accounts: pd.DataFrame, rng) -> tuple[int
     return take, len(bad_accounts | missed)
 
 
+def replay_subset(transactions: pd.DataFrame, accounts: pd.DataFrame, wanted: set[str]) -> int:
+    """Số dòng lệch số dư chạy trên đúng các tài khoản được nêu."""
+    if not wanted:
+        return 0
+    opening = dict(
+        zip(
+            accounts.loc[accounts["account_id"].astype(str).isin(wanted), "account_id"].astype(str),
+            accounts.loc[accounts["account_id"].astype(str).isin(wanted), "opening_balance"].astype(np.int64),
+        )
+    )
+    balance = dict(opening)
+    sub = transactions.loc[
+        transactions["from_account"].astype(str).isin(wanted) | transactions["to_account"].astype(str).isin(wanted)
+    ].sort_values(["ts", "tx_id"], kind="mergesort")
+    bad = 0
+    for row in sub.itertuples(index=False):
+        sender = str(row.from_account)
+        receiver = None if pd.isna(row.to_account) else str(row.to_account)
+        amount = int(row.amount)
+        if sender in balance:
+            if int(row.from_balance_before) != balance[sender] or amount > balance[sender]:
+                bad += 1
+                balance.pop(sender, None)
+            else:
+                balance[sender] -= amount
+        if receiver in balance and receiver != sender:
+            balance[receiver] = balance.get(receiver, 0) + amount
+    return bad
+
+
 def main() -> None:
     cfg = load_config()
     hist = cfg["history"]
@@ -130,7 +162,7 @@ def main() -> None:
     contacts = pd.read_parquet(truth / "contacts.parquet")
     ledger = transactions
     floor_path = truth / "step6_floor.parquet"
-    if floor_path.exists():
+    if floor_path.exists() and ledger["session_id"].notna().any():
         floor = int(pd.read_parquet(floor_path)["first_tx_num"].iloc[0])
         numbers = ledger["tx_id"].astype(str).str[1:].astype(np.int64)
         transactions = ledger.loc[numbers < floor].copy()
@@ -413,10 +445,10 @@ def main() -> None:
     other_time = other_time and bool(payees["added_at"].max() < sim_end) and bool(contacts["first_contact"].max() < sim_end)
     report.add("ts giao dịch trong cửa sổ, giờ VN", "đạt" if time_ok else "lỗi", "đạt", "-", time_ok and other_time)
     sessions_path = observed / "sessions.parquet"
-    if sessions_path.exists():
+    filled = ledger["session_id"].notna()
+    if filled.any() and sessions_path.exists():
         known_sessions = set(pd.read_parquet(sessions_path, columns=["session_id"])["session_id"].astype(str))
-        filled = ledger["session_id"].notna()
-        session_ok = bool(ledger.loc[filled, "session_id"].astype(str).isin(known_sessions).all()) and bool(filled.any())
+        session_ok = bool(ledger.loc[filled, "session_id"].astype(str).isin(known_sessions).all())
         session_label = f"{int(filled.sum())} giao dịch có phiên"
         session_target = "session_id thuộc observed/sessions"
     else:
@@ -449,6 +481,224 @@ def main() -> None:
         "chỉ khóa",
         "không còn relation",
         overlap <= KEYS and "customer_id" in overlap,
+    )
+
+    changes = pd.read_parquet(observed / "account_changes.parquet")
+    calls = pd.read_parquet(observed / "bank_calls.parquet")
+    devices = pd.read_parquet(observed / "devices.parquet")
+    limits = limit_report(transactions, accounts, changes)
+    split_rate = limits["split"] / limits["outbound"] if limits["outbound"] else 0.0
+    print(f"  Giao dịch hợp lệ bị chia do hạn mức: {limits['split']}/{limits['outbound']} ({split_rate:.2%})")
+    report.add("Không giao dịch khách vượt hạn mức hiện hành", f"{limits['violations']} lệnh", "0", "-", limits["violations"] == 0)
+
+    n_customers = len(customers)
+    change_customer = changes.merge(
+        accounts.loc[accounts["customer_id"].notna(), ["account_id", "customer_id"]].astype(str),
+        on="account_id",
+        how="left",
+    )
+    raise_rows = change_customer.loc[change_customer["change_type"].astype(str).eq("limit_raise")]
+    phone_rows = change_customer.loc[change_customer["change_type"].astype(str).eq("phone_change")]
+    device_rows = changes.loc[changes["change_type"].astype(str).eq("new_device")]
+    raise_rate = raise_rows["customer_id"].nunique() / n_customers
+    phone_rate = phone_rows["customer_id"].nunique() / n_customers
+    sme_ids = set(
+        accounts.loc[
+            accounts["customer_id"].astype(str).isin(set(customers.loc[customers["segment"].astype(str).eq("doanh nghiệp nhỏ"), "customer_id"].astype(str))),
+            "account_id",
+        ].astype(str)
+    )
+    outcomes = over_limit_outcomes(transactions, accounts, changes, sme_ids)
+    over_rate = outcomes["over_split"] / outcomes["over"] if outcomes["over"] else 0.0
+    sme_split = outcomes["over_sme_split"] / outcomes["over_sme"] if outcomes["over_sme"] else 0.0
+    print(
+        f"  Lệnh vượt hạn mức bị chia: {outcomes['over_split']}/{outcomes['over']} ({pct(over_rate)}); "
+        f"SME {outcomes['over_sme_split']}/{outcomes['over_sme']} ({pct(sme_split)})"
+    )
+    report.add(
+        "Chia nhỏ trong lệnh vượt hạn mức",
+        pct(over_rate),
+        "20–30%",
+        f"SME {pct(sme_split)}",
+        outcomes["over"] > 0 and 0.20 <= over_rate <= 0.30,
+    )
+    report.add(
+        "Nâng hạn mức trong cửa sổ",
+        pct(raise_rate),
+        pct(float(hist["limit_raise_share"])),
+        f"{raise_rows['customer_id'].nunique()} khách",
+        abs(raise_rate - float(hist["limit_raise_share"])) <= 0.025,
+    )
+    large_tx = transactions.loc[
+        (transactions["amount"] >= 20_000_000)
+        | transactions["tx_type"].astype(str).isin(["large_oneoff", "school_fee", "savings_liquidation"]),
+        ["from_account", "ts"],
+    ].copy()
+    large_tx["from_account"] = large_tx["from_account"].astype(str)
+    large_tx["ts"] = large_tx["ts"].dt.as_unit("ns")
+    large_at = {
+        account: part["ts"].sort_values().astype("int64").to_numpy()
+        for account, part in large_tx.groupby("from_account", sort=False)
+    }
+    gaps_s: list[float] = []
+    quiet = 0
+    quick = 0
+    for record in raise_rows.itertuples(index=False):
+        later = large_at.get(str(record.account_id))
+        raise_ns = np.int64(pd.Timestamp(record.ts).as_unit("ns").value)
+        if later is None or len(later) == 0:
+            quiet += 1
+            continue
+        after = later[later > raise_ns]
+        if len(after) == 0:
+            quiet += 1
+            continue
+        gap_s = (int(after[0]) - int(raise_ns)) / 1e9
+        gaps_s.append(gap_s)
+        if gap_s > 7 * 86400:
+            quiet += 1
+        if gap_s < 30 * 60:
+            quick += 1
+    gap_hours = np.array(gaps_s) / 3600 if gaps_s else np.array([])
+    if len(gap_hours):
+        g10, g50, g90 = np.percentile(gap_hours, [10, 50, 90])
+        gap_label = f"p10 {g10:.1f}h, p50 {g50:.1f}h, p90 {g90:.1f}h"
+    else:
+        gap_label = "không có"
+    quiet_rate = quiet / max(len(raise_rows), 1)
+    quick_rate = quick / max(len(raise_rows), 1)
+    print(f"  Khoảng cách nâng hạn mức → giao dịch lớn đầu tiên: {gap_label}")
+    print(f"  Không chi lớn trong 7 ngày sau nâng: {pct(quiet_rate)}; dưới 30 phút: {pct(quick_rate)}")
+    report.add(
+        "Nâng hạn mức không chi lớn trong 7 ngày",
+        pct(quiet_rate),
+        pct(float(hist["limit_raise_idle_share"])),
+        "10–20%",
+        0.10 <= quiet_rate <= 0.20,
+    )
+    report.add("Nâng hạn mức rồi chi lớn dưới 30 phút", pct(quick_rate), "≥ 5%", gap_label, quick_rate >= 0.05)
+    report.add(
+        "Đổi số điện thoại",
+        pct(phone_rate),
+        pct(float(hist["phone_change_share"])),
+        f"{phone_rows['customer_id'].nunique()} khách",
+        abs(phone_rate - float(hist["phone_change_share"])) <= 0.0015,
+    )
+    window_devices = devices.loc[
+        devices["customer_id"].notna() & (devices["first_seen"] >= sim_start) & (devices["first_seen"] < sim_end),
+        "device_id",
+    ].astype(str)
+    device_match = set(device_rows["new_value"].astype(str)) == set(window_devices)
+    report.add(
+        "Thiết bị mới khớp bước 2",
+        f"{device_rows['new_value'].nunique()} dòng",
+        f"{window_devices.nunique()} máy",
+        "-",
+        device_match and len(device_rows) == int(window_devices.nunique()),
+    )
+
+    savings_accounts = accounts.loc[(accounts["account_type"].astype(str) == "savings") & accounts["customer_id"].notna(), "account_id"].astype(str)
+    liquid = transactions.loc[transactions["tx_type"].astype(str).eq("savings_liquidation")].copy()
+    mature = liquid.loc[liquid["purpose_text"].astype(str).eq("tat toan dao han"), "from_account"].astype(str).nunique()
+    early = liquid.loc[liquid["purpose_text"].astype(str).eq("tat toan truoc han"), "from_account"].astype(str).nunique()
+    n_savings = max(len(savings_accounts), 1)
+    mature_rate = mature / n_savings
+    early_rate = early / n_savings
+    holder = dict(zip(accounts["account_id"].astype(str), accounts["customer_id"].astype(str)))
+    kind_of = dict(zip(accounts["account_id"].astype(str), accounts["account_type"].astype(str)))
+    same_owner = liquid["from_account"].astype(str).map(holder).eq(liquid["to_account"].astype(str).map(holder))
+    to_personal = liquid["to_account"].astype(str).map(kind_of).eq("personal")
+    from_savings = liquid["from_account"].astype(str).map(kind_of).eq("savings")
+    report.add(
+        "Tất toán đáo hạn",
+        pct(mature_rate),
+        pct(float(hist["savings_maturity_share"])),
+        f"{mature}/{len(savings_accounts)} sổ",
+        abs(mature_rate - float(hist["savings_maturity_share"])) <= 0.005 and bool(from_savings.all() and to_personal.all() and same_owner.all()),
+    )
+    report.add(
+        "Tất toán trước hạn",
+        pct(early_rate),
+        pct(float(hist["savings_early_share"])),
+        f"{early} sổ",
+        abs(early_rate - float(hist["savings_early_share"])) <= 0.0015,
+    )
+    loan_ids = set(transactions.loc[transactions["tx_type"].astype(str).eq("quick_loan_disbursement"), "to_account"].astype(str).map(acc_cust).dropna())
+    card_ids = set(transactions.loc[transactions["tx_type"].astype(str).eq("credit_card_cash_advance"), "to_account"].astype(str).map(acc_cust).dropna())
+    loan_customers = len(loan_ids)
+    card_customers = len(card_ids)
+    print(f"  Khách trùng vay nhanh và rút thẻ: {len(loan_ids & card_ids)}")
+    loan_rate = loan_customers / n_customers
+    card_rate = card_customers / n_customers
+    report.add("Vay nhanh", pct(loan_rate), pct(float(hist["quick_loan_share"])), f"{loan_customers} khách", abs(loan_rate - float(hist["quick_loan_share"])) <= 0.0015)
+    report.add("Rút tiền thẻ", pct(card_rate), pct(float(hist["card_cash_advance_share"])), f"{card_customers} khách", abs(card_rate - float(hist["card_cash_advance_share"])) <= 0.0015)
+    watched = set(liquid["from_account"].astype(str)) | set(liquid["to_account"].astype(str))
+    watched |= set(transactions.loc[transactions["tx_type"].isin(["quick_loan_disbursement", "credit_card_cash_advance"]), "to_account"].astype(str))
+    balance_bad = replay_subset(transactions, accounts, watched)
+    report.add("Số dư sổ, vay nhanh và rút thẻ", f"{balance_bad} lệch", "0", "from_balance_before khớp sổ", balance_bad == 0)
+
+    external = accounts.loc[
+        accounts["customer_id"].isna() & accounts["phone_number_id"].notna() & (accounts["account_type"].astype(str) == "personal"),
+        ["account_id", "bank_id"],
+    ].copy()
+    external["account_id"] = external["account_id"].astype(str)
+    b01_accounts = set(accounts.loc[accounts["bank_id"].astype(str).eq("B01") & accounts["customer_id"].notna(), "account_id"].astype(str))
+    paid_in = transactions.loc[transactions["to_account"].astype(str).isin(set(external["account_id"])), ["from_account", "to_account", "ts"]].copy()
+    paid_in["from_account"] = paid_in["from_account"].astype(str)
+    paid_in["to_account"] = paid_in["to_account"].astype(str)
+    paid_in = paid_in.loc[paid_in["from_account"].isin(b01_accounts)]
+    paid_in["month"] = paid_in["ts"].dt.month
+    monthly = paid_in.groupby(["to_account", "month"], sort=False)["from_account"].nunique()
+    popular = monthly.groupby("to_account").median()
+    popular = popular.loc[popular >= 5]
+    pop_rate = len(popular) / max(len(external), 1)
+    sender_values = monthly.loc[monthly.index.get_level_values(0).isin(popular.index)].to_numpy() if len(popular) else np.array([])
+    if len(sender_values):
+        p10, p50, p90 = np.percentile(sender_values, [10, 50, 90])
+        sender_label = f"p10 {p10:.0f}, p50 {p50:.0f}, p90 {p90:.0f}"
+    else:
+        p10 = p50 = p90 = 0.0
+        sender_label = "không có"
+    opened = accounts.set_index(accounts["account_id"].astype(str))["opened_at"]
+    account_age = (sim_start - opened.reindex(popular.index)).dt.total_seconds() / 86400
+    if len(account_age):
+        a10, a50, a90 = np.percentile(account_age.to_numpy(), [10, 50, 90])
+        young_rate = float((account_age < 180).mean())
+        age_label = f"p10 {a10:.0f}, p50 {a50:.0f}, p90 {a90:.0f} ngày; <180 ngày {pct(young_rate)}"
+    else:
+        a10 = a50 = a90 = 0.0
+        young_rate = 0.0
+        age_label = "không có"
+    print(f"  Người nhận phổ biến: {len(popular)} tài khoản, người gửi B01/tháng {sender_label}")
+    print(f"  Tuổi tài khoản người nhận phổ biến: {age_label}")
+    report.add(
+        "Người nhận cá nhân phổ biến",
+        pct(pop_rate),
+        pct(float(hist["popular_payee_share"])),
+        sender_label,
+        abs(pop_rate - float(hist["popular_payee_share"])) <= 0.001 and len(popular) > 0 and 5 <= p10 and p90 <= 40,
+    )
+    report.add(
+        "Người nhận phổ biến dưới 180 ngày tuổi",
+        pct(young_rate),
+        pct(float(hist["popular_payee_young_share"])),
+        age_label,
+        abs(young_rate - float(hist["popular_payee_young_share"])) <= 0.08,
+    )
+
+    call_month = calls["ts_start"].dt.month
+    call_rates = []
+    for month in (7, 8, 9):
+        call_rates.append(int((call_month == month).sum()) / n_customers)
+    call_mean = float(np.mean(call_rates)) if call_rates else 0.0
+    call_target = float(hist["bank_calls_per_month"]) * float(cfg["bank_call_log_completeness"])
+    print(f"  Ngân hàng gọi khách, tỷ lệ ghi được mỗi tháng: {pct(call_mean)} (mục tiêu {pct(call_target)})")
+    report.add(
+        "Cuộc gọi ngân hàng được ghi",
+        pct(call_mean),
+        pct(call_target),
+        "1,5%/tháng × độ đầy đủ nhật ký",
+        abs(call_mean - call_target) <= 0.004 and bool((calls["ts_end"] > calls["ts_start"]).all()),
     )
 
     blank = float((transactions["purpose_text"].fillna("").astype(str) == "").mean())

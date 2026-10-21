@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from sim.limits import limit_report
+
 TZ = "Asia/Ho_Chi_Minh"
 LEAKED = {"is_mule", "ring_id", "layer"}
 
@@ -304,6 +306,9 @@ def main() -> None:
     tracked_tx = transactions["from_account"].isin(tracked)
     negative = int((transactions.loc[tracked_tx, "from_balance_before"] < transactions.loc[tracked_tx, "amount"]).sum())
     report.add("Số dư không âm", f"{negative} lệch", "0", "-", negative == 0)
+    changes = pd.read_parquet(observed / "account_changes.parquet")
+    limits = limit_report(transactions, accounts, changes)
+    report.add("Không giao dịch vượt hạn mức hiện hành", f"{limits['violations']} lệnh", "0", "-", limits["violations"] == 0)
 
     account_ids = set(accounts["account_id"])
     device_ids = set(devices["device_id"].astype(str))

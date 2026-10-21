@@ -158,6 +158,8 @@ def main() -> None:
     cfg = load_config()
     rng = np.random.default_rng(int(cfg["seed"]))
     spec = cfg["mules"]
+    one_mule = bool(cfg.get("red_team", {}).get("one_mule_per_b01_victim", False))
+    print(f"red_team.one_mule_per_b01_victim = {str(one_mule).lower()}")
     sim_start = as_timestamp(cfg["sim_start"])
     sim_end = as_timestamp(cfg["sim_end"])
     observed = ROOT / "out" / "observed"
@@ -379,6 +381,8 @@ def main() -> None:
                 "opening_balance": int(new_balance[cursor]),
                 "status": "active",
                 "merchant_verified": False,
+                "limit_per_txn": np.int64(int(cfg["limits"]["per_txn"]["normal"])),
+                "limit_per_day": np.int64(int(cfg["limits"]["per_day"]["normal"])),
             }
         )
     new_accounts = pd.DataFrame(new_rows)
@@ -393,6 +397,8 @@ def main() -> None:
     new_accounts["holder_name_ascii"] = new_accounts["holder_name_ascii"].astype("string")
     new_accounts["status"] = new_accounts["status"].astype("string")
     new_accounts["opening_balance"] = new_accounts["opening_balance"].astype(np.int64)
+    new_accounts["limit_per_txn"] = new_accounts["limit_per_txn"].astype(np.int64)
+    new_accounts["limit_per_day"] = new_accounts["limit_per_day"].astype(np.int64)
     new_accounts["merchant_verified"] = new_accounts["merchant_verified"].astype(bool)
     accounts = pd.concat([accounts, new_accounts], ignore_index=True)
     old_rings = {ring for ring, active in zip(members["ring_id"], members["active_ring"]) if not active}

@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sim.io import write
+from sim.limits import format_limit
 
 TZ = "Asia/Ho_Chi_Minh"
 SCHOOL_AGE = 22
@@ -26,16 +27,17 @@ SCHOOL_AGE = 22
 ENTRY_AGES = (6, 11, 15, 18)
 TX_SIGMA = 0.7
 # kind
-SALARY, BUSINESS_IN, BILL, RENT, CARD, CASH, TRANSFER, OWN, SCHOOL, LARGE, DRAIN, PASS_IN, PASS_OUT = range(13)
+SALARY, BUSINESS_IN, BILL, RENT, CARD, CASH, TRANSFER, OWN, SCHOOL, LARGE, DRAIN, PASS_IN, PASS_OUT, SAVINGS, LOAN, CASH_ADV = range(16)
 KIND_NAME = np.array(
     [
         "salary_in", "business_in", "bill_payment", "rent", "card_payment", "cash_withdrawal",
         "transfer", "own_transfer", "school_fee", "large_oneoff", "own_transfer_drain",
-        "passthrough_in", "passthrough_out",
+        "passthrough_in", "passthrough_out", "savings_liquidation", "quick_loan_disbursement",
+        "credit_card_cash_advance",
     ],
     dtype=object,
 )
-INBOUND = {SALARY, BUSINESS_IN, PASS_IN}
+INBOUND = {SALARY, BUSINESS_IN, PASS_IN, LOAN, CASH_ADV}
 # 23h giảm dần tới đáy 3–4h, rồi tăng từ 5h. 0–6h khoảng 5,5% tổng trọng số.
 # Bậc tối 20–22h và 0–1h dốc hơn 25% để đáy đêm đủ thấp; 6–8h là bậc sáng.
 WEEKDAY_HOUR = np.array(
@@ -59,6 +61,9 @@ PURPOSE = {
     DRAIN: ["chuyen tien", "chuyen khoan", "ck"],
     PASS_IN: ["gop tien", "dong quy", "chuyen tien", "dong tien"],
     PASS_OUT: ["chuyen tien", "chuyen giup", "tra lai", "chuyen cho con"],
+    SAVINGS: ["tat toan dao han", "tat toan truoc han"],
+    LOAN: ["giai ngan vay nhanh", "vay nhanh"],
+    CASH_ADV: ["rut tien the", "ung tien the"],
 }
 
 
@@ -155,6 +160,11 @@ class Events:
     def add(self, **columns) -> None:
         if len(columns["kind"]) == 0:
             return
+        width = len(columns["kind"])
+        if "raise_limit" not in columns:
+            columns["raise_limit"] = np.zeros(width, dtype=bool)
+        if "note" not in columns:
+            columns["note"] = np.full(width, "", dtype=object)
         lengths = {key: len(value) for key, value in columns.items()}
         if len(set(lengths.values())) != 1:
             raise RuntimeError(f"Lệch độ dài mảng giao dịch: {lengths}")
@@ -494,6 +504,200 @@ def _round_flags(n, share, rng) -> np.ndarray:
     return flag
 
 
+def _blank_row(n: int) -> dict:
+    return {
+        "from_row": np.empty(n, dtype=np.int32),
+        "to_row": np.empty(n, dtype=np.int32),
+        "actor": np.empty(n, dtype=np.int32),
+        "amount": np.empty(n, dtype=np.int64),
+        "kind": np.empty(n, dtype=np.int8),
+        "day": np.empty(n, dtype=np.int16),
+        "hour": np.empty(n, dtype=np.int16),
+        "minute": np.empty(n, dtype=np.int16),
+        "second": np.empty(n, dtype=np.int16),
+        "old_payee": np.ones(n, dtype=bool),
+        "do_round": np.zeros(n, dtype=bool),
+        "raise_limit": np.zeros(n, dtype=bool),
+        "note": np.full(n, "", dtype=object),
+    }
+
+
+def _append_products(frame, latent, accounts, primary, directory, hist, rng, weekend, limit_txn, opening_bal, drain_who, pass_who, large_who, origin):
+    """Sổ tiết kiệm, vay nhanh, rút thẻ, người nhận phổ biến, và lệnh lớn sau nâng hạn mức."""
+    n = len(primary)
+    cidx = accounts["cidx"].to_numpy()
+    bank = accounts["bank_id"].astype(str).to_numpy()
+    rows = []
+
+    def clock_for(day):
+        return _clock(len(day), np.asarray(day, dtype=np.int16), weekend, rng)
+
+    savings = np.flatnonzero((accounts["account_type"].astype(str) == "savings").to_numpy() & (cidx >= 0))
+    owner = cidx[savings]
+    usable = primary[owner] >= 0
+    savings = savings[usable]
+    owner = owner[usable]
+    different = primary[owner] != savings
+    savings = savings[different]
+    owner = owner[different]
+    n_mat = int(round(float(hist["savings_maturity_share"]) * len(savings))) if len(savings) else 0
+    n_early = int(round(float(hist["savings_early_share"]) * len(savings))) if len(savings) else 0
+    order = rng.permutation(len(savings)) if len(savings) else np.array([], dtype=int)
+    maturity = savings[order[:n_mat]]
+    early = savings[order[n_mat:n_mat + n_early]]
+    for chosen, note, share in ((maturity, "tat toan dao han", 0.80), (early, "tat toan truoc han", 0.50)):
+        if len(chosen) == 0:
+            continue
+        who = cidx[chosen]
+        amount = np.maximum((opening_bal[chosen] * share).astype(np.int64), np.int64(100_000))
+        amount = round_vnd(amount, _round_flags(len(amount), float(hist["round_amount_share"]), rng))
+        day = rng.integers(10, 80, size=len(chosen), dtype=np.int16)
+        day, hour, minute, second = clock_for(day)
+        block = _blank_row(len(chosen))
+        block["from_row"] = chosen.astype(np.int32)
+        block["to_row"] = primary[who].astype(np.int32)
+        block["actor"] = who.astype(np.int32)
+        block["amount"] = amount.astype(np.int64)
+        block["kind"] = np.full(len(chosen), SAVINGS, dtype=np.int8)
+        block["day"] = day
+        block["hour"] = hour
+        block["minute"] = minute
+        block["second"] = second
+        block["note"] = np.full(len(chosen), note, dtype=object)
+        rows.append(pd.DataFrame(block))
+
+    lender = int(directory["pools"]["utility"][0])
+    blocked = np.zeros(n, dtype=bool)
+    blocked[np.asarray(drain_who, dtype=int)] = True
+    blocked[np.asarray(pass_who, dtype=int)] = True
+    free = np.flatnonzero((primary >= 0) & ~blocked)
+    n_loan = int(round(float(hist["quick_loan_share"]) * n))
+    n_card = int(round(float(hist["card_cash_advance_share"]) * n))
+    # Hai tập rút độc lập nên một khách có thể vừa vay nhanh vừa rút thẻ.
+    loan_who = rng.choice(free, size=min(n_loan, len(free)), replace=False) if n_loan and len(free) else np.array([], dtype=int)
+    card_who = rng.choice(free, size=min(n_card, len(free)), replace=False) if n_card and len(free) else np.array([], dtype=int)
+    for who, kind, median, low, high, note in (
+        (loan_who, LOAN, 20_000_000, 2_000_000, 100_000_000, ""),
+        (card_who, CASH_ADV, 3_000_000, 500_000, 20_000_000, ""),
+    ):
+        if len(who) == 0:
+            continue
+        raw = np.rint(median * np.exp(0.45 * rng.standard_normal(len(who)))).astype(np.int64)
+        amount = np.clip(raw, low, high).astype(np.int64)
+        amount = round_vnd(amount, _round_flags(len(amount), float(hist["round_amount_share"]), rng))
+        day = rng.integers(0, 90, size=len(who), dtype=np.int16)
+        day, hour, minute, second = clock_for(day)
+        block = _blank_row(len(who))
+        block["from_row"] = np.full(len(who), lender, dtype=np.int32)
+        block["to_row"] = primary[who].astype(np.int32)
+        block["actor"] = who.astype(np.int32)
+        block["amount"] = amount
+        block["kind"] = np.full(len(who), kind, dtype=np.int8)
+        block["day"] = day
+        block["hour"] = hour
+        block["minute"] = minute
+        block["second"] = second
+        block["old_payee"] = np.ones(len(who), dtype=bool)
+        block["note"] = np.full(len(who), note, dtype=object)
+        rows.append(pd.DataFrame(block))
+
+    external = np.flatnonzero(
+        (cidx < 0) & accounts["phone_number_id"].notna().to_numpy() & (accounts["account_type"].astype(str) == "personal").to_numpy()
+    )
+    n_pop = int(round(float(hist["popular_payee_share"]) * len(external))) if len(external) else 0
+    b01 = np.flatnonzero((primary >= 0) & (bank[primary] == "B01"))
+    family = latent["family_group_id"].astype(str).to_numpy()
+    low_m = int(hist["popular_payee_per_month"]["min"])
+    high_m = int(hist["popular_payee_per_month"]["max"])
+    young_ids: list[str] = []
+    if n_pop and len(b01) >= high_m:
+        popular = rng.choice(external, size=n_pop, replace=False)
+        young_n = int(round(float(hist["popular_payee_young_share"]) * len(popular)))
+        if young_n:
+            age_days = rng.integers(2, 180, size=young_n)
+            opened = origin - pd.to_timedelta(age_days, unit="D")
+            accounts.loc[popular[:young_n], "opened_at"] = pd.Series(opened, index=popular[:young_n])
+            young_ids = accounts.loc[popular[:young_n], "account_id"].astype(str).tolist()
+        purposes = np.array(["tien nha thang", "hoc them", "tien hang"], dtype=object)
+        for slot, payee in enumerate(popular):
+            pool = []
+            seen_family = set()
+            shuffled = rng.permutation(b01)
+            for person in shuffled:
+                fam = family[int(person)]
+                if fam in seen_family:
+                    continue
+                seen_family.add(fam)
+                pool.append(int(person))
+                if len(pool) >= high_m:
+                    break
+            if len(pool) < low_m:
+                continue
+            note = str(purposes[slot % len(purposes)])
+            for month_i, day0 in enumerate((0, 31, 62)):
+                k = int(rng.integers(low_m, min(high_m, len(pool)) + 1))
+                payers = rng.choice(np.asarray(pool, dtype=int), size=k, replace=False)
+                day = day0 + rng.integers(0, 28, size=k)
+                day = np.clip(day, 0, 89).astype(np.int16)
+                day, hour, minute, second = clock_for(day)
+                amount = rng.integers(200_000, 3_000_001, size=k).astype(np.int64)
+                amount = round_vnd(amount, np.ones(k, dtype=bool))
+                block = _blank_row(k)
+                block["from_row"] = primary[payers].astype(np.int32)
+                block["to_row"] = np.full(k, int(payee), dtype=np.int32)
+                block["actor"] = payers.astype(np.int32)
+                block["amount"] = amount
+                block["kind"] = np.full(k, TRANSFER, dtype=np.int8)
+                block["day"] = day
+                block["hour"] = hour
+                block["minute"] = minute
+                block["second"] = second
+                block["old_payee"] = np.ones(k, dtype=bool)
+                block["note"] = np.full(k, note, dtype=object)
+                rows.append(pd.DataFrame(block))
+
+    can = (primary >= 0) & ((opening_bal[primary] * 90) // 100 > limit_txn[primary] + 1_000_000)
+    can[np.asarray(drain_who, dtype=int)] = False
+    can[np.asarray(pass_who, dtype=int)] = False
+    can[np.asarray(large_who, dtype=int)] = False
+    n_raise = int(round(float(hist["limit_raise_share"]) * n))
+    prefer = np.asarray(large_who, dtype=int)
+    prefer = prefer[(primary[prefer] >= 0)] if len(prefer) else prefer
+    n_fill = max(0, n_raise - len(prefer))
+    pool = np.flatnonzero(can)
+    fill = rng.choice(pool, size=min(n_fill, len(pool)), replace=False) if n_fill and len(pool) else np.array([], dtype=int)
+    if len(fill):
+        bal = opening_bal[primary[fill]]
+        lim = limit_txn[primary[fill]]
+        amount = np.minimum((bal * 70) // 100, lim * 2).astype(np.int64)
+        amount = round_vnd(amount, _round_flags(len(amount), float(hist["round_amount_share"]), rng))
+        amount = np.maximum(amount, lim + 1_000_000)
+        dealer = directory["pools"]["real_estate"][fill % len(directory["pools"]["real_estate"])]
+        day = np.zeros(len(fill), dtype=np.int16)
+        hour = np.full(len(fill), 6, dtype=np.int16)
+        minute = rng.integers(0, 40, size=len(fill)).astype(np.int16)
+        second = rng.integers(0, 60, size=len(fill)).astype(np.int16)
+        block = _blank_row(len(fill))
+        block["from_row"] = primary[fill].astype(np.int32)
+        block["to_row"] = dealer.astype(np.int32)
+        block["actor"] = fill.astype(np.int32)
+        block["amount"] = amount.astype(np.int64)
+        block["kind"] = np.full(len(fill), TRANSFER, dtype=np.int8)
+        block["day"] = day
+        block["hour"] = hour
+        block["minute"] = minute
+        block["second"] = second
+        block["old_payee"] = np.zeros(len(fill), dtype=bool)
+        block["raise_limit"] = np.zeros(len(fill), dtype=bool)
+        notes = np.array(["coc xe", "dat coc", "hoc phi"], dtype=object)
+        block["note"] = notes[rng.integers(0, len(notes), size=len(fill))]
+        rows.append(pd.DataFrame(block))
+    if rows:
+        extra = pd.concat(rows, ignore_index=True)
+        frame = pd.concat([frame, extra[frame.columns]], ignore_index=True)
+    return frame, young_ids
+
+
 def build_events(customers, latent, accounts, age, primary, alt, drain_to, directory, cfg, rng, origin, weekend, payday):
     hist = cfg["history"]
     n = len(customers)
@@ -707,7 +911,13 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
     n_drain = int(round(float(hist["own_transfer_drain_share"]) * n))
     n_pass = int(round(float(hist["legit_passthrough_share"]) * n))
     large_who = rng.choice(rich, size=min(n_large, len(rich)), replace=False) if n_large and len(rich) else np.array([], dtype=int)
-    multi = np.flatnonzero((drain_to >= 0) & (primary >= 0) & (drain_to != primary) & ~np.isin(cidx, large_who))
+    limit_txn = accounts["limit_per_txn"].to_numpy().astype(np.int64)
+    opening_bal = accounts["opening_balance"].to_numpy().astype(np.int64)
+    # Rút gần hết phải nằm trong một lệnh: chia nhỏ sẽ không còn > 80% số dư.
+    drain_fits = (opening_bal[primary] * 85 // 100) <= limit_txn[primary]
+    multi = np.flatnonzero(
+        (drain_to >= 0) & (primary >= 0) & (drain_to != primary) & ~np.isin(cidx, large_who) & drain_fits
+    )
     # Ưu tiên ngân hàng B01 để phiên rút gần hết đủ mẫu, tỷ lệ khách không đổi.
     primary_bank = accounts["bank_id"].astype(str).to_numpy()
     multi_home = multi[primary_bank[primary[multi]] == "B01"] if len(multi) else multi
@@ -905,10 +1115,14 @@ def build_events(customers, latent, accounts, age, primary, alt, drain_to, direc
             packed = chosen.merge(totals, on=["from_row", "day"], how="left")
             packed["amount"] = packed["amount"].to_numpy().astype(np.int64)
             frame = pd.concat([rest, packed[rest.columns]], ignore_index=True)
-    return frame
+    frame, young_ids = _append_products(
+        frame, latent, accounts, primary, directory, hist, rng, weekend,
+        limit_txn, opening_bal, drain_who, pass_who, large_who, origin,
+    )
+    return frame, young_ids
 
 
-def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Timestamp) -> pd.DataFrame:
+def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Timestamp, rng, sme_account: np.ndarray, split_share: float, split_share_sme: float):
     tracked = (accounts["cidx"].to_numpy() >= 0)
     opening = accounts["opening_balance"].to_numpy().astype(np.int64)
     opened = accounts["opened_at"]
@@ -936,6 +1150,16 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
     old_col = frame["old_payee"].to_numpy().astype(bool)
     probe = stamp_from_parts(origin, np.array([0]), np.array([0]), np.array([0]), np.array([0]))
     origin_s = int(unix_seconds(probe.astype("int64").to_numpy())[0])
+    limit_txn = accounts["limit_per_txn"].to_numpy().astype(np.int64).copy()
+    limit_day = accounts["limit_per_day"].to_numpy().astype(np.int64).copy()
+    spent = np.zeros(len(accounts), dtype=np.int64)
+    spent_on = np.full(len(accounts), -1, dtype=np.int16)
+    raised_done = np.zeros(len(accounts), dtype=bool)
+    account_ids = accounts["account_id"].astype(str).to_numpy()
+    raise_col = frame["raise_limit"].to_numpy().astype(bool) if "raise_limit" in frame.columns else np.zeros(n, dtype=bool)
+    note_col = frame["note"].astype(str).to_numpy() if "note" in frame.columns else np.full(n, "", dtype=object)
+    changes: list[dict] = []
+    stats = {"outbound": 0, "split": 0, "over": 0, "over_split": 0, "over_sme": 0, "over_sme_split": 0}
     deferred: list[tuple] = []
     extras: list[dict] = []
     seq = 0
@@ -954,8 +1178,105 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
         seq += 1
         heapq.heappush(
             deferred,
-            (ts_i, seq, int(day_i), int(amt), int(fr), int(tr), int(actor_i), int(hour_i), int(minute_i), int(second_i), bool(old_i), int(attempts)),
+            (ts_i, seq, int(day_i), int(amt), int(fr), int(tr), int(actor_i), int(hour_i), int(minute_i), int(second_i), bool(old_i), int(attempts), int(SCHOOL), False, "", True),
         )
+        return True
+
+    def bump_clock(day_i, hour_i, minute_i, second_i, add_day: bool):
+        second_i = int(second_i) + (0 if add_day else 1)
+        minute_i = int(minute_i)
+        hour_i = int(hour_i)
+        day_i = int(day_i) + (1 if add_day else 0)
+        if second_i >= 60:
+            second_i -= 60
+            minute_i += 1
+        if minute_i >= 60:
+            minute_i -= 60
+            hour_i += 1
+        if hour_i >= 24:
+            hour_i -= 24
+            day_i += 1
+        if not (0 <= day_i <= 89):
+            return None
+        return day_i, hour_i, minute_i, second_i
+
+    def push_rest(day_i, hour_i, minute_i, second_i, amt, fr, tr, actor_i, old_i, kind_i, note_i, count_logical, add_day) -> bool:
+        nonlocal seq
+        clock = bump_clock(day_i, hour_i, minute_i, second_i, add_day)
+        if clock is None or int(amt) < 1_000:
+            return False
+        day_i, hour_i, minute_i, second_i = clock
+        ts_i = origin_s + int(day_i) * 86400 + int(hour_i) * 3600 + int(minute_i) * 60 + int(second_i)
+        seq += 1
+        heapq.heappush(
+            deferred,
+            (ts_i, seq, int(day_i), int(amt), int(fr), int(tr), int(actor_i), int(hour_i), int(minute_i), int(second_i), bool(old_i), 0, int(kind_i), False, str(note_i), bool(count_logical)),
+        )
+        return True
+
+    def touch(fr, day_i) -> None:
+        if int(spent_on[fr]) != int(day_i):
+            spent_on[fr] = np.int16(day_i)
+            spent[fr] = 0
+
+    def maybe_raise(fr, paid, day_i, hour_i, minute_i, second_i) -> None:
+        touch(fr, day_i)
+        old_t = int(limit_txn[fr])
+        old_d = int(limit_day[fr])
+        covered = int(((max(int(paid), 1) + 999_999) // 1_000_000) * 1_000_000)
+        new_t = max(old_t, covered)
+        if new_t == old_t:
+            new_t = old_t + 50_000_000
+        new_d = max(old_d, new_t, int(spent[fr]) + int(paid))
+        limit_txn[fr] = np.int64(new_t)
+        limit_day[fr] = np.int64(new_d)
+        raised_done[fr] = True
+        if rng.random() < 0.12:
+            lead = int(rng.integers(5 * 60, 25 * 60))
+        else:
+            lead = int(rng.integers(2 * 3600, 36 * 3600))
+        stamp = origin_s + int(day_i) * 86400 + int(hour_i) * 3600 + int(minute_i) * 60 + int(second_i) - lead
+        if stamp < origin_s:
+            stamp = origin_s
+        changes.append(
+            {
+                "account_id": account_ids[fr],
+                "ts": origin + pd.to_timedelta(int(stamp - origin_s), unit="s"),
+                "change_type": "limit_raise",
+                "old_value": format_limit(old_t, old_d),
+                "new_value": format_limit(new_t, new_d),
+                "channel": "app" if int(fr) % 10 < 7 else "quầy",
+            }
+        )
+
+    def clip_limit(fr, day_i, paid, want_raise, hour_i, minute_i, second_i) -> int:
+        if want_raise:
+            maybe_raise(fr, paid, day_i, hour_i, minute_i, second_i)
+        touch(fr, day_i)
+        room = int(limit_day[fr]) - int(spent[fr])
+        cap = min(int(paid), int(limit_txn[fr]), room)
+        if cap < 1_000:
+            return 0
+        spent[fr] += np.int64(cap)
+        return int(cap)
+
+    def choose_raise(fr, paid, day_i, count_logical: bool) -> bool:
+        """Lệnh vượt hạn mức: SME khoảng 40% chia nhỏ, còn lại khoảng 25%; phần kia nâng hạn mức."""
+        if not count_logical:
+            return False
+        touch(fr, day_i)
+        room = int(limit_day[fr]) - int(spent[fr])
+        if int(paid) <= int(limit_txn[fr]) and int(paid) <= room:
+            return False
+        stats["over"] += 1
+        sme = bool(sme_account[fr])
+        if sme:
+            stats["over_sme"] += 1
+        if rng.random() < (split_share_sme if sme else split_share):
+            stats["over_split"] += 1
+            if sme:
+                stats["over_sme_split"] += 1
+            return False
         return True
 
     def settle_school(day_i, amt, avail, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts):
@@ -988,8 +1309,6 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
                 amt = snapped
         if amt <= 0 or amt > avail:
             return None
-        if k == LARGE and amt < 50_000_000:
-            return None
         return int(amt)
 
     pos = 0
@@ -997,30 +1316,46 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
     while pos < n_order or deferred:
         next_orig = int(ts_s[order[pos]]) if pos < n_order else 2**62
         if deferred and deferred[0][0] < next_orig:
-            ts_i, _, day_i, amt, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts = heapq.heappop(deferred)
+            ts_i, _, day_i, amt, fr, tr, actor_i, hour_i, minute_i, second_i, old_i, attempts, kind_i, raise_i, note_i, count_logical = heapq.heappop(deferred)
             if ts_i < opened_s[fr] or (tr >= 0 and ts_i < opened_s[tr]):
                 dropped_open += 1
                 continue
+            if not tracked[fr]:
+                continue
             avail = int(bal[fr])
-            paid = apply_outbound(fr, tr, SCHOOL, amt, avail, day_i, hour_i, minute_i, second_i, actor_i, old_i, False, attempts)
+            paid = apply_outbound(fr, tr, int(kind_i), amt, avail, day_i, hour_i, minute_i, second_i, actor_i, old_i, False, attempts)
             if paid is None:
                 continue
-            bal[fr] = avail - paid
+            want_raise = choose_raise(fr, paid, day_i, bool(count_logical))
+            cap = clip_limit(fr, day_i, paid, want_raise, hour_i, minute_i, second_i)
+            if cap <= 0:
+                push_rest(day_i, hour_i, minute_i, second_i, paid, fr, tr, actor_i, old_i, kind_i, note_i, count_logical, True)
+                continue
+            if count_logical:
+                stats["outbound"] += 1
+            if cap < paid:
+                if count_logical:
+                    stats["split"] += 1
+                room_left = int(limit_day[fr]) - int(spent[fr])
+                push_rest(day_i, hour_i, minute_i, second_i, paid - cap, fr, tr, actor_i, old_i, kind_i, note_i, False, room_left < 1_000)
+            bal[fr] = avail - cap
             if tr >= 0 and tracked[tr]:
-                bal[tr] += paid
+                bal[tr] += cap
             extras.append(
                 {
                     "from_row": fr,
                     "to_row": tr,
                     "actor": actor_i,
-                    "amount": paid,
-                    "kind": SCHOOL,
+                    "amount": cap,
+                    "kind": int(kind_i),
                     "day": day_i,
                     "hour": hour_i,
                     "minute": minute_i,
                     "second": second_i,
                     "old_payee": old_i,
                     "do_round": False,
+                    "raise_limit": False,
+                    "note": note_i,
                     "from_balance_before": avail,
                     "ts": origin + pd.to_timedelta(int(day_i) * 86400 + int(hour_i) * 3600 + int(minute_i) * 60 + int(second_i), unit="s"),
                 }
@@ -1038,10 +1373,19 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
         if k == DRAIN:
             avail = int(bal[fr])
             amt = (avail * 85) // 100
-            if amt <= (avail * 80) // 100 or amt < 1_000 or tr < 0:
+            touch(fr, int(day_col[i]))
+            room = int(limit_day[fr]) - int(spent[fr])
+            if amt <= (avail * 80) // 100 or amt < 1_000 or tr < 0 or amt > int(limit_txn[fr]) or amt > room:
                 keep[i] = False
                 continue
+            spent[fr] += np.int64(amt)
+            stats["outbound"] += 1
+            fbb[i] = avail
             amount[i] = amt
+            bal[fr] = avail - amt
+            if tr >= 0 and tracked[tr]:
+                bal[tr] += amt
+            continue
         amt = int(amount[i])
         if k in INBOUND or not tracked[fr]:
             fbb[i] = int(opening[fr])
@@ -1059,11 +1403,31 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
         if paid is None:
             keep[i] = False
             continue
+        want_raise = choose_raise(fr, paid, int(day_col[i]), True)
+        cap = clip_limit(
+            fr, int(day_col[i]), paid, want_raise,
+            int(hour_col[i]), int(minute_col[i]), int(second_col[i]),
+        )
+        if cap <= 0:
+            keep[i] = False
+            push_rest(
+                int(day_col[i]), int(hour_col[i]), int(minute_col[i]), int(second_col[i]),
+                paid, fr, tr, int(actor_col[i]), bool(old_col[i]), k, str(note_col[i]), True, True,
+            )
+            continue
+        stats["outbound"] += 1
+        if cap < paid:
+            stats["split"] += 1
+            room_left = int(limit_day[fr]) - int(spent[fr])
+            push_rest(
+                int(day_col[i]), int(hour_col[i]), int(minute_col[i]), int(second_col[i]),
+                paid - cap, fr, tr, int(actor_col[i]), bool(old_col[i]), k, str(note_col[i]), False, room_left < 1_000,
+            )
         fbb[i] = avail
-        amount[i] = paid
-        bal[fr] = avail - paid
+        amount[i] = cap
+        bal[fr] = avail - cap
         if tr >= 0 and tracked[tr]:
-            bal[tr] += paid
+            bal[tr] += cap
     if not keep.any() and not extras:
         raise RuntimeError(
             f"Mọi giao dịch bị loại. n={n}, mở sau ts={dropped_open}, "
@@ -1077,7 +1441,7 @@ def apply_balances(frame: pd.DataFrame, accounts: pd.DataFrame, origin: pd.Times
         kept = pd.concat([kept, pd.DataFrame(extras)], ignore_index=True)
     kept = kept.sort_values(["ts"], kind="mergesort").reset_index(drop=True)
     # Giữ thứ tự xử lý số dư: sort theo ts là ổn vì lexsort đã theo ts, và các dòng bị loại không đổi thứ tự tương đối.
-    return kept.reset_index(drop=True)
+    return kept.reset_index(drop=True), stats, changes
 
 
 def purposes_and_channels(kept: pd.DataFrame, accounts: pd.DataFrame, customers: pd.DataFrame, age_elderly: np.ndarray, rng) -> pd.DataFrame:
@@ -1095,7 +1459,12 @@ def purposes_and_channels(kept: pd.DataFrame, accounts: pd.DataFrame, customers:
         to_row = kept["to_row"].to_numpy()
         token = np.array([holder[int(row)].split()[-1] if int(row) >= 0 else "BAN" for row in to_row[named]], dtype=object)
         purpose[named] = np.char.add(token.astype(str), " chuyen tien")
+    if "note" in kept.columns:
+        noted = kept["note"].fillna("").astype(str).to_numpy()
+        purpose[noted != ""] = noted[noted != ""]
     purpose = blank_purpose(purpose, rng, 0.15)
+    if "note" in kept.columns:
+        purpose[noted != ""] = noted[noted != ""]
     actor = kept["actor"].to_numpy()
     elderly = np.zeros(len(kept), dtype=bool)
     valid = actor >= 0
@@ -1187,6 +1556,187 @@ def to_transactions(kept: pd.DataFrame, accounts: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def add_idle_raises(changes: list[dict], transactions: pd.DataFrame, accounts: pd.DataFrame, rng, sim_start, sim_end, idle_share: float) -> list[dict]:
+    """Một phần lần nâng không gắn với khoản chi lớn trong 7 ngày sau."""
+    tied = [row for row in changes if row["change_type"] == "limit_raise"]
+    n_idle = int(round(len(tied) * float(idle_share) / max(1.0 - float(idle_share), 1e-6)))
+    if n_idle <= 0:
+        return changes
+    ids = accounts["account_id"].astype(str)
+    txn = dict(zip(ids, accounts["limit_per_txn"].astype(np.int64)))
+    day_lim = dict(zip(ids, accounts["limit_per_day"].astype(np.int64)))
+    owned = set(accounts.loc[accounts["customer_id"].notna(), "account_id"].astype(str))
+    raised = {str(row["account_id"]) for row in tied}
+    outbound = transactions.loc[transactions["from_account"].astype(str).isin(owned), ["from_account", "ts", "amount", "tx_type"]].copy()
+    outbound["from_account"] = outbound["from_account"].astype(str)
+    large_type = {"large_oneoff", "school_fee", "savings_liquidation"}
+    large = outbound.loc[(outbound["amount"] >= 20_000_000) | outbound["tx_type"].astype(str).isin(large_type)]
+    large_at: dict[str, list[pd.Timestamp]] = {}
+    for account, part in large.groupby("from_account", sort=False):
+        large_at[str(account)] = list(part["ts"])
+    too_big = set()
+    if len(outbound):
+        peak = outbound.groupby("from_account")["amount"].max()
+        for account, amount in peak.items():
+            if int(amount) > int(txn.get(str(account), 0)):
+                too_big.add(str(account))
+        daily = outbound.groupby([outbound["from_account"], outbound["ts"].dt.floor("D")])["amount"].sum()
+        for (account, _), amount in daily.items():
+            if int(amount) > int(day_lim.get(str(account), 0)):
+                too_big.add(str(account))
+    eligible = [account for account in owned if account not in raised and account not in too_big]
+    rng.shuffle(eligible)
+    span = max(int((sim_end - sim_start).total_seconds()) - 8 * 86400, 1)
+    extra = []
+    for account in eligible:
+        if len(extra) >= n_idle:
+            break
+        times = large_at.get(account, [])
+        stamp = None
+        for _ in range(12):
+            candidate = sim_start + pd.to_timedelta(int(rng.integers(0, span)), unit="s")
+            if any((candidate < when) and (when <= candidate + pd.Timedelta(days=7)) for when in times):
+                continue
+            stamp = candidate
+            break
+        if stamp is None:
+            continue
+        old_t = int(txn[account])
+        old_d = int(day_lim[account])
+        new_t = old_t + 50_000_000
+        new_d = max(old_d, new_t)
+        extra.append(
+            {
+                "account_id": account,
+                "ts": stamp,
+                "change_type": "limit_raise",
+                "old_value": format_limit(old_t, old_d),
+                "new_value": format_limit(new_t, new_d),
+                "channel": "app" if rng.random() < 0.7 else "quầy",
+            }
+        )
+    return changes + extra
+
+
+def build_account_changes(customers, accounts, primary, phones, limit_changes, cfg, rng, sim_start, sim_end) -> pd.DataFrame:
+    hist = cfg["history"]
+    n = len(customers)
+    ids = accounts["account_id"].astype(str).to_numpy()
+    primary_account = ids[primary]
+    span = max(int((sim_end - sim_start).total_seconds()), 1)
+    rows = list(limit_changes)
+
+    n_phone = int(round(float(hist["phone_change_share"]) * n))
+    if n_phone:
+        who = rng.choice(n, size=n_phone, replace=False)
+        msisdn = dict(zip(phones["number_id"].astype(str), phones["msisdn"].astype(str)))
+        used = set(msisdn.values())
+        old = customers["phone_number_id"].astype(str).map(msisdn).to_numpy()
+        when = rng.integers(0, span, size=n_phone)
+        channel = np.where(rng.random(n_phone) < 0.80, "app", "quầy")
+        for person, offset, how in zip(who, when, channel):
+            fresh = None
+            for _ in range(20):
+                candidate = "09" + f"{int(rng.integers(0, 100_000_000)):08d}"
+                if candidate not in used:
+                    fresh = candidate
+                    used.add(candidate)
+                    break
+            if fresh is None:
+                continue
+            rows.append(
+                {
+                    "account_id": str(primary_account[int(person)]),
+                    "ts": sim_start + pd.to_timedelta(int(offset), unit="s"),
+                    "change_type": "phone_change",
+                    "old_value": str(old[int(person)]),
+                    "new_value": fresh,
+                    "channel": str(how),
+                }
+            )
+
+    devices = pd.read_parquet(ROOT / "out" / "observed" / "devices.parquet")
+    owned = devices.loc[devices["customer_id"].notna()].copy()
+    owned["customer_id"] = owned["customer_id"].astype(str)
+    in_window = owned.loc[(owned["first_seen"] >= sim_start) & (owned["first_seen"] < sim_end)]
+    cidx = dict(zip(customers["customer_id"].astype(str), np.arange(n)))
+    retired = owned.loc[owned["last_seen"].notna(), ["customer_id", "device_id", "last_seen"]]
+    previous = {
+        customer: part.sort_values("last_seen").iloc[-1]["device_id"]
+        for customer, part in retired.groupby("customer_id", sort=False)
+    }
+    for record in in_window.itertuples(index=False):
+        person = cidx.get(str(record.customer_id))
+        if person is None or primary[person] < 0:
+            continue
+        rows.append(
+            {
+                "account_id": str(primary_account[person]),
+                "ts": record.first_seen,
+                "change_type": "new_device",
+                "old_value": str(previous.get(str(record.customer_id), "")),
+                "new_value": str(record.device_id),
+                "channel": "app",
+            }
+        )
+
+    changes = pd.DataFrame(rows)
+    if changes.empty:
+        changes = pd.DataFrame(columns=["account_id", "ts", "change_type", "old_value", "new_value", "channel"])
+    changes["account_id"] = changes["account_id"].astype("string")
+    changes["ts"] = pd.to_datetime(changes["ts"], utc=True).dt.tz_convert(TZ)
+    changes["change_type"] = changes["change_type"].astype("string")
+    changes["old_value"] = changes["old_value"].astype("string")
+    changes["new_value"] = changes["new_value"].astype("string")
+    changes["channel"] = changes["channel"].astype("string")
+    return changes.sort_values(["ts", "account_id"], kind="mergesort").reset_index(drop=True)
+
+
+def build_bank_calls(customers, cfg, rng, sim_start, sim_end) -> pd.DataFrame:
+    n = len(customers)
+    per_month = float(cfg["history"]["bank_calls_per_month"])
+    keep_p = float(cfg["bank_call_log_completeness"])
+    n_call = int(round(per_month * n))
+    dates = pd.date_range(sim_start, periods=90, freq="D")
+    agents = np.array([f"AG{i:04d}" for i in range(1, 41)], dtype=object)
+    purposes = np.array(["xac minh", "cham soc", "ban hang"], dtype=object)
+    rows_customer = []
+    rows_start = []
+    rows_end = []
+    rows_agent = []
+    rows_purpose = []
+    ids = customers["customer_id"].astype(str).to_numpy()
+    for month in (7, 8, 9):
+        pool = dates[dates.month == month]
+        if n_call == 0 or len(pool) == 0:
+            continue
+        who = rng.choice(n, size=n_call, replace=False)
+        day_offset = np.array([(stamp - sim_start).days for stamp in pool], dtype=np.int64)
+        second = day_offset[rng.integers(0, len(pool), size=n_call)] * 86400 + rng.integers(8 * 3600, 18 * 3600, size=n_call)
+        duration = rng.integers(120, 901, size=n_call)
+        keep = rng.random(n_call) < keep_p
+        if not keep.any():
+            continue
+        start = sim_start + pd.to_timedelta(second[keep], unit="s")
+        rows_customer.append(ids[who[keep]])
+        rows_start.append(start)
+        rows_end.append(start + pd.to_timedelta(duration[keep], unit="s"))
+        rows_agent.append(rng.choice(agents, size=int(keep.sum())))
+        rows_purpose.append(rng.choice(purposes, size=int(keep.sum())))
+    frame = pd.DataFrame(
+        {
+            "customer_id": pd.Series(np.concatenate(rows_customer) if rows_customer else [], dtype="string"),
+            "ts_start": pd.concat([pd.Series(part) for part in rows_start], ignore_index=True) if rows_start else pd.Series(dtype=f"datetime64[ns, {TZ}]"),
+            "ts_end": pd.concat([pd.Series(part) for part in rows_end], ignore_index=True) if rows_end else pd.Series(dtype=f"datetime64[ns, {TZ}]"),
+            "agent_id": pd.Series(np.concatenate(rows_agent) if rows_agent else [], dtype="string"),
+            "purpose": pd.Series(np.concatenate(rows_purpose) if rows_purpose else [], dtype="string"),
+        }
+    )
+    late = frame["ts_end"] >= sim_end
+    frame.loc[late, "ts_end"] = sim_end - pd.to_timedelta(1, unit="s")
+    return frame.sort_values("ts_start", kind="mergesort").reset_index(drop=True)
+
+
 def main() -> None:
     cfg = load_config()
     rng = np.random.default_rng(int(cfg["seed"]))
@@ -1208,19 +1758,53 @@ def main() -> None:
     payday = np.empty((len(customers), 3), dtype=np.int16)
     for column, month in enumerate((7, 8, 9)):
         payday[:, column] = table[month, day_numbers[:, column]]
-    frame = build_events(customers, latent, accounts, age, primary, alt, drain_to, directory, cfg, rng, sim_start, weekend, payday)
-    kept = apply_balances(frame, accounts, sim_start)
+    frame, young_ids = build_events(customers, latent, accounts, age, primary, alt, drain_to, directory, cfg, rng, sim_start, weekend, payday)
+    sme_customer = customers["segment"].eq("doanh nghiệp nhỏ").to_numpy()
+    cidx = accounts["cidx"].to_numpy()
+    sme_account = np.zeros(len(accounts), dtype=bool)
+    known = cidx >= 0
+    sme_account[known] = sme_customer[cidx[known]]
+    hist = cfg["history"]
+    kept, stats, limit_changes = apply_balances(
+        frame, accounts, sim_start, rng, sme_account,
+        float(hist["over_limit_split_share"]), float(hist["over_limit_split_share_sme"]),
+    )
     kept = purposes_and_channels(kept, accounts, customers, customers["segment"].eq("cao tuổi").to_numpy(), rng)
     # apply_balances sắp theo ts nhưng thứ tự xử lý số dư dùng lexsort. Gán tx sau khi sort theo ts rồi seq xử lý.
     transactions = to_transactions(kept, accounts)
+    limit_changes = add_idle_raises(
+        limit_changes, transactions, accounts, rng, sim_start, sim_end, float(hist["limit_raise_idle_share"]),
+    )
     payees = build_payees(kept, accounts, cfg["history"], rng, sim_start)
+    if young_ids:
+        opened_at = dict(zip(accounts["account_id"].astype(str), accounts["opened_at"]))
+        young_mask = payees["to_account"].astype(str).isin(set(young_ids))
+        payees.loc[young_mask, "added_at"] = payees.loc[young_mask, "to_account"].astype(str).map(opened_at) + pd.to_timedelta(1, unit="D")
+    changes = build_account_changes(
+        customers, accounts, primary, phones, limit_changes, cfg, rng, sim_start, sim_end,
+    )
+    calls = build_bank_calls(customers, cfg, rng, sim_start, sim_end)
     contacts_path = write(contacts.drop(columns=[], errors="ignore"), "truth", "contacts")
+    account_path = write(accounts.drop(columns=["row", "cidx", "category"], errors="ignore"), "observed", "accounts")
     tx_path = write(transactions, "observed", "transactions")
     payee_path = write(payees, "observed", "payees")
+    change_path = write(changes, "observed", "account_changes")
+    call_path = write(calls, "observed", "bank_calls")
+    split_rate = stats["split"] / stats["outbound"] if stats["outbound"] else 0.0
+    over_rate = stats["over_split"] / stats["over"] if stats["over"] else 0.0
+    sme_rate = stats["over_sme_split"] / stats["over_sme"] if stats["over_sme"] else 0.0
+    loan_customers = set(transactions.loc[transactions["tx_type"].eq("quick_loan_disbursement"), "to_account"].astype(str))
+    card_customers = set(transactions.loc[transactions["tx_type"].eq("credit_card_cash_advance"), "to_account"].astype(str))
     print(f"Đã sinh {len(contacts)} liên hệ, {len(transactions)} giao dịch, {len(payees)} người nhận.")
+    print(f"  Giao dịch hợp lệ bị chia do hạn mức: {stats['split']}/{stats['outbound']} ({split_rate:.2%})")
+    print(f"  Trong lệnh vượt hạn mức, chia nhỏ: {stats['over_split']}/{stats['over']} ({over_rate:.2%}); SME {stats['over_sme_split']}/{stats['over_sme']} ({sme_rate:.2%})")
+    print(f"  Khách trùng vay nhanh và rút thẻ: {len(loan_customers & card_customers)}")
     print(f"  contacts: {contacts_path}")
+    print(f"  accounts: {account_path}")
     print(f"  transactions: {tx_path}")
     print(f"  payees: {payee_path}")
+    print(f"  account_changes: {change_path}")
+    print(f"  bank_calls: {call_path}")
 
 
 if __name__ == "__main__":

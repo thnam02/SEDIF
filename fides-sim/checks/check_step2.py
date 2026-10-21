@@ -340,6 +340,37 @@ def main() -> None:
     fk_ok = fk_ok and bool(named_phone.isin(phones["number_id"]).all())
     report.add("Khóa ngoại tài khoản và thiết bị", "đạt" if fk_ok else "lỗi", "đạt", "-", fk_ok)
 
+    spec_limits = cfg["limits"]
+    bands = {"thường": "normal", "cao tuổi": "elderly", "doanh nghiệp nhỏ": "small_business"}
+    owned_limits = accounts.loc[accounts["customer_id"].notna(), ["customer_id", "limit_per_txn", "limit_per_day"]].copy()
+    owned_limits["customer_id"] = owned_limits["customer_id"].astype(str)
+    owned_limits["band"] = owned_limits["customer_id"].map(dict(zip(customers["customer_id"].astype(str), customers["segment"].astype(str)))).map(bands)
+    default_txn = owned_limits["band"].map({key: int(value) for key, value in spec_limits["per_txn"].items()}).astype("int64")
+    default_day = owned_limits["band"].map({key: int(value) for key, value in spec_limits["per_day"].items()}).astype("int64")
+    at_default = owned_limits["limit_per_txn"].eq(default_txn) & owned_limits["limit_per_day"].eq(default_day)
+    doubled = owned_limits["limit_per_txn"].eq(default_txn * 2) & owned_limits["limit_per_day"].eq(default_day * 2)
+    limit_dtype = str(accounts["limit_per_txn"].dtype) == "int64" and str(accounts["limit_per_day"].dtype) == "int64"
+    report.add(
+        "Hạn mức ban đầu theo phân khúc",
+        "int64, đúng bậc hoặc gấp đôi" if limit_dtype and bool((at_default | doubled).all()) else "lệch",
+        "int64, bậc mặc định hoặc ×2",
+        "-",
+        limit_dtype and bool((at_default | doubled).all()),
+    )
+    raised_people = set(owned_limits.loc[doubled, "customer_id"])
+    mixed = int((owned_limits.assign(raised=doubled.to_numpy()).groupby("customer_id")["raised"].nunique() > 1).sum())
+    raise_share = len(raised_people) / customers["customer_id"].nunique()
+    report.add(
+        "Khách đã tự nâng hạn mức từ trước",
+        pct(raise_share),
+        pct(float(spec_limits["above_default_share"])),
+        f"{mixed} khách lệch giữa các tài khoản",
+        mixed == 0 and abs(raise_share - float(spec_limits["above_default_share"])) <= 0.005,
+    )
+    external_accounts = accounts["customer_id"].isna()
+    external_ok = bool((accounts.loc[external_accounts, "limit_per_txn"] == int(spec_limits["per_txn"]["normal"])).all())
+    report.add("Hạn mức tài khoản ngoài", "bậc thường" if external_ok else "lệch", "bậc thường", "-", external_ok)
+
     new_accounts = float(((accounts["opened_at"] >= sim_start) & (accounts["opened_at"] < sim_end)).mean())
     print()
     print("Tham khảo (không tính ĐẠT/LỖI)")
