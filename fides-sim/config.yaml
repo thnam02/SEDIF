@@ -137,7 +137,11 @@ mules:
 
 cases:
   n_cases: 2500                     # tỷ lệ cao để đủ mẫu; khi đánh giá sẽ tái trọng số
-  type_share: {police: 0.30, investment: 0.30, bank_staff: 0.15, relative: 0.10, deposit: 0.10, romance: 0.05}
+  type_share: {police: 0.22, investment: 0.30, bank_staff: 0.15, relative: 0.10, deposit: 0.10, romance: 0.05, tax_authority: 0.08}
+  extra_fee_share_min: 0.30          # police, bank_staff, tax_authority, investment
+  extra_fee_share_max: 0.50
+  limit_raise_on_call: {police: 0.30, bank_staff: 0.40}
+  bank_staff_fake_hotline_share: 0.50
   ott_share: 0.50
   spoofed_caller_share: 0.10
   scammer_number_prereported_share: 0.20
@@ -161,12 +165,22 @@ sessions:
   bank_staff_remote_app: 0.60           # vụ giả nhân viên ngân hàng có cài app điều khiển từ xa
   coached_lie_yes_no: 0.60              # nạn nhân bị dặn nói dối khi được hỏi có/không
   hard_negative_min_sessions: 400   # mỗi loại mẫu khó cần đủ bấy nhiêu phiên
+  ott_visible_to_device_share: 0.80
+  acct_input_share:
+    legit: {typed: 0.34, typed_chunked: 0.28, pasted: 0.16, chosen: 0.22}
+    fraud: {typed: 0.12, typed_chunked: 0.18, pasted: 0.52, chosen: 0.18}
+  app_switch_count_share:
+    legit: {0: 0.62, 1: 0.24, 2: 0.10, 3: 0.04}
+    fraud: {0: 0.28, 1: 0.32, 2: 0.26, 3: 0.14}
+  guardian_confirm_relative: 0.90
+  guardian_deny_fraud: 0.70
   l1_stuck_share: 0.04                 # khoản vào mule lớp 1 bị đóng băng trước khi chuyển tiếp
 
 labels:
-  report_rate: {police: 0.75, bank_staff: 0.70, relative: 0.70, deposit: 0.50, investment: 0.45, romance: 0.30, own_name_safe_account: 0.75}
+  report_rate: {police: 0.75, bank_staff: 0.70, relative: 0.70, deposit: 0.50, investment: 0.45, romance: 0.30, tax_authority: 0.75, own_name_safe_account: 0.75}
   report_delay_days:          # tính từ khoản chuyển cuối của vụ
     police: [0, 3]
+    tax_authority: [0, 3]
     bank_staff: [0, 2]
     relative: [0, 2]
     deposit: [1, 10]

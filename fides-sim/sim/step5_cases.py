@@ -27,7 +27,16 @@ PURPOSE = {
     "romance": ["chuyen tien", "giup do", "vay gap"],
     "deposit": ["dat coc", "phi ho so", "giu cho"],
     "relative": ["chuyen tien gap", "vien phi", "bao lanh"],
+    "tax_authority": ["nop thue bo sung", "phat hanh chinh", "phi xu ly ho so"],
 }
+FEE_KINDS = {"police", "bank_staff", "tax_authority", "investment"}
+MOBILIZE = (
+    "savings_liquidation",
+    "quick_loan_disbursement",
+    "credit_card_cash_advance",
+    "limit_raise",
+    "split_near_limit",
+)
 
 
 def load_config() -> dict:
@@ -116,6 +125,7 @@ def type_fit(age: np.ndarray) -> dict[str, np.ndarray]:
     relative = 0.55 + 0.45 / (1.0 + np.exp(-(age - 48.0) / 10.0))
     return {
         "police": police,
+        "tax_authority": police,
         "bank_staff": police,
         "investment": invest,
         "romance": invest,
@@ -125,7 +135,7 @@ def type_fit(age: np.ndarray) -> dict[str, np.ndarray]:
 
 
 def case_span(kind: str, rng) -> pd.Timedelta:
-    if kind in {"police", "bank_staff"}:
+    if kind in {"police", "bank_staff", "tax_authority"}:
         return pd.Timedelta(hours=int(rng.integers(3, 8)))
     if kind == "relative":
         return pd.Timedelta(hours=int(rng.integers(2, 6)))
@@ -343,7 +353,8 @@ def place_own_name_accounts(cfg, rng, cases, transfers, accounts, customers) -> 
     truth_accounts["account_id"] = truth_accounts["account_id"].astype("string")
     truth_accounts["is_mule"] = truth_accounts["is_mule"].astype(bool)
     truth_accounts["mule_type"] = truth_accounts["mule_type"].astype("string")
-    mask = transfers["case_id"].astype(str).isin(retarget) & (transfers["planned_amount"] > 0)
+    fee_rows = transfers["extra_fee"].fillna(False).astype(bool) if "extra_fee" in transfers.columns else False
+    mask = transfers["case_id"].astype(str).isin(retarget) & (transfers["planned_amount"] > 0) & ~fee_rows
     transfers.loc[mask, "to_mule_account_id"] = transfers.loc[mask, "case_id"].astype(str).map(retarget)
     write_side(accounts, links, truth_accounts, rings)
     print(f"  Tài khoản đứng tên nạn nhân: {len(retarget)}")
@@ -359,7 +370,7 @@ def write_side(accounts, links, truth_accounts, rings) -> None:
     write(rings, "truth", "mule_rings")
 
 
-FAST_KINDS = {"police", "bank_staff", "relative"}
+FAST_KINDS = {"police", "bank_staff", "tax_authority", "relative"}
 
 
 def open_early_rings(rings: pd.DataFrame, sim_start: pd.Timestamp) -> pd.DataFrame:
@@ -535,7 +546,7 @@ def schedule_cases(rng, types, spans, rings, sim_start, sim_end, max_cases: int)
                 return True
         return False
 
-    for kind in ("deposit", "police", "bank_staff", "relative"):
+    for kind in ("deposit", "police", "bank_staff", "tax_authority", "relative"):
         for index in by_kind.get(kind, []):
             if not take_slot(index, kind, spans[index]):
                 raise RuntimeError(f"Không xếp được vụ {kind} vào mule lớp 1")
@@ -557,7 +568,8 @@ def main() -> None:
     accounts = pd.read_parquet(observed / "accounts.parquet")
     transactions = pd.read_parquet(observed / "transactions.parquet")
     floor_path = truth / "step6_floor.parquet"
-    if floor_path.exists():
+    filled = "session_id" in transactions.columns and transactions["session_id"].notna().any()
+    if filled and floor_path.exists():
         floor = int(pd.read_parquet(floor_path)["first_tx_num"].iloc[0])
         tx_num = transactions["tx_id"].astype(str).str[1:].astype(int)
         transactions = transactions.loc[tx_num < floor].reset_index(drop=True)
@@ -592,6 +604,7 @@ def main() -> None:
     not_mule = ~customers["customer_id"].isin(mule_customers).to_numpy()
     floors = {
         "police": 1_000_000,
+        "tax_authority": 1_000_000,
         "bank_staff": 1_000_000,
         "investment": 30_000_000,
         "romance": 3_000_000,
@@ -750,6 +763,31 @@ def main() -> None:
     transfer_rows = []
     first_use = [sim_end] * n_numbers
     committed_of: dict[str, list[tuple[pd.Timestamp, int]]] = {}
+    fee_share = float(rng.uniform(float(spec["extra_fee_share_min"]), float(spec["extra_fee_share_max"])))
+    fee_slots = np.flatnonzero(np.isin(types, list(FEE_KINDS)))
+    n_fee_cases = int(round(fee_share * len(fee_slots)))
+    fee_cases = set(rng.choice(fee_slots, size=n_fee_cases, replace=False).tolist()) if n_fee_cases else set()
+    personal_limit = (
+        accounts.loc[
+            accounts["customer_id"].notna() & accounts["account_type"].astype(str).eq("personal"),
+            ["customer_id", "limit_per_txn"],
+        ]
+        .assign(customer_id=lambda frame: frame["customer_id"].astype(str))
+        .groupby("customer_id")["limit_per_txn"]
+        .max()
+        .astype(np.int64)
+        .to_dict()
+    )
+    savings_of = (
+        accounts.loc[accounts["account_type"].astype(str).eq("savings") & accounts["customer_id"].notna()]
+        .assign(customer_id=lambda frame: frame["customer_id"].astype(str))
+        .groupby("customer_id")["account_id"]
+        .apply(lambda values: str(values.iloc[0]))
+        .to_dict()
+    )
+    n_payees = max(n_fee_cases * 3, 1)
+    payee_ids = next_ids("A", accounts["account_id"], n_payees)
+    payee_cursor = 0
 
     def remember(number_index: int, stamp: pd.Timestamp) -> None:
         if stamp < first_use[number_index]:
@@ -766,7 +804,7 @@ def main() -> None:
         end = end_of[index]
         mule = mule_of[index]
         committed = committed_of.setdefault(customer, [])
-        if kind in {"police", "bank_staff", "relative", "deposit"}:
+        if kind in {"police", "bank_staff", "tax_authority", "relative", "deposit"}:
             pay_times = [end - pd.Timedelta(minutes=20)]
         elif kind == "romance":
             pay_times = [start + (end - start) * 0.55, end - pd.Timedelta(hours=8)]
@@ -775,7 +813,7 @@ def main() -> None:
         pay_times = [min(max(stamp, start + pd.Timedelta(minutes=40)), end - pd.Timedelta(minutes=15)) for stamp in pay_times]
         avail = [pool(customer, stamp, committed) for stamp in pay_times]
         cap = min(avail) if avail else 0
-        savings_first = kind == "police" and rng.random() < 0.75 or kind == "bank_staff" and rng.random() < 0.4
+        savings_first = kind == "police" and rng.random() < 0.75 or kind == "tax_authority" and rng.random() < 0.55 or kind == "bank_staff" and rng.random() < 0.4
         amounts: list[int] = []
         interest: list[int] = []
         if kind == "investment":
@@ -786,6 +824,8 @@ def main() -> None:
             amounts = increasing_amounts(max(cap, 0), rng, bool(is_split[index]))
         elif kind == "police":
             amounts = [round_vnd(float(rng.uniform(0.60, 0.98)) * max(cap, 0), max(cap, 0))]
+        elif kind == "tax_authority":
+            amounts = [round_vnd(float(rng.uniform(0.45, 0.90)) * max(cap, 0), max(cap, 0))]
         elif kind == "bank_staff":
             amounts = [round_vnd(float(rng.uniform(0.25, 0.70)) * max(cap, 0), max(cap, 0))]
         elif kind == "deposit":
@@ -853,9 +893,83 @@ def main() -> None:
             committed.append((stamp, int(amount)))
             seq += 1
 
+        if index in fee_cases:
+            positives = [row for row in transfer_rows if row["case_id"] == case_id and int(row["planned_amount"]) > 0]
+            anchor = min(row["planned_ts"] for row in positives) if positives else end - pd.Timedelta(minutes=30)
+            per_txn = int(personal_limit.get(customer, 100_000_000))
+            n_fee = int(rng.integers(1, 4))
+            for fee_i in range(n_fee):
+                stamp = anchor - pd.Timedelta(minutes=15 + 8 * fee_i)
+                if stamp <= start:
+                    stamp = start + pd.Timedelta(minutes=8 + fee_i)
+                if stamp >= end:
+                    stamp = end - pd.Timedelta(minutes=12 + fee_i)
+                room = pool(customer, stamp, committed)
+                mobilize = str(MOBILIZE[int(rng.integers(0, len(MOBILIZE)))])
+                inflow = 0
+                if mobilize == "split_near_limit" and room < int(1.2 * per_txn):
+                    mobilize = "limit_raise"
+                if mobilize in {"quick_loan_disbursement", "credit_card_cash_advance"}:
+                    amount = int(rng.integers(2_000_000, 12_000_001) // 1000 * 1000)
+                    inflow = amount
+                elif mobilize == "split_near_limit":
+                    pieces = int(rng.integers(2, 4))
+                    amount = int(min(room, pieces * per_txn) // 1000 * 1000)
+                    if amount < 2_000_000:
+                        mobilize = "limit_raise"
+                        amount = int(min(max(room // 5, 0), 5_000_000) // 1000 * 1000)
+                elif mobilize == "savings_liquidation" and customer not in savings_of:
+                    mobilize = "quick_loan_disbursement"
+                    amount = int(rng.integers(2_000_000, 12_000_001) // 1000 * 1000)
+                    inflow = amount
+                else:
+                    amount = int(min(max(room // 4, 0), int(rng.integers(1_000_000, 8_000_001))) // 1000 * 1000)
+                if mobilize != "split_near_limit" and inflow == 0 and amount > room:
+                    amount = int(room // 1000 * 1000)
+                if amount < 100_000:
+                    continue
+                if inflow == 0:
+                    reducible = [row for row in transfer_rows if row["case_id"] == case_id and int(row["planned_amount"]) > 0 and not row.get("extra_fee")]
+                    left = amount
+                    for row in reversed(reducible):
+                        take = min(int(row["planned_amount"]) - 1000, left)
+                        if take <= 0:
+                            continue
+                        previous = int(row["planned_amount"])
+                        row["planned_amount"] = previous - take
+                        for slot, (old_stamp, old_amount) in enumerate(committed):
+                            if old_stamp == row["planned_ts"] and old_amount == previous:
+                                committed[slot] = (old_stamp, previous - take)
+                                break
+                        left -= take
+                        if left <= 0:
+                            break
+                    amount -= left
+                    amount = int(amount // 1000 * 1000)
+                if amount < 100_000:
+                    continue
+                payee = payee_ids[payee_cursor % n_payees]
+                payee_cursor += 1
+                transfer_rows.append(
+                    {
+                        "case_id": case_id,
+                        "seq": seq,
+                        "planned_ts": stamp,
+                        "planned_amount": int(amount),
+                        "to_mule_account_id": payee,
+                        "from_own_savings_first": False,
+                        "coached_purpose_text": "phi bo sung",
+                        "extra_fee": True,
+                        "mobilize": mobilize,
+                        "inflow_amount": int(inflow),
+                    }
+                )
+                committed.append((stamp, int(amount) - int(inflow)))
+                seq += 1
+
         transfer_ts = [row["planned_ts"] for row in transfer_rows if row["case_id"] == case_id and row["planned_amount"] > 0]
         anchor = transfer_ts[0] if transfer_ts else end - pd.Timedelta(minutes=20)
-        if kind in {"police", "bank_staff"}:
+        if kind in {"police", "bank_staff", "tax_authority"}:
             duration = int(rng.integers(20, 91)) * 60
             call_at = anchor - pd.Timedelta(seconds=duration + int(rng.integers(60, 480)))
             if call_at < start:
@@ -954,6 +1068,60 @@ def main() -> None:
     transfers["to_mule_account_id"] = transfers["to_mule_account_id"].astype("string")
     transfers["from_own_savings_first"] = transfers["from_own_savings_first"].astype(bool)
     transfers["coached_purpose_text"] = transfers["coached_purpose_text"].astype("string")
+    if "extra_fee" not in transfers.columns:
+        transfers["extra_fee"] = False
+    transfers["extra_fee"] = transfers["extra_fee"].fillna(False).astype(bool)
+    if "mobilize" not in transfers.columns:
+        transfers["mobilize"] = ""
+    transfers["mobilize"] = transfers["mobilize"].fillna("").astype("string")
+    if "inflow_amount" not in transfers.columns:
+        transfers["inflow_amount"] = 0
+    transfers["inflow_amount"] = transfers["inflow_amount"].fillna(0).astype(np.int64)
+    victim_of_case = {f"K{index + 1:06d}": str(customer_ids[int(victim_row[index])]) for index in range(n_cases)}
+    spent_clip: dict[str, list[tuple[pd.Timestamp, int]]] = {}
+    for idx in transfers.sort_values(["planned_ts", "case_id", "seq"], kind="mergesort").index:
+        customer = victim_of_case[str(transfers.at[idx, "case_id"])]
+        when = transfers.at[idx, "planned_ts"]
+        base = sum(max(0, balance_at(account, when, opening, opened, curves)) for account in accounts_of.get(customer, []))
+        already = sum(amount for stamp, amount in spent_clip.get(customer, []) if stamp <= when)
+        inflow = int(transfers.at[idx, "inflow_amount"])
+        available = base - already + inflow
+        amount = int(transfers.at[idx, "planned_amount"])
+        if amount > available:
+            amount = int(max(available, 0) // 1000 * 1000)
+            transfers.at[idx, "planned_amount"] = amount
+        spent_clip.setdefault(customer, []).append((when, amount - inflow))
+    used_payees = payee_cursor
+    given = ["nguyen", "tran", "le", "pham", "hoang", "vu", "dang", "bui"]
+    family = ["an", "binh", "cuong", "dung", "hoa", "khoa", "lan", "minh", "nam", "phuong"]
+    payee_rows = []
+    for offset in range(n_payees):
+        payee_rows.append(
+            {
+                "account_id": payee_ids[offset],
+                "customer_id": pd.NA,
+                "phone_number_id": pd.NA,
+                "bank_id": "B03",
+                "account_type": "personal",
+                "holder_name_ascii": f"{given[offset % len(given)]} {family[(offset // len(given)) % len(family)]} {offset % 1000}",
+                "opened_at": sim_start - pd.Timedelta(days=400 + offset % 2000),
+                "opening_balance": np.int64(0),
+                "status": "active",
+                "merchant_verified": False,
+                "limit_per_txn": np.int64(int(cfg["limits"]["per_txn"]["normal"])),
+                "limit_per_day": np.int64(int(cfg["limits"]["per_day"]["normal"])),
+            }
+        )
+    payee_accounts = pd.DataFrame(payee_rows)
+    for column in accounts.columns:
+        if column not in payee_accounts.columns:
+            payee_accounts[column] = pd.NA
+    accounts = pd.concat([accounts, payee_accounts[accounts.columns]], ignore_index=True)
+    normal_txn = np.int64(int(cfg["limits"]["per_txn"]["normal"]))
+    normal_day = np.int64(int(cfg["limits"]["per_day"]["normal"]))
+    accounts["limit_per_txn"] = accounts["limit_per_txn"].fillna(normal_txn).astype(np.int64)
+    accounts["limit_per_day"] = accounts["limit_per_day"].fillna(normal_day).astype(np.int64)
+    _ = used_payees
     planned_total = (
         transfers.loc[transfers["planned_amount"] > 0]
         .groupby("case_id")["planned_amount"]
@@ -978,10 +1146,21 @@ def main() -> None:
             "hangs_up_before_transfer": is_hangup,
             "planned_total": [int(planned_total.get(f"K{index + 1:06d}", 0)) for index in range(n_cases)],
             "l1_account_id": pd.Series(mule_of, dtype="string"),
+            "raise_during_call": False,
+            "fake_hotline": False,
         }
     )
+    for kind, share in spec["limit_raise_on_call"].items():
+        slots = np.flatnonzero(cases["scam_type"].astype(str).eq(kind))
+        n_raise = int(round(float(share) * len(slots)))
+        if n_raise:
+            cases.loc[cases.index[rng.choice(slots, size=n_raise, replace=False)], "raise_during_call"] = True
+    bank_slots = np.flatnonzero(cases["scam_type"].astype(str).eq("bank_staff"))
+    n_fake = int(round(float(spec["bank_staff_fake_hotline_share"]) * len(bank_slots)))
+    if n_fake:
+        cases.loc[cases.index[rng.choice(bank_slots, size=n_fake, replace=False)], "fake_hotline"] = True
     cases["planned_total"] = cases["planned_total"].astype(np.int64)
-    for column in ("spoofed", "split", "declines_permission", "hangs_up_before_transfer"):
+    for column in ("spoofed", "split", "declines_permission", "hangs_up_before_transfer", "raise_during_call", "fake_hotline"):
         cases[column] = cases[column].astype(bool)
 
     # Mốc vụ là cửa sổ đã gán cho đường dây. Kéo liên lạc và khoản tiền vào trong cửa sổ đó.
@@ -1000,6 +1179,22 @@ def main() -> None:
         clamp_stamp(case_id, stamp) for case_id, stamp in zip(transfers["case_id"], transfers["planned_ts"])
     ]
     accounts, transfers = place_own_name_accounts(cfg, rng, cases, transfers, accounts, customers)
+    spent_final: dict[str, list[tuple[pd.Timestamp, int]]] = {}
+    for idx in transfers.sort_values(["planned_ts", "case_id", "seq"], kind="mergesort").index:
+        customer = victim_of_case[str(transfers.at[idx, "case_id"])]
+        when = transfers.at[idx, "planned_ts"]
+        base = sum(max(0, balance_at(account, when, opening, opened, curves)) for account in accounts_of.get(customer, []))
+        already = sum(amount for stamp, amount in spent_final.get(customer, []) if stamp <= when)
+        inflow = int(transfers.at[idx, "inflow_amount"])
+        available = base - already + inflow
+        amount = int(transfers.at[idx, "planned_amount"])
+        if amount > available:
+            amount = int(max(available, 0) // 1000 * 1000)
+            transfers.at[idx, "planned_amount"] = np.int64(amount)
+        spent_final.setdefault(customer, []).append((when, amount - inflow))
+    transfers["planned_amount"] = transfers["planned_amount"].astype(np.int64)
+    totals = transfers.loc[transfers["planned_amount"] > 0].groupby(transfers["case_id"].astype(str))["planned_amount"].sum()
+    cases["planned_total"] = cases["case_id"].astype(str).map(totals).fillna(0).astype(np.int64)
 
     label = np.zeros(len(customers), dtype=bool)
     label[np.unique(victim_row)] = True

@@ -115,6 +115,11 @@ def main() -> None:
     latent = pd.read_parquet(truth / "customers_latent.parquet")
     accounts = pd.read_parquet(observed / "accounts.parquet")
     transactions = pd.read_parquet(observed / "transactions.parquet")
+    floor_path = truth / "step6_floor.parquet"
+    if floor_path.exists() and "session_id" in transactions.columns and transactions["session_id"].notna().any():
+        floor = int(pd.read_parquet(floor_path)["first_tx_num"].iloc[0])
+        tx_num = transactions["tx_id"].astype(str).str[1:].astype(int)
+        transactions = transactions.loc[tx_num < floor].reset_index(drop=True)
 
     report = Report()
     n_cases = len(cases)
@@ -148,9 +153,10 @@ def main() -> None:
     if truth_accounts_path.exists():
         mule_type = pd.read_parquet(truth_accounts_path, columns=["account_id", "mule_type"])
         safe_ids = set(mule_type.loc[mule_type["mule_type"].astype(str).eq("own_name_safe_account"), "account_id"].astype(str))
-    mule_cases = plans.loc[~plans["to_mule_account_id"].astype(str).isin(safe_ids)].groupby("to_mule_account_id")["case_id"].nunique()
+    core_plans = plans.loc[~plans["extra_fee"].fillna(False).astype(bool)] if "extra_fee" in plans.columns else plans
+    mule_cases = core_plans.loc[~core_plans["to_mule_account_id"].astype(str).isin(safe_ids)].groupby("to_mule_account_id")["case_id"].nunique()
     over = int((mule_cases > int(spec["l1_mule_max_cases"])).sum())
-    on_l1 = bool(set(plans["to_mule_account_id"].astype(str)) <= (l1 | safe_ids))
+    on_l1 = bool(set(core_plans["to_mule_account_id"].astype(str)) <= (l1 | safe_ids))
     report.add(
         "Đường dây hoạt động và mule lớp 1",
         f"{int(covered.sum())}/{n_cases} vụ, {over} mule vượt trần",
@@ -198,10 +204,11 @@ def main() -> None:
         customer = victim_of[str(row.case_id)]
         base = sum(max(0, balance_at(account, row.planned_ts, opening, opened, curves)) for account in accounts_of.get(customer, []))
         already = sum(amount for stamp, amount in spent.get(customer, []) if stamp <= row.planned_ts)
-        available = base - already
+        inflow = int(getattr(row, "inflow_amount", 0) or 0)
+        available = base - already + inflow
         if int(row.planned_amount) > available:
             short += 1
-        spent.setdefault(customer, []).append((row.planned_ts, int(row.planned_amount)))
+        spent.setdefault(customer, []).append((row.planned_ts, int(row.planned_amount) - inflow))
     report.add("Khoản kế hoạch ≤ số dư huy động được", f"{short} khoản vượt", "0", "gồm tiết kiệm, trừ khoản kế hoạch trước", short == 0)
 
     people = customers.merge(latent[["customer_id", "susceptibility"]], on="customer_id", how="left")
@@ -258,6 +265,8 @@ def main() -> None:
     reverse = 0
     for case_id, part in plans.loc[plans["case_id"].isin(invest_ids)].groupby("case_id", sort=False):
         ordered_part = part.sort_values(["seq", "planned_ts"], kind="mergesort")
+        if "extra_fee" in ordered_part.columns:
+            ordered_part = ordered_part.loc[~ordered_part["extra_fee"].fillna(False).astype(bool)]
         positive = ordered_part.loc[ordered_part["planned_amount"] > 0, "planned_amount"].to_numpy()
         if len(positive) >= 2 and bool(np.all(positive[1:] > positive[:-1])):
             rising += 1
@@ -269,6 +278,52 @@ def main() -> None:
     print(f"  Investment tăng dần: {pct(rise_rate)}; có lãi ngược: {pct(reverse_rate)}")
     report.add("Investment số tiền tăng dần", pct(rise_rate), "≥ 80%", f"{rising}/{n_invest}", rise_rate >= 0.80)
     report.add("Investment có khoản lãi ngược", pct(reverse_rate), "≥ 50%", f"{reverse}/{n_invest}", reverse_rate >= 0.50)
+
+    fee_kinds = {"police", "bank_staff", "tax_authority", "investment"}
+    fee_cases = set(cases.loc[cases["scam_type"].astype(str).isin(fee_kinds), "case_id"].astype(str))
+    if "extra_fee" in plans.columns:
+        fees = plans.loc[plans["extra_fee"].fillna(False).astype(bool) & plans["case_id"].astype(str).isin(fee_cases)]
+    else:
+        fees = plans.iloc[0:0]
+    fee_rate = fees["case_id"].nunique() / max(len(fee_cases), 1)
+    per_case = fees.groupby(fees["case_id"].astype(str)).size() if len(fees) else pd.Series(dtype=int)
+    fee_span_ok = bool(len(per_case)) and int(per_case.min()) >= 1 and int(per_case.max()) <= 3
+    mobilize_ok = bool(len(fees)) and set(fees["mobilize"].astype(str)) <= {
+        "savings_liquidation",
+        "quick_loan_disbursement",
+        "credit_card_cash_advance",
+        "limit_raise",
+        "split_near_limit",
+    } and bool((fees["mobilize"].astype(str) != "").all())
+    print(f"  Phí bổ sung: {pct(fee_rate)} vụ nhóm thuế/công an/ngân hàng/đầu tư, {int(per_case.min()) if len(per_case) else 0}–{int(per_case.max()) if len(per_case) else 0} lệnh")
+    report.add(
+        "Phí bổ sung tới người nhận mới",
+        pct(fee_rate),
+        "30–50%, mỗi vụ 1–3 lệnh, có bước huy động",
+        f"{fees['case_id'].nunique() if len(fees) else 0} vụ",
+        0.30 <= fee_rate <= 0.50 and fee_span_ok and mobilize_ok,
+    )
+    if "raise_during_call" in cases.columns:
+        raise_ok = True
+        raise_bits = []
+        for kind, share in spec["limit_raise_on_call"].items():
+            part = cases.loc[cases["scam_type"].astype(str).eq(kind)]
+            rate = float(part["raise_during_call"].mean()) if len(part) else 0.0
+            raise_bits.append(f"{kind} {pct(rate)}")
+            raise_ok = raise_ok and abs(rate - float(share)) <= 0.04
+        report.add("Nâng hạn mức trong lúc gọi", ", ".join(raise_bits), "police 30%, bank_staff 40%", "-", raise_ok)
+    else:
+        report.add("Nâng hạn mức trong lúc gọi", "thiếu", "có cờ", "-", False)
+    if "fake_hotline" in cases.columns:
+        bank = cases.loc[cases["scam_type"].astype(str).eq("bank_staff")]
+        fake_rate = float(bank["fake_hotline"].mean()) if len(bank) else 0.0
+        report.add(
+            "bank_staff giả số tổng đài",
+            pct(fake_rate),
+            pct(float(spec["bank_staff_fake_hotline_share"])),
+            f"{100 * (fake_rate - float(spec['bank_staff_fake_hotline_share'])):+.2f} đ.p",
+            abs(fake_rate - float(spec["bank_staff_fake_hotline_share"])) <= 0.04,
+        )
 
     times_ok = in_window(cases["start_ts"], sim_start, sim_end) and in_window(cases["end_ts"], sim_start, sim_end)
     times_ok = times_ok and in_window(contacts["ts"], sim_start, sim_end) and in_window(plans["planned_ts"], sim_start, sim_end)

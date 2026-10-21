@@ -19,7 +19,7 @@ from sim.io import write
 from sim.step4_mules import as_timestamp
 
 TZ = "Asia/Ho_Chi_Minh"
-FRAUD_TYPES = {"police", "investment", "bank_staff", "relative", "deposit", "romance", "own_name_safe_account"}
+FRAUD_TYPES = {"police", "investment", "bank_staff", "relative", "deposit", "romance", "tax_authority", "own_name_safe_account"}
 SEGMENTS = ["thường", "cao tuổi"]
 ACTIONS = ["allow", "friction", "hold"]
 
@@ -40,7 +40,7 @@ def day_draw(rng, bounds) -> int:
 
 def response_table() -> pd.DataFrame:
     rows = []
-    groups = ["police", "bank_staff", "relative", "deposit", "investment", "romance", "own_name_safe_account", "legit"]
+    groups = ["police", "bank_staff", "tax_authority", "relative", "deposit", "investment", "romance", "own_name_safe_account", "legit"]
     for group in groups:
         fraud = group != "legit"
         for segment in SEGMENTS:

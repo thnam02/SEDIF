@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import sys
 from pathlib import Path
 
@@ -15,7 +16,19 @@ if str(ROOT) not in sys.path:
 
 TZ = "Asia/Ho_Chi_Minh"
 LEAKED = {"case_id", "scenario_type", "purpose_answer", "yes_no_answers", "permission_response"}
-EVENT_OK = ("login", "open_transfer", "add_payee", "paste_account", "enter_amount", "submit")
+EVENT_OK = (
+    "login",
+    "open_transfer",
+    "add_payee",
+    "paste_account",
+    "acct_input_typed",
+    "acct_input_typed_chunked",
+    "acct_input_pasted",
+    "acct_input_chosen",
+    "app_switch",
+    "enter_amount",
+    "submit",
+)
 
 
 def load_config() -> dict:
@@ -188,7 +201,7 @@ def main() -> None:
     plans = pd.read_parquet(truth / "case_transfers_plan.parquet")
 
     report = Report()
-    fraud_types = {"police", "investment", "bank_staff", "relative", "deposit", "romance"}
+    fraud_types = {"police", "investment", "bank_staff", "tax_authority", "relative", "deposit", "romance"}
     joined = sessions.merge(scenarios[["session_id", "scenario_type"]], on="session_id", how="left")
     n_sessions = len(sessions)
     fraud_rate = float(joined["scenario_type"].astype(str).isin(fraud_types).mean()) if n_sessions else 0.0
@@ -276,7 +289,11 @@ def main() -> None:
         stamps = part["ts"].drop_duplicates().sort_values()
         free = [stamp for stamp in stamps if (mule, int(stamp.value)) not in used_forward]
         if not free:
-            reasons["khác"] += 1
+            used_near = (pd.Series(list(stamps)) - expected).abs() <= pd.Timedelta(seconds=90)
+            if bool(used_near.any()):
+                reasons["đúng hạn"] += 1
+            else:
+                reasons["khác"] += 1
             continue
         free_ts = pd.Series(free)
         gaps = (free_ts - expected).abs()
@@ -423,17 +440,17 @@ def main() -> None:
             counts["không ai thấy"] += 1
     print("  Cuộc gọi theo kiểu lừa (nhà mạng thấy = đang gọi hoặc vừa cúp ≤ 30 phút):")
     voice_ok = True
-    for kind in ["police", "investment", "bank_staff", "relative", "deposit", "romance"]:
+    for kind in ["police", "tax_authority", "investment", "bank_staff", "relative", "deposit", "romance"]:
         counts = table.get(kind, {name: 0 for name in buckets})
         total = sum(counts.values())
         seen = counts["nhà mạng đang gọi"] + counts["nhà mạng vừa cúp ≤ 30 phút"] + counts["chỉ thiết bị (OTT)"]
         rate = seen / total if total else 0.0
         cells = " ".join(f"{name} {counts[name]}" for name in buckets)
         print(f"    {kind}: {cells} | thấy {pct(rate)}")
-        if kind in {"police", "bank_staff", "relative"}:
+        if kind in {"police", "bank_staff", "tax_authority", "relative"}:
             voice_ok = voice_ok and rate >= 0.60 and total > 0
     report.add(
-        "Police, bank_staff, relative được nhìn thấy",
+        "Police, bank_staff, tax, relative được nhìn thấy",
         "đạt" if voice_ok else "dưới 60%",
         "≥ 60% nhà mạng hoặc thiết bị",
         "gồm cuộc gọi cellular đã kết thúc ≤ 30 phút",
@@ -442,6 +459,8 @@ def main() -> None:
 
     invest_cases = set(cases.loc[cases["scam_type"].astype(str) == "investment", "case_id"].astype(str))
     invest_plans = plans.loc[plans["case_id"].astype(str).isin(invest_cases) & (plans["planned_amount"] > 0)]
+    if "extra_fee" in invest_plans.columns:
+        invest_plans = invest_plans.loc[~invest_plans["extra_fee"].fillna(False).astype(bool)]
     non_mono = 0
     have = 0
     for case_id, part in invest_plans.groupby("case_id", sort=False):
@@ -491,7 +510,8 @@ def main() -> None:
         .drop_duplicates("session_id")
     )
     main_tx["session_id"] = main_tx["session_id"].astype(str)
-    feature = joined.merge(main_tx, on="session_id", how="left").merge(sig[["session_id", "in_call_audio_mode", "remote_access_app_installed", "accessibility_enabled_since"]], on="session_id", how="left")
+    call_cols = [column for column in ["session_id", "in_call_at_open", "call_seconds_since_open", "call_ended_in_session", "call_direction", "os"] if column in sig.columns]
+    feature = joined.merge(main_tx, on="session_id", how="left").merge(sig[call_cols], on="session_id", how="left")
     paste_sessions = set(events.loc[events["event_type"].astype(str).eq("paste_account"), "session_id"].astype(str))
     new_payee = []
     # Người nhận mới: không có giao dịch sớm hơn cùng khách tới cùng tài khoản.
@@ -506,9 +526,6 @@ def main() -> None:
         key = (customer, str(row.to_account))
         first = first_pay.get(key, pd.NaT)
         new_flag.append(bool(pd.notna(first) and abs((first - row.ts).total_seconds()) < 1))
-    enabled = pd.to_datetime(feature["accessibility_enabled_since"])
-    age_hours = (feature["start_ts"] - enabled).dt.total_seconds() / 3600
-    new_access = enabled.notna() & age_hours.between(0, 12)
     hour = feature["start_ts"].dt.tz_convert(TZ).dt.hour.fillna(0).to_numpy(dtype=float)
     holder = dict(zip(accounts["account_id"].astype(str), accounts["holder_name_ascii"].astype(str)))
     name_match = []
@@ -526,9 +543,7 @@ def main() -> None:
             ratio,
             np.array(new_flag, dtype=float),
             feature["session_id"].astype(str).isin(paste_sessions).to_numpy(dtype=float),
-            feature["in_call_audio_mode"].fillna(False).to_numpy(dtype=float),
-            new_access.fillna(False).to_numpy(dtype=float),
-            feature["remote_access_app_installed"].fillna(False).to_numpy(dtype=float),
+            feature["in_call_at_open"].fillna(False).to_numpy(dtype=float) if "in_call_at_open" in feature.columns else np.zeros(len(feature)),
             hour,
             np.array(name_match, dtype=float),
             np.array(same_customer, dtype=float),
@@ -541,12 +556,19 @@ def main() -> None:
         "Baseline rò rỉ AUC",
         f"{auc:.3f}",
         "0.80–0.93",
-        "amount/balance, người nhận mới, paste, cuộc gọi, accessibility, remote, giờ, tên khớp chủ, cùng chủ",
+        "amount/balance, người nhận mới, paste, đang gọi, giờ, tên khớp chủ, cùng chủ",
         0.80 <= auc <= 0.93,
     )
     fraud_scores = score[label]
     hard_floor = int(spec["hard_negative_min_sessions"])
-    hard_types = ["legit_drain", "legit_new_payee_large", "legit_passthrough", "legit_on_call_unknown"]
+    hard_types = [
+        "legit_drain",
+        "legit_new_payee_large",
+        "legit_passthrough",
+        "legit_on_call_unknown",
+        "legit_guided_by_relative",
+        "legit_friend_loan",
+    ]
     hard_counts = joined["scenario_type"].astype(str).value_counts()
     hard_ok = all(int(hard_counts.get(kind, 0)) >= hard_floor for kind in hard_types)
     report.add(
@@ -611,6 +633,151 @@ def main() -> None:
             report.add("own_name_safe_account bị bắt", "0 phiên", "có phiên", "-", False)
     else:
         report.add("Ngưỡng 80% lừa đảo", "không có phiên lừa", "có", "-", False)
+
+    pair = feature["scenario_type"].astype(str).isin(["police", "legit_guided_by_relative"])
+    sub = feature.loc[pair].copy()
+    y_pair = sub["scenario_type"].astype(str).eq("police").to_numpy()
+    seconds = pd.to_numeric(sub["call_seconds_since_open"], errors="coerce") if "call_seconds_since_open" in sub.columns else pd.Series(np.nan, index=sub.index)
+    direction = sub["call_direction"].astype("string") if "call_direction" in sub.columns else pd.Series(pd.NA, index=sub.index)
+    call_matrix = np.column_stack(
+        [
+            sub["in_call_at_open"].fillna(False).to_numpy(dtype=float),
+            sub["call_ended_in_session"].fillna(False).to_numpy(dtype=float),
+            seconds.fillna(0).to_numpy(dtype=float),
+            seconds.isna().to_numpy(dtype=float),
+            direction.eq("inbound").fillna(False).to_numpy(dtype=float),
+            direction.eq("outbound").fillna(False).to_numpy(dtype=float),
+            sub["os"].astype(str).eq("iOS").to_numpy(dtype=float) if "os" in sub.columns else np.zeros(len(sub)),
+        ]
+    )
+    call_auc = auc_score(y_pair, fit_logit(call_matrix, y_pair)) if y_pair.any() and (~y_pair).any() else 1.0
+    fund_types = {"savings_liquidation", "quick_loan_disbursement", "credit_card_cash_advance"}
+    session_tx = transactions.loc[
+        transactions["session_id"].astype(str).isin(set(sub["session_id"].astype(str))),
+        ["session_id", "tx_type", "from_account", "ts", "amount"],
+    ]
+    fund_sessions = set(session_tx.loc[session_tx["tx_type"].astype(str).isin(fund_types), "session_id"].astype(str))
+    changes = pd.read_parquet(observed / "account_changes.parquet")
+    raises = changes.loc[changes["change_type"].astype(str).eq("limit_raise"), ["account_id", "ts"]]
+    raises["account_id"] = raises["account_id"].astype(str)
+    raise_at = {account: part["ts"].sort_values().to_numpy() for account, part in raises.groupby("account_id", sort=False)}
+    limits = dict(zip(accounts["account_id"].astype(str), accounts["limit_per_txn"].fillna(0).astype(np.int64)))
+    piece_count = session_tx.groupby([session_tx["session_id"].astype(str), session_tx["from_account"].astype(str)]).size()
+    near_limit_sessions = set()
+    for (session_id, account), count in piece_count.items():
+        per_txn = int(limits.get(account, 0))
+        if count >= 2 and per_txn > 0:
+            amounts = session_tx.loc[
+                session_tx["session_id"].astype(str).eq(session_id) & session_tx["from_account"].astype(str).eq(account),
+                "amount",
+            ]
+            if int((amounts >= int(0.85 * per_txn)).sum()) >= 2:
+                near_limit_sessions.add(session_id)
+    mobilize = []
+    for row in sub.itertuples(index=False):
+        raised = False
+        later = raise_at.get(str(row.from_account))
+        if later is not None and len(later):
+            start = int(pd.Timestamp(row.start_ts).value) - 30 * 60 * 1_000_000_000
+            end = int(pd.Timestamp(row.end_ts).value)
+            later_ns = pd.to_datetime(pd.Series(later), utc=True).astype("int64").to_numpy()
+            raised = bool(((later_ns >= start) & (later_ns <= end)).any())
+        mobilize.append(str(row.session_id) in fund_sessions or str(row.session_id) in near_limit_sessions or raised)
+    rich = np.column_stack([call_matrix, np.array(new_flag, dtype=float)[pair.to_numpy()], np.array(mobilize, dtype=float)])
+    rich_auc = auc_score(y_pair, fit_logit(rich, y_pair)) if y_pair.any() and (~y_pair).any() else 0.0
+    print(f"  AUC cuộc gọi, người nhà hướng dẫn vs police: {call_auc:.3f}")
+    print(f"  AUC thêm huy động tiền và người nhận lạ: {rich_auc:.3f}")
+    report.add(
+        "AUC chỉ tín hiệu cuộc gọi",
+        f"{call_auc:.3f}",
+        "≤ 0.70",
+        "legit_guided_by_relative vs police",
+        call_auc <= 0.70,
+    )
+    report.add(
+        "AUC tăng khi thêm huy động và người nhận lạ",
+        f"{rich_auc:.3f}",
+        f"cao hơn cuộc gọi ít nhất 0.08 (đang {call_auc:.3f})",
+        "-",
+        rich_auc >= call_auc + 0.08,
+    )
+
+    fraud_sig_mask = sig["session_id"].astype(str).isin(fraud_sessions)
+    def values_of(column: pd.Series) -> set[str]:
+        text = column.astype("string").fillna("<NA>")
+        return set(text.astype(str))
+
+    signal_ok = True
+    signal_bits = []
+    for column in ["in_call_at_open", "call_ended_in_session", "call_direction", "os"]:
+        fraud_vals = values_of(sig.loc[fraud_sig_mask, column])
+        legit_vals = values_of(sig.loc[~fraud_sig_mask, column])
+        only = sorted(fraud_vals - legit_vals)
+        signal_bits.append(f"{column} {'ok' if not only else ','.join(only)}")
+        signal_ok = signal_ok and not only
+    if "call_seconds_since_open" in sig.columns:
+        def second_bin(value) -> str:
+            if pd.isna(value):
+                return "<NA>"
+            number = float(value)
+            if number < 120:
+                return "<2m"
+            if number < 600:
+                return "<10m"
+            if number < 1800:
+                return "<30m"
+            return ">=30m"
+        fraud_bins = set(sig.loc[fraud_sig_mask, "call_seconds_since_open"].map(second_bin))
+        legit_bins = set(sig.loc[~fraud_sig_mask, "call_seconds_since_open"].map(second_bin))
+        only = sorted(fraud_bins - legit_bins)
+        signal_bits.append(f"call_seconds {'ok' if not only else ','.join(only)}")
+        signal_ok = signal_ok and not only
+    input_events = {"acct_input_typed", "acct_input_typed_chunked", "acct_input_pasted", "acct_input_chosen", "app_switch"}
+    event_sessions = events[["session_id", "event_type"]].copy()
+    event_sessions["session_id"] = event_sessions["session_id"].astype(str)
+    event_sessions["fraud"] = event_sessions["session_id"].isin(fraud_sessions)
+    for name in sorted(input_events):
+        present = event_sessions.loc[event_sessions["event_type"].astype(str).eq(name), "fraud"]
+        both = bool(present.any()) and bool((~present).any()) if len(present) else False
+        signal_bits.append(f"{name} {'ok' if both else 'thiếu'}")
+        signal_ok = signal_ok and both
+    print("  Tín hiệu không chỉ có ở lừa đảo: " + "; ".join(signal_bits))
+    report.add("Tín hiệu thiết bị và nhập liệu có ở cả hai phía", "đạt" if signal_ok else "lệch", "không giá trị nào chỉ ở lừa đảo", "-", signal_ok)
+
+    bank_calls = pd.read_parquet(observed / "bank_calls.parquet")
+    if "fake_hotline" in cases.columns:
+        fake = cases.loc[cases["fake_hotline"].fillna(False).astype(bool)]
+        real = cases.loc[cases["scam_type"].astype(str).eq("bank_staff") & ~cases["fake_hotline"].fillna(False).astype(bool)]
+        starts = bank_calls["ts_start"]
+        owners = bank_calls["customer_id"].astype(str)
+        fake_hit = 0
+        for record in fake.itertuples(index=False):
+            hit = owners.eq(str(record.victim_customer_id)) & (starts >= record.start_ts) & (starts < record.end_ts)
+            fake_hit += int(hit.any())
+        real_hit = 0
+        for record in real.itertuples(index=False):
+            hit = owners.eq(str(record.victim_customer_id)) & (starts >= record.start_ts) & (starts < record.end_ts)
+            real_hit += int(hit.any())
+        print(f"  bank_staff giả tổng đài còn cuộc gọi ngân hàng trong vụ: {fake_hit}; vụ còn lại có log: {real_hit}/{len(real)}")
+        report.add(
+            "Giả tổng đài không có bank_calls",
+            f"{fake_hit} vụ còn log, {real_hit}/{len(real)} vụ thật có log",
+            "0 vụ giả còn log, vụ còn lại có log",
+            "-",
+            fake_hit == 0 and real_hit == len(real) and len(real) > 0,
+        )
+
+    feature_root = ROOT.parent / "fides" / "features"
+    offenders = []
+    if feature_root.exists():
+        for path in feature_root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and "truth" in node.value.replace("\\", "/").lower():
+                    offenders.append(path.name)
+                if isinstance(node, ast.ImportFrom) and node.module and "truth" in node.module:
+                    offenders.append(path.name)
+    report.add("features/ không đọc truth/", "có " + ",".join(sorted(set(offenders))) if offenders else "không", "không", "-", not offenders)
 
     observed_cols: set[str] = set()
     for path in observed.glob("*.parquet"):

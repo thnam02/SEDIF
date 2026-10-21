@@ -319,12 +319,22 @@ class FeatureStore:
 
         signals = frames["signals"]
         self.sig_sess = np.array([session_code.get(item, -1) for item in _text(signals["session_id"])], dtype=np.int32)
-        self.sig_remote = signals["remote_access_app_installed"].fillna(False).to_numpy(dtype=bool)
-        self.sig_access = _ns(signals["accessibility_enabled_since"])
-        self.sig_share = signals["screen_sharing"].fillna(False).to_numpy(dtype=bool)
-        self.sig_overlay = signals["overlay_detected"].fillna(False).to_numpy(dtype=bool)
-        self.sig_audio = signals["in_call_audio_mode"].fillna(False).to_numpy(dtype=bool)
-        self.sig_talk = signals["talkback_enabled"].fillna(False).to_numpy(dtype=bool)
+
+        def _flag(name: str) -> np.ndarray:
+            if name not in signals.columns:
+                return np.zeros(len(signals), dtype=bool)
+            return signals[name].fillna(False).to_numpy(dtype=bool)
+
+        audio_col = "in_call_audio_mode" if "in_call_audio_mode" in signals.columns else "in_call_at_open"
+        self.sig_remote = _flag("remote_access_app_installed")
+        if "accessibility_enabled_since" in signals.columns:
+            self.sig_access = _ns(signals["accessibility_enabled_since"])
+        else:
+            self.sig_access = np.full(len(signals), np.iinfo(np.int64).min, dtype=np.int64)
+        self.sig_share = _flag("screen_sharing")
+        self.sig_overlay = _flag("overlay_detected")
+        self.sig_audio = _flag(audio_col)
+        self.sig_talk = _flag("talkback_enabled")
         order = np.argsort(self.sig_sess, kind="mergesort")
         for name in ("sig_sess", "sig_remote", "sig_access", "sig_share", "sig_overlay", "sig_audio", "sig_talk"):
             setattr(self, name, getattr(self, name)[order])

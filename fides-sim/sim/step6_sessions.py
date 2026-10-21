@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sim.io import write
+from sim.limits import format_limit
 from sim.step4_mules import as_timestamp, next_ids
 
 TZ = "Asia/Ho_Chi_Minh"
@@ -40,6 +41,10 @@ PURPOSE_VI = {
     "chuyen tien gap": "Chuyển tiền gấp cho người nhà",
     "vien phi": "Đóng viện phí",
     "bao lanh": "Nộp tiền bảo lãnh",
+    "nop thue bo sung": "Nộp thuế bổ sung",
+    "phat hanh chinh": "Nộp phạt hành chính",
+    "phi xu ly ho so": "Nộp phí xử lý hồ sơ",
+    "phi bo sung": "Nộp phí bổ sung",
     "tra lai": "Nhận lãi đầu tư",
     "chuyen tu tiet kiem": "Chuyển tiền từ sổ tiết kiệm",
     "chuyen tiep": "Chuyển tiếp",
@@ -94,7 +99,8 @@ def reset_previous(transactions: pd.DataFrame, accounts: pd.DataFrame, observed:
     """Bỏ giao dịch bước 6 (theo mốc tx_id đã ghi) và trả session_id về null."""
     del accounts
     transactions = transactions.copy()
-    if not (observed / "sessions.parquet").exists():
+    filled = "session_id" in transactions.columns and transactions["session_id"].notna().any()
+    if not (observed / "sessions.parquet").exists() or not filled:
         transactions["session_id"] = pd.Series(pd.NA, index=transactions.index, dtype="string")
         return transactions
     floor_path = truth / "step6_floor.parquet"
@@ -380,6 +386,106 @@ def hard_negative_transfers(
     return rows, session_no
 
 
+def behavior_sessions(
+    transactions, accounts, opening, devices, victims, blocked, home, account_customer,
+    minimum, sim_start, sim_end, take_id, session_no, rng,
+) -> tuple[list[dict], int, set[str], set[str]]:
+    """Phiên người nhà đọc số tài khoản, và phiên vay bạn số tiền nhỏ tới người nhận mỏng lịch sử."""
+    owners = dict(zip(accounts["account_id"].astype(str), accounts["customer_id"].astype(str)))
+    hist = transactions.loc[transactions["to_account"].notna(), ["from_account", "to_account"]].copy()
+    hist["from_account"] = hist["from_account"].astype(str)
+    hist["to_account"] = hist["to_account"].astype(str)
+    hist["customer"] = hist["from_account"].map(owners)
+    known = (
+        hist.dropna(subset=["customer"])
+        .groupby(["customer", "to_account"], sort=False)
+        .size()
+        .reset_index()
+    )
+    known_of: dict[str, list[str]] = {}
+    for customer, dest in zip(known["customer"].astype(str), known["to_account"].astype(str)):
+        known_of.setdefault(customer, []).append(dest)
+    sender_count = hist.groupby("to_account")["from_account"].nunique()
+    personal = accounts.loc[
+        accounts["customer_id"].notna()
+        & accounts["bank_id"].astype(str).eq(home)
+        & accounts["account_type"].astype(str).eq("personal")
+        & accounts["status"].astype(str).eq("active")
+    ].copy()
+    personal = personal.loc[~personal["customer_id"].astype(str).isin(victims)]
+    wanted = set(personal["account_id"].astype(str))
+    balance, last = ending_balances(transactions, opening, wanted)
+    external = accounts.loc[
+        accounts["customer_id"].isna()
+        & accounts["account_type"].astype(str).eq("personal")
+        & ~accounts["account_id"].astype(str).isin(blocked),
+        "account_id",
+    ].astype(str)
+    thin = [account for account in external if int(sender_count.get(account, 0)) <= 1]
+    if not thin:
+        thin = external.tolist()
+    customer_of = dict(zip(personal["account_id"].astype(str), personal["customer_id"].astype(str)))
+    guided_accounts = [
+        account for account in sorted(wanted)
+        if balance.get(account, 0) >= 4_000_000
+        and known_of.get(customer_of.get(account, ""), [])
+        and device_at(devices, account, sim_end - pd.Timedelta(days=1))
+    ]
+    loan_accounts = [
+        account for account in sorted(wanted)
+        if balance.get(account, 0) >= 2_000_000 and device_at(devices, account, sim_end - pd.Timedelta(days=1))
+    ]
+    rows = []
+    guided_ids: set[str] = set()
+    loan_ids: set[str] = set()
+
+    def stamp_for(account: str) -> pd.Timestamp:
+        stamp = last.get(account, sim_start) + pd.Timedelta(hours=3)
+        if stamp >= sim_end - pd.Timedelta(hours=1):
+            stamp = sim_end - pd.Timedelta(hours=3)
+        return stamp
+
+    for account in guided_accounts:
+        if len(guided_ids) >= minimum:
+            break
+        customer = customer_of[account]
+        dests = [dest for dest in known_of.get(customer, []) if dest != account and dest not in blocked]
+        if not dests:
+            continue
+        stamp = stamp_for(account)
+        if stamp <= sim_start:
+            continue
+        session_no += 1
+        session_id = f"S{session_no:08d}"
+        amount = int(rng.integers(1_000_000, 6_000_001) // 1000 * 1000)
+        amount = min(amount, int(balance.get(account, 0) // 1000 * 1000) - 1000)
+        if amount < 100_000:
+            continue
+        rows.append(make_tx(take_id(), stamp, account, str(dests[len(guided_ids) % len(dests)]), amount, "transfer", "chuyen tien gap", session_id))
+        guided_ids.add(session_id)
+        balance[account] = balance.get(account, 0) - amount
+    for account in loan_accounts:
+        if len(loan_ids) >= minimum:
+            break
+        if account in {row["from_account"] for row in rows}:
+            continue
+        stamp = stamp_for(account)
+        if stamp <= sim_start or not thin:
+            continue
+        session_no += 1
+        session_id = f"S{session_no:08d}"
+        amount = int(rng.integers(300_000, 4_000_001) // 1000 * 1000)
+        amount = min(amount, int(balance.get(account, 0) // 1000 * 1000) - 1000)
+        if amount < 100_000:
+            continue
+        dest = thin[len(loan_ids) % len(thin)]
+        if dest == account:
+            continue
+        rows.append(make_tx(take_id(), stamp, account, dest, amount, "transfer", "vay ban", session_id))
+        loan_ids.add(session_id)
+    return rows, session_no, guided_ids, loan_ids
+
+
 def forward_chain(inbounds: list[tuple[str, int, pd.Timestamp]], ring_of: dict[str, dict], rng, sim_end: pd.Timestamp, tx_ids: list[str], cursor: int) -> tuple[list[dict], int]:
     """Mỗi khoản vào lớp 1 đi theo forward_to, giữ 2–10% phí, rồi cashout."""
     rows = []
@@ -581,7 +687,14 @@ def _defer_once(work: pd.DataFrame, forwards: list[dict], opening: dict[str, int
     return len(moves)
 
 
-def event_chain(tx_rows: list[dict], new_flags: list[bool], paste_flags: list[bool], fraud: bool, rng, sim_start, sim_end) -> list[tuple[str, pd.Timestamp]]:
+def draw_share(options: dict, rng) -> str:
+    names = list(options)
+    weights = np.array([float(options[name]) for name in names], dtype=float)
+    weights = weights / weights.sum()
+    return str(rng.choice(np.array(names, dtype=object), p=weights))
+
+
+def event_chain(tx_rows: list[dict], new_flags: list[bool], paste_flags: list[bool], fraud: bool, rng, sim_start, sim_end, acct_input: str = "typed", n_switches: int = 0) -> list[tuple[str, pd.Timestamp]]:
     events: list[tuple[str, pd.Timestamp]] = []
     previous = sim_start
     login_done = False
@@ -595,6 +708,8 @@ def event_chain(tx_rows: list[dict], new_flags: list[bool], paste_flags: list[bo
             steps.append("add_payee")
             if do_paste:
                 steps.append("paste_account")
+        steps.append(f"acct_input_{acct_input}")
+        steps.extend(["app_switch"] * int(n_switches))
         steps.extend(["enter_amount", "submit"])
         if not login_done:
             steps = ["login"] + steps
@@ -715,6 +830,46 @@ def main() -> None:
         int(spec["hard_negative_min_sessions"]), sim_start, sim_end, take_id, session_no,
     )
     extra.extend(hard_rows)
+    behavior_rows, session_no, guided_ids, loan_ids = behavior_sessions(
+        transactions, accounts, opening, devices, victims, mule_ids | safe_ids, home, account_customer,
+        int(spec["hard_negative_min_sessions"]), sim_start, sim_end, take_id, session_no, rng,
+    )
+    extra.extend(behavior_rows)
+    limit_of = dict(zip(accounts["account_id"].astype(str), accounts["limit_per_txn"].fillna(0).astype(np.int64)))
+    day_of = dict(zip(accounts["account_id"].astype(str), accounts["limit_per_day"].fillna(0).astype(np.int64)))
+    lender_pool = accounts.loc[
+        accounts["customer_id"].isna() & accounts["account_type"].astype(str).eq("personal"),
+        "account_id",
+    ].astype(str)
+    lender = str(lender_pool.iloc[0]) if len(lender_pool) else ""
+    limit_raises: list[dict] = []
+    raised_case: set[str] = set()
+
+    def queue_raise(account: str, when: pd.Timestamp, paid: int) -> None:
+        if not account or when < sim_start or when >= sim_end:
+            return
+        old_txn = int(limit_of.get(account, 0))
+        old_day = int(day_of.get(account, 0))
+        if old_txn <= 0:
+            return
+        covered = int(((max(int(paid), 1) + 999_999) // 1_000_000) * 1_000_000)
+        new_txn = max(old_txn, covered)
+        if new_txn == old_txn:
+            new_txn = old_txn + 50_000_000
+        new_day = max(old_day, new_txn, int(paid))
+        limit_of[account] = new_txn
+        day_of[account] = new_day
+        limit_raises.append(
+            {
+                "account_id": account,
+                "ts": when,
+                "change_type": "limit_raise",
+                "old_value": format_limit(old_txn, old_day),
+                "new_value": format_limit(new_txn, new_day),
+                "channel": "app" if rng.random() < 0.70 else "quầy",
+            }
+        )
+
     for record in plans.sort_values(["planned_ts", "case_id", "seq"], kind="mergesort").itertuples(index=False):
         case = case_meta.loc[record.case_id]
         customer = str(case.victim_customer_id)
@@ -762,16 +917,49 @@ def main() -> None:
                         int(record.planned_amount), "own_transfer", "chuyen tu tiet kiem", session_id,
                     )
                 )
+        mobilize = str(getattr(record, "mobilize", "") or "")
+        inflow = int(getattr(record, "inflow_amount", 0) or 0)
+        extra_fee = bool(getattr(record, "extra_fee", False))
+        paid = int(record.planned_amount)
+        if extra_fee and mobilize == "savings_liquidation":
+            savings = pick_account(part, home, "savings") or pick_account(part, None, "savings")
+            if savings and savings != personal:
+                extra.append(
+                    make_tx(take_id(), when - pd.Timedelta(minutes=4), savings, personal, paid, "savings_liquidation", "tat toan truoc han", session_id)
+                )
+            elif lender:
+                extra.append(
+                    make_tx(take_id(), when - pd.Timedelta(minutes=4), lender, personal, paid, "quick_loan_disbursement", "giai ngan vay nhanh", session_id)
+                )
+        elif extra_fee and inflow > 0 and lender:
+            kind_in = mobilize if mobilize in {"quick_loan_disbursement", "credit_card_cash_advance"} else "quick_loan_disbursement"
+            purpose_in = "giai ngan vay nhanh" if kind_in == "quick_loan_disbursement" else "rut tien the"
+            extra.append(make_tx(take_id(), when - pd.Timedelta(minutes=4), lender, personal, inflow, kind_in, purpose_in, session_id))
+        elif extra_fee and mobilize == "limit_raise":
+            queue_raise(personal, when - pd.Timedelta(minutes=3), paid)
+        if (not extra_fee) and bool(getattr(case, "raise_during_call", False)) and str(record.case_id) not in raised_case:
+            queue_raise(personal, when - pd.Timedelta(minutes=5), paid)
+            raised_case.add(str(record.case_id))
         purpose = str(record.coached_purpose_text)
-        if rng.random() < 0.35:
+        if purpose != "phi bo sung" and rng.random() < 0.35:
             purpose = str(rng.choice(VAGUE))
-        payment = make_tx(
-            take_id(), when, personal, str(record.to_mule_account_id),
-            int(record.planned_amount), "transfer", purpose, session_id,
-        )
-        payment["_case"] = str(record.case_id)
-        payment["_invest"] = str(case.scam_type) == "investment"
-        extra.append(payment)
+        pieces = [paid]
+        if extra_fee and mobilize == "split_near_limit":
+            per_txn = max(int(limit_of.get(personal, paid)), 1000)
+            n_parts = 2 if paid < int(2.2 * per_txn) else 3
+            base = int(paid // n_parts // 1000 * 1000)
+            pieces = [base] * (n_parts - 1)
+            pieces.append(int(paid - base * (n_parts - 1)))
+            pieces = [part for part in pieces if part >= 1000]
+        for offset, part_amount in enumerate(pieces):
+            stamp = when if offset == len(pieces) - 1 else when - pd.Timedelta(seconds=len(pieces) - offset)
+            if stamp < sim_start:
+                stamp = sim_start + pd.Timedelta(seconds=offset + 1)
+            payment = make_tx(take_id(), stamp, personal, str(record.to_mule_account_id), int(part_amount), "transfer", purpose, session_id)
+            if offset == len(pieces) - 1:
+                payment["_case"] = str(record.case_id)
+                payment["_invest"] = (not extra_fee) and str(case.scam_type) == "investment"
+            extra.append(payment)
 
     scale_investment(extra, transactions, opening)
     extra = [row for row in extra if int(row["amount"]) >= 1000]
@@ -882,7 +1070,10 @@ def main() -> None:
         ]
         flags = [bool(new_series.get(row["tx_id"], False)) for row in tx_rows]
         pastes = [bool(flag and rng.random() < (paste_fraud if session.fraud else paste_legit)) for flag in flags]
-        chain = event_chain(tx_rows, flags, pastes, bool(session.fraud), rng, sim_start, sim_end)
+        side = "fraud" if session.fraud else "legit"
+        acct_input = draw_share(spec["acct_input_share"][side], rng)
+        n_switches = int(draw_share(spec["app_switch_count_share"][side], rng))
+        chain = event_chain(tx_rows, flags, pastes, bool(session.fraud), rng, sim_start, sim_end, acct_input, n_switches)
         for seq, (name, stamp) in enumerate(chain, start=1):
             event_rows.append({"session_id": session.session_id, "seq": seq, "event_type": name, "ts": stamp})
         session_new[session.session_id] = any(flags)
@@ -935,10 +1126,42 @@ def main() -> None:
 
     placed = {"known": 0, "unknown": 0, "ott": 0}
     call_kind: dict[str, str] = {}
+    family_numbers = (
+        contacts.loc[contacts["contact_type"].astype(str).eq("family")]
+        .groupby(contacts["customer_id"].astype(str))["number_id"]
+        .apply(lambda values: values.astype(str).tolist())
+        .to_dict()
+    )
+    session_by_id = sessions.set_index(sessions["session_id"].astype(str))
+    for session_id in sorted(guided_ids):
+        if session_id not in session_by_id.index:
+            continue
+        row = session_by_id.loc[session_id]
+        customer = str(row.customer_id)
+        pool = family_numbers.get(customer) or known_numbers.get(customer) or []
+        if not pool:
+            continue
+        start = row.start_ts
+        offset = int(rng.integers(180, 3001))
+        if rng.random() < 0.25:
+            duration = int(rng.integers(25, 81)) * 60
+            began = start - pd.Timedelta(seconds=duration + int(rng.integers(20, 180)))
+        elif rng.random() < 0.20:
+            began = start - pd.Timedelta(seconds=offset)
+            duration = offset + int(rng.integers(8, 45))
+        else:
+            began = start - pd.Timedelta(seconds=offset)
+            duration = offset + int(rng.integers(90, 800))
+        if began < sim_start:
+            began = sim_start
+        add_call(session_id, began, duration, "cellular", str(rng.choice(pool)), "inbound")
+        call_kind[session_id] = "guided"
     for index in order:
         if placed["known"] >= n_known and placed["unknown"] >= n_unknown and placed["ott"] >= n_ott:
             break
         row = legit.iloc[int(index)]
+        if str(row.session_id) in call_kind:
+            continue
         customer = str(row.customer_id)
         start = row.start_ts
         if placed["known"] < n_known:
@@ -974,7 +1197,7 @@ def main() -> None:
                 call_kind[str(row.session_id)] = "ott"
                 placed["ott"] += 1
 
-    voice_types = {"police", "bank_staff", "relative"}
+    voice_types = {"police", "bank_staff", "tax_authority", "relative"}
     case_contacts["case_id"] = case_contacts["case_id"].astype(str)
     voice_of: dict[str, object] = {}
     voiced = case_contacts.loc[case_contacts["channel"].astype(str).isin(["cellular", "ott"])]
@@ -993,9 +1216,14 @@ def main() -> None:
                 number = spoof_as[number]
             duration = int(template.duration_s) if int(template.duration_s) > 0 else 60
             if hang:
-                when = start - pd.Timedelta(minutes=int(rng.integers(1, 21))) - pd.Timedelta(seconds=duration)
+                when = start - pd.Timedelta(seconds=duration + int(rng.integers(30, 180)))
             else:
-                when = start - pd.Timedelta(seconds=int(rng.integers(5, 40)))
+                offset = int(rng.integers(180, 3001))
+                when = start - pd.Timedelta(seconds=offset)
+                if rng.random() < 0.20:
+                    duration = offset + int(rng.integers(8, 45))
+                elif duration < offset + 60:
+                    duration = offset + int(rng.integers(90, 500))
             if when < sim_start:
                 when = sim_start
             if when < sim_end:
@@ -1027,60 +1255,51 @@ def main() -> None:
         columns=["call_id", "session_id", "ts", "duration_s", "channel", "counterparty_number_id", "direction"]
     )
 
-    # Tín hiệu thiết bị.
-    latent = devices_latent.copy()
-    latent["device_id"] = latent["device_id"].astype(str)
-    talkback = []
-    password = []
-    for value in latent["baseline_accessibility"]:
-        items = [] if value is None else list(value)
-        talkback.append("talkback" in items)
-        password.append("password_manager" in items)
-    latent["talkback"] = talkback
-    latent["password"] = password
-    latent_map = latent.set_index("device_id")
-    bank_staff_ids = [key for key, info in fraud_sessions.items() if info["scam_type"] == "bank_staff"]
-    n_remote = int(round(float(spec["bank_staff_remote_app"]) * len(bank_staff_ids)))
-    remote_cases = set(rng.choice(bank_staff_ids, size=n_remote, replace=False).tolist()) if n_remote else set()
+    # Tín hiệu thiết bị: chỉ những gì máy nhìn thấy về cuộc gọi.
+    device_os = pd.read_parquet(observed / "devices.parquet", columns=["device_id", "os"])
+    os_of = dict(zip(device_os["device_id"].astype(str), device_os["os"].astype(str)))
+    visible_p = float(spec["ott_visible_to_device_share"])
     signal_rows = []
     in_call = {}
     calls_by_session = {key: part for key, part in calls.groupby("session_id", sort=False)} if len(calls) else {}
+    _ = devices_latent
     for session in sessions.itertuples(index=False):
-        base = latent_map.loc[session.device_id] if session.device_id in latent_map.index else None
-        talk = bool(base["talkback"]) if base is not None else False
-        pw = bool(base["password"]) if base is not None else False
-        remote = bool(base["remote_access_app_installed"]) if base is not None else False
-        enabled = pd.NaT
-        sharing = False
-        overlay = False
-        if session.session_id in remote_cases:
-            remote = True
-            enabled = session.start_ts - pd.Timedelta(hours=int(rng.integers(1, 7)))
-            sharing = bool(rng.random() < 0.55)
-            overlay = bool(rng.random() < 0.45)
-        elif (not session.fraud) and rng.random() < 0.004:
-            enabled = session.start_ts - pd.Timedelta(hours=int(rng.integers(1, 8)))
         related = calls_by_session.get(session.session_id, calls.iloc[0:0])
-        active = False
+        os_name = os_of.get(str(session.device_id), "Android")
+        visible = related
         if len(related):
-            finish = related["ts"] + pd.to_timedelta(related["duration_s"], unit="s")
-            overlap = (related["ts"] < session.end_ts) & (finish > session.start_ts) & related["channel"].isin(["cellular", "ott"])
-            active = bool(overlap.any())
+            hide = related["channel"].astype(str).eq("ott").to_numpy() & (rng.random(len(related)) >= visible_p)
+            visible = related.loc[~hide]
+        active = False
+        seconds_since = pd.NA
+        ended = False
+        direction = pd.NA
+        if len(visible):
+            start_ns = visible["ts"]
+            finish = start_ns + pd.to_timedelta(visible["duration_s"], unit="s")
+            at_open = (start_ns <= session.start_ts) & (finish > session.start_ts)
+            active = bool(at_open.any())
+            ended = bool(((finish > session.start_ts) & (finish <= session.end_ts)).any())
+            chosen = visible.loc[at_open] if active else visible
+            picked = chosen.iloc[0]
+            if active:
+                seconds_since = int(max((session.start_ts - picked.ts).total_seconds(), 0))
+            if os_name == "iOS":
+                direction = str(picked.direction)
         in_call[session.session_id] = active
         signal_rows.append(
             {
                 "session_id": session.session_id,
-                "device_id": session.device_id,
-                "talkback_enabled": talk,
-                "password_manager_installed": pw,
-                "remote_access_app_installed": remote,
-                "accessibility_enabled_since": enabled,
-                "screen_sharing": sharing,
-                "overlay_detected": overlay,
-                "in_call_audio_mode": active,
+                "in_call_at_open": active,
+                "call_seconds_since_open": seconds_since,
+                "call_ended_in_session": ended,
+                "call_direction": direction,
+                "os": os_name,
             }
         )
     signals = pd.DataFrame(signal_rows)
+    signals["call_seconds_since_open"] = signals["call_seconds_since_open"].astype("Int64")
+    signals["call_direction"] = signals["call_direction"].astype("string")
 
     # Kịch bản và câu trả lời.
     lie_rate = float(spec["coached_lie_yes_no"])
@@ -1113,7 +1332,7 @@ def main() -> None:
                     channel = str(related.iloc[0]["channel"])
             purpose_key = str(part.sort_values("amount", ascending=False)["purpose_text"].iloc[0])
             answer = PURPOSE_VI.get(purpose_key, "Chuyển khoản theo hướng dẫn")
-            guided, police, secret = YES, (YES if scenario == "police" else NO), (YES if scenario in {"police", "bank_staff"} else NO)
+            guided, police, secret = YES, (YES if scenario == "police" else NO), (YES if scenario in {"police", "bank_staff", "tax_authority"} else NO)
             if rng.random() < lie_rate:
                 guided, police, secret = (NO if guided == YES else YES), (NO if police == YES else YES), (NO if secret == YES else YES)
             permission = "decline" if declines else "accept"
@@ -1126,7 +1345,11 @@ def main() -> None:
             related = calls_by_session.get(session.session_id, calls.iloc[0:0])
             if len(related):
                 channel = str(related.iloc[0]["channel"])
-            if "own_transfer_drain" in types:
+            if str(session.session_id) in guided_ids:
+                scenario = "legit_guided_by_relative"
+            elif str(session.session_id) in loan_ids:
+                scenario = "legit_friend_loan"
+            elif "own_transfer_drain" in types:
                 scenario = "legit_drain"
             elif "passthrough_out" in types:
                 scenario = "legit_passthrough"
@@ -1148,6 +1371,27 @@ def main() -> None:
             answer = LEGIT_PURPOSE.get(biggest, "Chuyển khoản")
             guided, police, secret = NO, NO, NO
             permission = "accept"
+        if info:
+            who = "người nhà" if rng.random() < lie_rate else "người lạ"
+            guardian = bool(rng.random() >= float(spec["guardian_deny_fraud"]))
+            refuses = bool(rng.random() < 0.12)
+            dwell = int(np.clip(rng.lognormal(np.log(500), 0.55), 80, 20000))
+            hangup_ok = bool(rng.random() < (0.45 if scenario in {"police", "bank_staff", "tax_authority"} else 0.08))
+            cancels = bool(rng.random() < 0.07)
+        elif scenario == "legit_guided_by_relative":
+            who = "người nhà" if rng.random() < float(spec["guardian_confirm_relative"]) else "tự làm"
+            guardian = bool(rng.random() < float(spec["guardian_confirm_relative"]))
+            refuses = bool(rng.random() < 0.22)
+            dwell = int(np.clip(rng.lognormal(np.log(1400), 0.5), 80, 20000))
+            hangup_ok = bool(rng.random() < 0.12)
+            cancels = bool(rng.random() < 0.03)
+        else:
+            who = "tự làm"
+            guardian = False
+            refuses = bool(rng.random() < 0.04)
+            dwell = int(np.clip(rng.lognormal(np.log(1600), 0.5), 80, 20000))
+            hangup_ok = bool(rng.random() < 0.02)
+            cancels = bool(rng.random() < 0.02)
         scenario_rows.append(
             {
                 "session_id": session.session_id,
@@ -1168,12 +1412,25 @@ def main() -> None:
                     ensure_ascii=False,
                 ),
                 "permission_response": permission,
+                "who_guides_answer": who,
+                "guardian_confirm": guardian,
+                "refuses_help": refuses,
+                "warning_dwell_ms": dwell,
+                "complies_hangup_to_continue": hangup_ok,
+                "cancels_in_recovery_window": cancels,
             }
         )
 
     scenarios = pd.DataFrame(scenario_rows)
     responses = pd.DataFrame(response_rows)
-    hard_types = {"legit_drain", "legit_new_payee_large", "legit_passthrough", "legit_on_call_unknown"}
+    hard_types = {
+        "legit_drain",
+        "legit_new_payee_large",
+        "legit_passthrough",
+        "legit_on_call_unknown",
+        "legit_guided_by_relative",
+        "legit_friend_loan",
+    }
     tx_num = transactions["tx_id"].astype(str).str[1:].astype(np.int64)
     injected_sessions = set(transactions.loc[tx_num >= first_tx_num, "session_id"].dropna().astype(str))
     natural_session = ~scenarios["session_id"].astype(str).isin(injected_sessions)
@@ -1184,8 +1441,9 @@ def main() -> None:
     for kind in hard_types:
         natural_count = int((natural_session & kind_series.eq(kind)).sum())
         after_count = int(kind_series.eq(kind).sum())
-        if after_count > natural_count and natural_count > 0:
-            weights[kind_series.eq(kind).to_numpy()] = (natural_count / total_natural) / (after_count / total_after)
+        if after_count > natural_count:
+            base = natural_count if natural_count > 0 else max(int(round(0.001 * total_natural)), 1)
+            weights[kind_series.eq(kind).to_numpy()] = (base / total_natural) / (after_count / total_after)
     scenarios["sample_weight"] = weights
     sessions_out = sessions.drop(columns=["fraud"])
     for frame, cols in (
@@ -1194,19 +1452,21 @@ def main() -> None:
         (signals, ["session_id", "device_id"]),
         (calls, ["call_id", "session_id", "channel", "counterparty_number_id", "direction"]),
         (scenarios, ["session_id", "scenario_type", "case_id", "call_channel"]),
-        (responses, ["session_id", "purpose_answer", "yes_no_answers", "permission_response"]),
+        (responses, ["session_id", "purpose_answer", "yes_no_answers", "permission_response", "who_guides_answer"]),
     ):
         for column in cols:
             if column in frame.columns:
                 frame[column] = frame[column].astype("string")
     sessions_out["biometric_passed"] = sessions_out["biometric_passed"].astype(bool)
     events["seq"] = events["seq"].astype(np.int64)
-    signals["talkback_enabled"] = signals["talkback_enabled"].astype(bool)
-    signals["password_manager_installed"] = signals["password_manager_installed"].astype(bool)
-    signals["remote_access_app_installed"] = signals["remote_access_app_installed"].astype(bool)
-    signals["screen_sharing"] = signals["screen_sharing"].astype(bool)
-    signals["overlay_detected"] = signals["overlay_detected"].astype(bool)
-    signals["in_call_audio_mode"] = signals["in_call_audio_mode"].astype(bool)
+    signals["in_call_at_open"] = signals["in_call_at_open"].astype(bool)
+    signals["call_ended_in_session"] = signals["call_ended_in_session"].astype(bool)
+    signals["os"] = signals["os"].astype("string")
+    responses["guardian_confirm"] = responses["guardian_confirm"].astype(bool)
+    responses["refuses_help"] = responses["refuses_help"].astype(bool)
+    responses["warning_dwell_ms"] = responses["warning_dwell_ms"].astype(np.int64)
+    responses["complies_hangup_to_continue"] = responses["complies_hangup_to_continue"].astype(bool)
+    responses["cancels_in_recovery_window"] = responses["cancels_in_recovery_window"].astype(bool)
     if len(calls):
         calls["duration_s"] = calls["duration_s"].astype(np.int64)
     scenarios["split_count"] = scenarios["split_count"].astype(np.int64)
@@ -1223,6 +1483,81 @@ def main() -> None:
     transactions["amount"] = transactions["amount"].astype(np.int64)
     transactions["from_balance_before"] = transactions["from_balance_before"].astype(np.int64)
 
+    changes_path = observed / "account_changes.parquet"
+    changes = pd.read_parquet(changes_path) if changes_path.exists() else pd.DataFrame(columns=["account_id", "ts", "change_type", "old_value", "new_value", "channel"])
+    victim_accounts = accounts.loc[accounts["customer_id"].astype(str).isin(set(cases["victim_customer_id"].astype(str))), ["account_id", "customer_id"]]
+    accounts_of_victim: dict[str, set[str]] = {}
+    for account_id, customer_id in zip(victim_accounts["account_id"].astype(str), victim_accounts["customer_id"].astype(str)):
+        accounts_of_victim.setdefault(customer_id, set()).add(account_id)
+    if len(changes):
+        drop_raise = np.zeros(len(changes), dtype=bool)
+        is_raise = changes["change_type"].astype(str).eq("limit_raise").to_numpy()
+        change_account = changes["account_id"].astype(str)
+        change_ts = changes["ts"]
+        for customer_id, start, end in zip(cases["victim_customer_id"].astype(str), cases["start_ts"], cases["end_ts"]):
+            owned_ids = accounts_of_victim.get(customer_id, set())
+            if not owned_ids:
+                continue
+            drop_raise |= is_raise & change_account.isin(owned_ids).to_numpy() & (change_ts >= start).to_numpy() & (change_ts < end).to_numpy()
+        changes = changes.loc[~drop_raise].reset_index(drop=True)
+    if limit_raises:
+        changes = pd.concat([changes, pd.DataFrame(limit_raises)], ignore_index=True)
+        changes["account_id"] = changes["account_id"].astype("string")
+        changes["change_type"] = changes["change_type"].astype("string")
+        changes["old_value"] = changes["old_value"].astype("string")
+        changes["new_value"] = changes["new_value"].astype("string")
+        changes["channel"] = changes["channel"].astype("string")
+        changes = changes.sort_values(["ts", "account_id"], kind="mergesort").reset_index(drop=True)
+    bank_path = observed / "bank_calls.parquet"
+    bank_calls = pd.read_parquet(bank_path) if bank_path.exists() else pd.DataFrame(columns=["customer_id", "ts_start", "ts_end", "agent_id", "purpose"])
+    if "fake_hotline" in cases.columns:
+        fake_ids = set(cases.loc[cases["fake_hotline"].fillna(False).astype(bool), "case_id"].astype(str))
+        real_bank = cases.loc[cases["scam_type"].astype(str).eq("bank_staff") & ~cases["case_id"].astype(str).isin(fake_ids)]
+        victim_of = dict(zip(cases["case_id"].astype(str), cases["victim_customer_id"].astype(str)))
+        window = dict(zip(cases["case_id"].astype(str), zip(cases["start_ts"], cases["end_ts"])))
+        staff_ids = set(cases.loc[cases["scam_type"].astype(str).eq("bank_staff"), "case_id"].astype(str))
+        if len(bank_calls) and staff_ids:
+            drop = np.zeros(len(bank_calls), dtype=bool)
+            starts = bank_calls["ts_start"]
+            owners = bank_calls["customer_id"].astype(str)
+            for case_id in staff_ids:
+                customer = victim_of.get(case_id, "")
+                start, end = window[case_id]
+                drop |= owners.eq(customer).to_numpy() & (starts >= start).to_numpy() & (starts < end).to_numpy()
+            bank_calls = bank_calls.loc[~drop].reset_index(drop=True)
+        agents = np.array([f"AG{i:04d}" for i in range(1, 41)], dtype=object)
+        purposes = np.array(["xac minh", "cham soc", "ban hang"], dtype=object)
+        added = []
+        for record in real_bank.itertuples(index=False):
+            voice = case_contacts.loc[
+                case_contacts["case_id"].astype(str).eq(str(record.case_id))
+                & case_contacts["channel"].astype(str).isin(["cellular", "ott"])
+            ]
+            if voice.empty:
+                start = record.start_ts
+                duration = 600
+            else:
+                start = voice.iloc[0]["ts"]
+                duration = int(voice.iloc[0]["duration_s"])
+            finish = start + pd.Timedelta(seconds=max(duration, 60))
+            if finish >= sim_end:
+                finish = sim_end - pd.Timedelta(seconds=1)
+            added.append(
+                {
+                    "customer_id": str(record.victim_customer_id),
+                    "ts_start": start,
+                    "ts_end": finish,
+                    "agent_id": str(rng.choice(agents)),
+                    "purpose": str(rng.choice(purposes)),
+                }
+            )
+        if added:
+            bank_calls = pd.concat([bank_calls, pd.DataFrame(added)], ignore_index=True)
+        bank_calls["customer_id"] = bank_calls["customer_id"].astype("string")
+        bank_calls["agent_id"] = bank_calls["agent_id"].astype("string")
+        bank_calls["purpose"] = bank_calls["purpose"].astype("string")
+    write(changes, "observed", "account_changes")
+    write(bank_calls, "observed", "bank_calls")
     write(transactions, "observed", "transactions")
     write(accounts, "observed", "accounts")
     write(recovered, "truth", "recovered_funds")
