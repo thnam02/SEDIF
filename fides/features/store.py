@@ -46,6 +46,44 @@ NETWORK_ONLY = [
     "passthrough_24h",
     "device_holder_count",
 ]
+_TX_SIGNALS = [
+    "amount",
+    "amount_to_balance",
+    "a_w",
+    "new_payee",
+    "pasted",
+    "add_method",
+    "hour",
+    "seconds_since_login",
+    "new_payees_24h",
+    "has_tx_signals",
+    "payee_name_matches_holder",
+    "merchant_verified",
+    "simo_listed",
+    "has_payee_signals",
+]
+_DEVICE_SIGNALS = [
+    "in_call_audio_mode",
+    "accessibility_new",
+    "remote_access_app",
+    "screen_sharing",
+    "overlay",
+    "new_device",
+    "has_device_signals",
+]
+_TELCO_SIGNALS = [
+    "on_call",
+    "recent_call_minutes_ago",
+    "counterparty_is_new",
+    "counterparty_number_age_days",
+    "counterparty_report_count",
+    "has_telco_signals",
+]
+PROFILES = {
+    "basic": frozenset(_TX_SIGNALS),
+    "standard": frozenset([*_TX_SIGNALS, *_DEVICE_SIGNALS]),
+    "advanced": frozenset([*_TX_SIGNALS, *_DEVICE_SIGNALS, *_TELCO_SIGNALS, *NETWORK_ONLY]),
+}
 
 TZ_OFFSET_S = 7 * 3600
 NS = 1_000_000_000
@@ -356,14 +394,17 @@ class FeatureStore:
         self.acc_link_first = self.link_first[order]
         self.acc_link_bound = _bounds(self.acc_link_acc)
 
-    def compute(self, session_id: str, as_of_ts, view: str) -> dict:
+    def compute(self, session_id: str, as_of_ts, view: str, profile: str = "advanced") -> dict:
+        if profile not in PROFILES:
+            raise ValueError("profile phải là basic, standard hoặc advanced")
+        allowed = PROFILES[profile]
         as_of = _as_ns(as_of_ts)
         code = self.session_of.get(session_id)
         row = {name: None for name in FEATURE_COLUMNS}
         for name in ("has_tx_signals", "has_payee_signals", "has_device_signals", "has_telco_signals", "pasted", "new_payee", "simo_listed"):
             row[name] = 0
         if code is None or self.sess_start[code] >= as_of:
-            return row
+            return apply_profile(row, profile, view)
         account = int(self.sess_acc[code])
         customer = int(self.sess_cust[code])
         network = view == "network"
@@ -388,13 +429,15 @@ class FeatureStore:
             row["add_method"] = self._add_method(account, payee, as_of)
             login = self._event_ts(code, as_of, "login")
             row["seconds_since_login"] = (when - login) / NS if login is not None and when >= login else None
-            self._payee(row, account, payee, as_of, network)
-        self._device(row, code, as_of)
-        self._telco(row, customer, as_of)
+            self._payee(row, account, payee, as_of, network and "payee_account_age_days" in allowed)
+        if "has_device_signals" in allowed:
+            self._device(row, code, as_of)
+        if "has_telco_signals" in allowed:
+            self._telco(row, customer, as_of)
         if not network:
             for name in NETWORK_ONLY:
                 row[name] = None
-        return row
+        return apply_profile(row, profile, view)
 
     def _span(self, bound: dict[int, tuple[int, int]], key: int) -> tuple[int, int]:
         return bound.get(int(key), (0, 0))
@@ -645,6 +688,23 @@ def _bounds(codes: np.ndarray) -> dict[int, tuple[int, int]]:
     starts = np.r_[0, change]
     ends = np.r_[change, len(codes)]
     return {int(codes[start]): (int(start), int(end)) for start, end in zip(starts, ends) if codes[start] >= 0}
+
+
+def unread_signals(profile: str, view: str) -> list[str]:
+    """Tên tín hiệu profile này không được đọc. View một ngân hàng cũng không đọc sổ mạng lưới."""
+    if profile not in PROFILES:
+        raise ValueError("profile phải là basic, standard hoặc advanced")
+    allowed = PROFILES[profile]
+    network = view == "network"
+    return [name for name in FEATURE_COLUMNS if name not in allowed or (name in NETWORK_ONLY and not network)]
+
+
+def apply_profile(row: dict, profile: str, view: str) -> dict:
+    missing = unread_signals(profile, view)
+    for name in missing:
+        row[name] = None
+    row["missing_signals"] = missing
+    return row
 
 
 def _known(stamp: int) -> bool:

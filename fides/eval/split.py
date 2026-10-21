@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-FRAUD_TYPES = ["police", "bank_staff", "relative", "deposit", "investment", "romance", "own_name_safe_account"]
+FRAUD_TYPES = ["police", "tax_authority", "bank_staff", "relative", "deposit", "investment", "romance", "own_name_safe_account"]
 ROOT = Path(__file__).resolve().parents[1]
 SIM = ROOT.parent / "fides-sim"
 

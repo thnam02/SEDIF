@@ -18,7 +18,7 @@ from features import FEATURE_COLUMNS, NETWORK_ONLY, compute_features
 from features.store import FeatureStore, using_store
 
 OUT = ROOT / "out"
-FRAUD_GROUPS = {"police", "bank_staff", "relative", "deposit", "investment", "romance", "own_name_safe_account"}
+FRAUD_GROUPS = {"police", "tax_authority", "bank_staff", "relative", "deposit", "investment", "romance", "own_name_safe_account"}
 
 
 def featurize(store: FeatureStore, part: pd.DataFrame, view: str) -> pd.DataFrame:

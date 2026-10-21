@@ -21,7 +21,7 @@ from sim.step4_mules import as_timestamp
 TZ = "Asia/Ho_Chi_Minh"
 FRAUD_TYPES = {"police", "investment", "bank_staff", "relative", "deposit", "romance", "tax_authority", "own_name_safe_account"}
 SEGMENTS = ["thường", "cao tuổi"]
-ACTIONS = ["allow", "friction", "hold"]
+ACTIONS = ["allow", "g1_banner", "pause_and_verify", "guardian_confirm", "friction", "show_chain", "recovery_window", "hangup_required", "hold"]
 
 
 def load_config() -> dict:
@@ -38,29 +38,46 @@ def day_draw(rng, bounds) -> int:
     return int(rng.integers(low, high + 1))
 
 
-def response_table() -> pd.DataFrame:
+def response_table(spec: dict) -> pd.DataFrame:
+    """Mọi xác suất lấy từ config và được đánh dấu GIẢ ĐỊNH."""
+    assumptions = spec["response_assumptions"]
+    actions = list(assumptions["actions"])
+    stop_of = assumptions["p_stop_fraud"]
+    abandon_of = assumptions["p_abandon_legit"]
+    complaint_of = assumptions.get("p_complaint_legit", {})
+    guided_hangup = float(assumptions["p_abandon_guided_hangup_required"])
+    coached_friction = float(assumptions["p_stop_fraud_coached_friction"])
+    hang_bonus = float(assumptions["p_stop_hold_if_hangs_up"])
+    guard_alone = float(assumptions["p_stop_guardian_alone"])
+    guard = float(assumptions["p_stop_guardian"])
+    cap = float(assumptions["p_stop_cap"])
+    groups = [
+        "police", "bank_staff", "tax_authority", "relative", "deposit", "investment",
+        "romance", "own_name_safe_account", "legit", "legit_guided_by_relative",
+    ]
     rows = []
-    groups = ["police", "bank_staff", "tax_authority", "relative", "deposit", "investment", "romance", "own_name_safe_account", "legit"]
     for group in groups:
-        fraud = group != "legit"
+        fraud = group not in {"legit", "legit_guided_by_relative"}
         for segment in SEGMENTS:
-            for action in ACTIONS:
+            for action in actions:
                 for guardian in (False, True):
                     for coached in (False, True):
                         for alone in (False, True):
                             for hangs in (False, True):
                                 if fraud:
-                                    base = {"allow": 0.03, "friction": 0.20 if coached else 0.35, "hold": 0.65}[action]
-                                    if action == "hold" and hangs:
-                                        base += 0.10
+                                    base = float(stop_of[action])
+                                    if action == "friction" and coached:
+                                        base = coached_friction
+                                    if action in {"hold", "hangup_required"} and hangs:
+                                        base += hang_bonus
                                     if guardian:
-                                        base += 0.20 if alone else 0.15
-                                    stop = min(0.99, base)
+                                        base += guard_alone if alone else guard
+                                    stop = min(cap, base)
                                     abandon, complaint = 0.0, 0.0
                                 else:
                                     stop = 0.0
-                                    abandon = {"allow": 0.0, "friction": 0.05, "hold": 0.15}[action]
-                                    complaint = 0.03 if action == "hold" else 0.0
+                                    abandon = guided_hangup if group == "legit_guided_by_relative" and action == "hangup_required" else float(abandon_of[action])
+                                    complaint = float(complaint_of.get(action, 0.0))
                                 rows.append(
                                     {
                                         "scenario_group": group,
@@ -73,7 +90,7 @@ def response_table() -> pd.DataFrame:
                                         "p_stop": stop,
                                         "p_abandon": abandon,
                                         "p_complaint": complaint,
-                                        "source": "assumption",
+                                        "source": "GIẢ ĐỊNH",
                                     }
                                 )
     frame = pd.DataFrame(rows)
@@ -219,12 +236,70 @@ def main() -> None:
 
     listing_delay = spec["simo_listing_delay_days"]
     l1_of = dict(zip(cases["case_id"].astype(str), cases["l1_account_id"].astype(str))) if "l1_account_id" in cases.columns else {}
+    listed_at_of = {}
+    for case_id in sorted(reported_cases):
+        listed_at_of[case_id] = report_ts_of[case_id] + pd.Timedelta(days=day_draw(rng, listing_delay))
+    b01_ids = set(accounts.loc[accounts["bank_id"].astype(str).eq("B01"), "account_id"].astype(str))
+    blank_session = {"nan", "<NA>", "None", ""}
+    b01_tx = labeled.loc[
+        labeled["is_fraud"]
+        & labeled["from_account"].astype(str).isin(b01_ids)
+        & ~labeled["session_id"].astype(str).isin(blank_session)
+        & labeled["case_id"].notna()
+    ].copy()
+    b01_tx["case_id"] = b01_tx["case_id"].astype(str)
+    b01_tx["session_id"] = b01_tx["session_id"].astype(str)
+    eligible = sorted(set(b01_tx["case_id"]) & reported_cases)
+    complaint_rng = np.random.default_rng(np.random.SeedSequence([int(cfg["seed"]), 7]))
+    n_complaint = min(len(eligible), int(round(float(spec["internal_complaint_share"]) * len(eligible))))
+    chosen_cases = set(complaint_rng.choice(np.array(eligible, dtype=object), size=n_complaint, replace=False)) if n_complaint else set()
+    complaint_rows = []
+    seq = 1
+    for case_id in sorted(chosen_cases):
+        part = b01_tx.loc[b01_tx["case_id"].eq(case_id)]
+        listed_at = listed_at_of[case_id]
+        report_ts = report_ts_of[case_id]
+        latest = part["ts"].max()
+        high = min(report_ts, listed_at) - pd.Timedelta(minutes=1)
+        low = latest + pd.Timedelta(minutes=1)
+        if high <= low:
+            complaint_ts = listed_at - pd.Timedelta(minutes=1)
+        else:
+            span = int((high - low).total_seconds())
+            complaint_ts = low + pd.Timedelta(seconds=int(complaint_rng.integers(0, span + 1)))
+        if not complaint_ts < listed_at:
+            complaint_ts = listed_at - pd.Timedelta(minutes=1)
+        sessions_of = part.groupby("session_id", sort=False)["from_account"].first()
+        for session_id, account_id in sessions_of.items():
+            complaint_rows.append(
+                {
+                    "complaint_id": f"C{seq:06d}",
+                    "customer_id": victim_of.get(case_id, ""),
+                    "account_id": str(account_id),
+                    "session_id": str(session_id),
+                    "complaint_ts": complaint_ts,
+                }
+            )
+            seq += 1
+    complaints = pd.DataFrame(complaint_rows)
+    if complaints.empty:
+        complaints = pd.DataFrame(
+            {
+                "complaint_id": pd.Series(dtype="string"),
+                "customer_id": pd.Series(dtype="string"),
+                "account_id": pd.Series(dtype="string"),
+                "session_id": pd.Series(dtype="string"),
+                "complaint_ts": pd.Series(dtype=f"datetime64[ns, {TZ}]"),
+            }
+        )
+    else:
+        for column in ("complaint_id", "customer_id", "account_id", "session_id"):
+            complaints[column] = complaints[column].astype("string")
     simo_rows = []
     number_rows = []
     numbers_of = dict(zip(cases["case_id"].astype(str), cases["scammer_number_ids"]))
     for case_id in sorted(reported_cases):
-        delay = day_draw(rng, listing_delay)
-        listed_at = report_ts_of[case_id] + pd.Timedelta(days=delay)
+        listed_at = listed_at_of[case_id]
         accounts_listed = []
         l1 = l1_of.get(case_id, "")
         if l1:
@@ -249,15 +324,16 @@ def main() -> None:
     else:
         reports["number_id"] = reports["number_id"].astype("string")
 
-    model = response_table()
+    model = response_table(spec)
     write(labels, "truth", "labels")
     write(model, "truth", "response_model")
     write(simo, "observed", "simo_list")
     write(reports, "observed", "number_reports")
+    write(complaints, "observed", "internal_complaints")
     n_reported_cases = len(reported_cases)
     print(
         f"Đã ghi {len(labels)} nhãn, {n_reported_cases} vụ được báo, "
-        f"{len(simo_rows)} dòng SIMO, {len(reports)} báo số."
+        f"{len(simo_rows)} dòng SIMO, {len(reports)} báo số, {len(complaints)} phiếu nội bộ."
     )
     _ = (sim_start, sim_end)
 

@@ -31,5 +31,25 @@ def test_cut_at_as_of_matches_full_store() -> None:
             assert full == sliced, (session_id, view, _diff(full, sliced))
 
 
+def test_profile_records_unread_signals() -> None:
+    store = FeatureStore(SIM / "out" / "observed")
+    code = int(np.flatnonzero(store.sess_start > 0)[0])
+    session_id = str(store.session_id[code])
+    when = pd.Timestamp(int(store.sess_start[code]) + 3_600 * 1_000_000_000, tz="UTC")
+    with using_store(store):
+        basic = compute_features(session_id, when, "network", profile="basic")
+        standard = compute_features(session_id, when, "network", profile="standard")
+        advanced = compute_features(session_id, when, "network", profile="advanced")
+        single = compute_features(session_id, when, "single_bank", profile="advanced")
+    assert "in_call_audio_mode" in basic["missing_signals"]
+    assert basic["in_call_audio_mode"] is None
+    assert "has_telco_signals" in standard["missing_signals"]
+    assert "payee_account_age_days" in standard["missing_signals"]
+    assert "in_call_audio_mode" not in standard["missing_signals"]
+    assert advanced["missing_signals"] == []
+    assert "payee_account_age_days" in single["missing_signals"]
+    assert single["payee_account_age_days"] is None
+
+
 def _diff(left: dict, right: dict) -> dict:
     return {key: (left[key], right[key]) for key in left if left[key] != right[key]}
