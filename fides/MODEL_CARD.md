@@ -1,5 +1,8 @@
 # FIDES model v2.0
 
+Bảng đang dùng cho demo là model v2.1 trong `docs/MODEL_CARD.md`. Phần dưới đây là gói 27 cột đã chốt trước đó.
+
+
 Tag git: `model-v2.0` (commit `383c7ac`). Hợp đồng phục vụ: API v2.1. Seed 42. Cùng tập test: phiên có `ts` từ ngày 60 (2026-08-30) trở đi. Nhãn test là `is_fraud`. CI 95% bootstrap theo vụ, 200 lần, seed 42.
 
 Bản được đóng gói: **không p95, có c_FP doanh nghiệp nhỏ ×3, không T4c** (27 cột). τ_hi của bản này là 0,3148. g3 không vào LightGBM; g3 chỉ là họ thứ 5 khi điểm OOF của phiên hợp lệ train đạt p99,5.

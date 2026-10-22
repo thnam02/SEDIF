@@ -236,3 +236,12 @@ decision:
   note: "GIẢ ĐỊNH"
   c_fp_scale:
     doanh nghiệp nhỏ: 3
+  # GIẢ ĐỊNH: mốc thời gian của demo, không ước lượng từ dữ liệu.
+  hold_medium_s: 1800
+  hold_high_s: 86400
+  countdown_s: 600
+  countdown_resets_on_new_call: true
+  short_wait_s: 120
+  cancel_anytime: true
+  guardian_confirm_releases: true
+  proceed_after_countdown_releases: true

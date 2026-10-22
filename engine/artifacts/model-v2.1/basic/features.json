@@ -1,0 +1,17 @@
+{
+  "profile": "basic",
+  "columns": [
+    "amount",
+    "amount_to_balance",
+    "hour",
+    "new_payee",
+    "new_payees_24h",
+    "has_tx_signals",
+    "product_savings_7d",
+    "product_loan_7d",
+    "product_cash_advance_7d",
+    "limit_raise_1d",
+    "phone_change_7d"
+  ],
+  "categorical": []
+}

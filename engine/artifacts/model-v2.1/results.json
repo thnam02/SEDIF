@@ -1,0 +1,101 @@
+{
+  "seed": 42,
+  "rows": [
+    {
+      "tau_hi": 0.2083334154135256,
+      "saved": 2313603620.0,
+      "saved_low": 1511924997.0,
+      "saved_high": 3326437011.5000005,
+      "damage": 12539478000.0,
+      "rate": 0.18450557670741957,
+      "recall_at_1": 0.300982800982801,
+      "legit_mh": 0.004385336777073775,
+      "medium_loan": 0.046753246753246755,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.708029197080292,
+        "tax_authority": 0.75,
+        "bank_staff": 0.8157894736842105,
+        "relative": 0.5882352941176471,
+        "deposit": 0.2545454545454545,
+        "investment": 0.5580808080808081,
+        "romance": 0.7619047619047619,
+        "own_name_safe_account": 0.7272727272727273
+      },
+      "profile": "basic",
+      "columns": 11
+    },
+    {
+      "tau_hi": 0.43080439377598273,
+      "saved": 2547352860.0,
+      "saved_low": 1655449411.0,
+      "saved_high": 3576597095.5,
+      "damage": 12539478000.0,
+      "rate": 0.20314664294638102,
+      "recall_at_1": 0.32063882063882065,
+      "legit_mh": 0.00402976893028401,
+      "medium_loan": 0.046753246753246755,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.7226277372262774,
+        "tax_authority": 0.6071428571428571,
+        "bank_staff": 0.6842105263157895,
+        "relative": 0.7058823529411765,
+        "deposit": 0.3090909090909091,
+        "investment": 0.6414141414141414,
+        "romance": 0.6190476190476191,
+        "own_name_safe_account": 0.9090909090909091
+      },
+      "profile": "standard",
+      "columns": 16
+    },
+    {
+      "tau_hi": 0.282280782692399,
+      "saved": 2075856660.0,
+      "saved_low": 1434782720.0,
+      "saved_high": 3000176100.0,
+      "damage": 12539478000.0,
+      "rate": 0.165545699749224,
+      "recall_at_1": 0.40663390663390664,
+      "legit_mh": 0.0043902752193903,
+      "medium_loan": 0.015584415584415584,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.6642335766423357,
+        "tax_authority": 0.5714285714285714,
+        "bank_staff": 0.7236842105263158,
+        "relative": 0.6274509803921569,
+        "deposit": 0.2727272727272727,
+        "investment": 0.6590909090909091,
+        "romance": 0.47619047619047616,
+        "own_name_safe_account": 0.6363636363636364
+      },
+      "profile": "advanced",
+      "columns": 25
+    },
+    {
+      "tau_hi": 1.0,
+      "saved": 2449947080.0,
+      "saved_low": 1498859140.5,
+      "saved_high": 3575212710.0000005,
+      "damage": 12539478000.0,
+      "rate": 0.1953787135317754,
+      "recall_at_1": 0.35626535626535627,
+      "legit_mh": 0.001279056559979851,
+      "medium_loan": 0.01038961038961039,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.6788321167883211,
+        "tax_authority": 0.625,
+        "bank_staff": 0.7236842105263158,
+        "relative": 0.5490196078431373,
+        "deposit": 0.2727272727272727,
+        "investment": 0.3661616161616162,
+        "romance": 0.2857142857142857,
+        "own_name_safe_account": 0.9545454545454546
+      },
+      "profile": "advanced+telco+PAD",
+      "columns": 34
+    }
+  ]
+}
