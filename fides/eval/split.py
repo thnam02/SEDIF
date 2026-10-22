@@ -95,6 +95,41 @@ def build_split(
     return {name: frame.loc[frame["part"].eq(name), columns].reset_index(drop=True) for name in ("train", "test", "buffer", "held_case")}
 
 
+def group_folds(groups: np.ndarray, n_splits: int = 5, seed: int = 42):
+    """GroupKFold. Cùng một nhóm không đứng ở cả hai phía. Nhóm không được đưa vào mô hình."""
+    if n_splits < 2:
+        raise ValueError("cần ít nhất 2 fold")
+    codes, inverse, counts = np.unique(groups.astype(str), return_inverse=True, return_counts=True)
+    rng = np.random.default_rng(seed)
+    loads = np.zeros(n_splits, dtype=np.int64)
+    fold_of = np.empty(len(codes), dtype=np.int64)
+    for item in rng.permutation(len(codes)):
+        fold = int(np.argmin(loads))
+        fold_of[item] = fold
+        loads[fold] += int(counts[item])
+    row_fold = fold_of[inverse]
+    for fold in range(n_splits):
+        test = row_fold == fold
+        yield ~test, test
+
+
+def _label_groups(key: pd.Series, session_id: pd.Series, prefix: str) -> np.ndarray:
+    """Nhóm có khóa thì dùng khóa. Thiếu khóa thì mỗi phiên một nhóm."""
+    text = key.astype("string").fillna("")
+    session = session_id.astype("string").fillna("")
+    missing = text.isin(["", "<NA>", "nan", "None"]).to_numpy()
+    grouped = np.array([f"{prefix}:{item}" for item in text.astype(str).to_numpy()], dtype=object)
+    alone = np.array([f"s:{item}" for item in session.astype(str).to_numpy()], dtype=object)
+    return np.where(missing, alone, grouped)
+
+
+def ring_groups(case_id: pd.Series, session_id: pd.Series, ring_of: dict[str, str]) -> np.ndarray:
+    """Đường dây để chia fold. Phiên không thuộc đường dây đứng một mình."""
+    case = case_id.astype("string")
+    ring = case.map(ring_of)
+    return _label_groups(ring, session_id, "r")
+
+
 def describe(parts: dict[str, pd.DataFrame]) -> str:
     lines = []
     for name in ("train", "test"):

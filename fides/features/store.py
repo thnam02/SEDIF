@@ -17,6 +17,11 @@ FEATURE_COLUMNS = [
     "hour",
     "seconds_since_login",
     "new_payees_24h",
+    "new_payees_7d",
+    "new_payees_30d",
+    "cusum_out_30d",
+    "amount_rise_run",
+    "balance_out_ratio_30d",
     "has_tx_signals",
     "payee_name_matches_holder",
     "merchant_verified",
@@ -40,6 +45,13 @@ FEATURE_COLUMNS = [
     "counterparty_report_count",
     "has_telco_signals",
 ]
+LONG_TERM = [
+    "new_payees_7d",
+    "new_payees_30d",
+    "cusum_out_30d",
+    "amount_rise_run",
+    "balance_out_ratio_30d",
+]
 NETWORK_ONLY = [
     "payee_account_age_days",
     "distinct_senders_7d",
@@ -56,6 +68,11 @@ _TX_SIGNALS = [
     "hour",
     "seconds_since_login",
     "new_payees_24h",
+    "new_payees_7d",
+    "new_payees_30d",
+    "cusum_out_30d",
+    "amount_rise_run",
+    "balance_out_ratio_30d",
     "has_tx_signals",
     "payee_name_matches_holder",
     "merchant_verified",
@@ -430,6 +447,7 @@ class FeatureStore:
             login = self._event_ts(code, as_of, "login")
             row["seconds_since_login"] = (when - login) / NS if login is not None and when >= login else None
             self._payee(row, account, payee, as_of, network and "payee_account_age_days" in allowed)
+        row.update(self._behavior(history, as_of, int(decision["payee"]) if decision is not None else -1))
         if "has_device_signals" in allowed:
             self._device(row, code, as_of)
         if "has_telco_signals" in allowed:
@@ -438,6 +456,20 @@ class FeatureStore:
             for name in NETWORK_ONLY:
                 row[name] = None
         return apply_profile(row, profile, view)
+
+    def behavior_at(self, session_id: str, as_of_ts, view: str) -> dict:
+        """Năm đặc trưng dài hạn tại as_of_ts. Cùng công thức với compute."""
+        as_of = _as_ns(as_of_ts)
+        code = self.session_of.get(str(session_id))
+        if code is None or self.sess_start[code] >= as_of:
+            return {name: None for name in LONG_TERM}
+        account = int(self.sess_acc[code])
+        customer = int(self.sess_cust[code])
+        sources = self.accounts_of.get(customer, np.array([account], dtype=np.int32)) if view == "network" else np.array([account], dtype=np.int32)
+        history = self._history(sources, as_of)
+        decision = self._decision(history, code, as_of)
+        payee = int(decision["payee"]) if decision is not None else -1
+        return self._behavior(history, as_of, payee)
 
     def _span(self, bound: dict[int, tuple[int, int]], key: int) -> tuple[int, int]:
         return bound.get(int(key), (0, 0))
@@ -482,6 +514,62 @@ class FeatureStore:
             "balance": int(history["bal"][index]),
             "payee": payee,
             "new": bool(payee not in earlier),
+        }
+
+    def _behavior(self, history: dict[str, np.ndarray], as_of: int, payee: int) -> dict:
+        """Hành vi dài hạn chỉ từ giao dịch có ts < as_of."""
+        ts = history["ts"]
+        dest = history["to"]
+        amt = history["amt"]
+        bal = history["bal"]
+        xfer = history["xfer"]
+        sent = xfer & (dest >= 0) & (ts < as_of)
+        start_30 = as_of - 30 * DAY_NS
+        start_7 = as_of - 7 * DAY_NS
+        if not np.any(sent):
+            return {
+                "cusum_out_30d": 0.0,
+                "new_payees_7d": 0,
+                "new_payees_30d": 0,
+                "amount_rise_run": 0,
+                "balance_out_ratio_30d": 0.0,
+            }
+        order = np.argsort(ts[sent], kind="mergesort")
+        sent_ts = ts[sent][order]
+        sent_to = dest[sent][order]
+        sent_amt = amt[sent][order]
+        sent_bal = bal[sent][order]
+        prior = sent_ts <= start_30
+        mu = float(sent_amt[prior].mean()) if np.any(prior) else 0.0
+        window = sent_amt[sent_ts > start_30]
+        state = 0.0
+        for value in window:
+            state = max(0.0, state + float(value) - mu)
+        _, first_at = np.unique(sent_to, return_index=True)
+        first_ts = sent_ts[first_at]
+        fresh_30 = int(np.sum(first_ts > start_30))
+        fresh_7 = int(np.sum(first_ts > start_7))
+        run = 0
+        if payee >= 0:
+            chain = sent_amt[sent_to == payee]
+            run = 1 if len(chain) else 0
+            for older, newer in zip(chain[-2::-1], chain[::-1]):
+                if float(newer) > float(older):
+                    run += 1
+                else:
+                    break
+        in_month = sent_ts > start_30
+        ratio = 0.0
+        if np.any(in_month):
+            spent = float(sent_amt[in_month].sum())
+            base = float(sent_bal[in_month][0])
+            ratio = None if base <= 0 else spent / base
+        return {
+            "cusum_out_30d": state,
+            "new_payees_7d": fresh_7,
+            "new_payees_30d": fresh_30,
+            "amount_rise_run": run,
+            "balance_out_ratio_30d": ratio,
         }
 
     def _window_amount(self, history: dict[str, np.ndarray], as_of: int, _when: int) -> int:
@@ -704,6 +792,10 @@ def apply_profile(row: dict, profile: str, view: str) -> dict:
     for name in missing:
         row[name] = None
     row["missing_signals"] = missing
+    for name in NETWORK_ONLY:
+        # Thiếu là NaN và cờ 1. Giá trị 0 chỉ khi đã quan sát được và đếm ra không.
+        absent = row.get(name) is None
+        row[f"{name}_missing"] = int(absent)
     return row
 
 

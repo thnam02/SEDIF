@@ -3,8 +3,8 @@
 Thư viện này chỉ nhận bảng đã quan sát. Không mở dữ liệu nhãn.
 """
 
-from features.service import FeatureService, action_for, actions_from_families, session_families, severity
-from features.store import FEATURE_COLUMNS, NETWORK_ONLY, PROFILES, FeatureStore, using_store
+from features.service import FeatureService, action_for, actions_from_families, decide_levels, fit_tau, session_families, severity
+from features.store import FEATURE_COLUMNS, LONG_TERM, NETWORK_ONLY, PROFILES, FeatureStore, using_store
 
 
 def compute_features(session_id: str, as_of_ts, view: str = "single_bank", profile: str = "advanced") -> dict:
@@ -18,6 +18,7 @@ def compute_features(session_id: str, as_of_ts, view: str = "single_bank", profi
 
 __all__ = [
     "FEATURE_COLUMNS",
+    "LONG_TERM",
     "NETWORK_ONLY",
     "PROFILES",
     "FeatureService",
@@ -25,6 +26,8 @@ __all__ = [
     "action_for",
     "actions_from_families",
     "compute_features",
+    "decide_levels",
+    "fit_tau",
     "session_families",
     "severity",
     "using_store",

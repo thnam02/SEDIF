@@ -53,6 +53,49 @@ def action_for(level: str) -> str:
     }[level]
 
 
+def decide_levels(
+    score: np.ndarray,
+    amount: np.ndarray,
+    call: np.ndarray,
+    entry: np.ndarray,
+    payee: np.ndarray,
+    funding: np.ndarray,
+    tau_banner: float,
+    tau_medium: float,
+    tau_high: float,
+    top_k: np.ndarray,
+) -> np.ndarray:
+    """Mức lấy từ p×A so với τ. Họ tín hiệu chỉ chặn High khi chưa đủ 3 họ.
+
+    Phiên trong top-K mà có 0 hoặc 1 họ được nâng tối thiểu Medium.
+    Chỉ có cuộc gọi và p×A dưới τ banner thì không can thiệp.
+    """
+    value = np.asarray(score, dtype=float) * np.maximum(np.nan_to_num(np.asarray(amount, dtype=float), nan=0.0), 1.0)
+    families = (
+        np.asarray(call, dtype=bool).astype(np.int8)
+        + np.asarray(entry, dtype=bool).astype(np.int8)
+        + np.asarray(payee, dtype=bool).astype(np.int8)
+        + np.asarray(funding, dtype=bool).astype(np.int8)
+    )
+    only_call = np.asarray(call, dtype=bool) & (families == 1)
+    level = np.full(len(value), "none", dtype=object)
+    level[value >= tau_banner] = "banner"
+    level[value >= tau_medium] = "medium"
+    level[value >= tau_high] = "high"
+    level[(level == "high") & (families < 3)] = "medium"
+    floor = np.asarray(top_k, dtype=bool) & (families <= 1) & np.isin(level, ["none", "banner"])
+    level[floor] = "medium"
+    level[only_call & (value < tau_banner)] = "none"
+    return level
+
+
+def fit_tau(score: np.ndarray, amount: np.ndarray) -> tuple[float, float, float]:
+    """Ba ngưỡng kỳ vọng tổn thất, lấy trên train: phân vị 90, 97 và 99 của p×A."""
+    value = np.asarray(score, dtype=float) * np.maximum(np.nan_to_num(np.asarray(amount, dtype=float), nan=0.0), 1.0)
+    banner, medium, high = np.nanquantile(value, [0.90, 0.97, 0.99])
+    return float(banner), float(medium), float(high)
+
+
 def actions_from_families(frame: pd.DataFrame) -> pd.Series:
     call = frame["call"].fillna(False).to_numpy(dtype=bool)
     entry = frame["entry"].fillna(False).to_numpy(dtype=bool)
