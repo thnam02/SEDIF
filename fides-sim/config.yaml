@@ -1,0 +1,238 @@
+seed: 42
+sim_start: 2026-07-01
+sim_end: 2026-09-29
+
+population:
+  n_customers: 50000
+  n_external_numbers: 30000
+  age_bands:
+    - {min: 18, max: 30, share: 0.33}
+    - {min: 31, max: 50, share: 0.40}
+    - {min: 51, max: 65, share: 0.17}
+    - {min: 66, max: 85, share: 0.10}
+  elderly_age: 60
+  # Tỷ lệ doanh nghiệp nhỏ trong nhóm chưa cao tuổi.
+  small_business_share: 0.08
+  telco_share:
+    Viettel: 0.55
+    VNPT: 0.25
+    MobiFone: 0.18
+    Vietnamobile: 0.02
+  city_share:
+    TP Hồ Chí Minh: 0.30
+    Hà Nội: 0.25
+    Đà Nẵng: 0.05
+    Hải Phòng: 0.05
+    Cần Thơ: 0.04
+    Tỉnh khác: 0.31
+  # Tỷ lệ số hộ, không phải tỷ lệ người.
+  household_size:
+    1: 0.25
+    2: 0.25
+    3: 0.25
+    4: 0.15
+    5: 0.10
+  guardian_share:
+    elderly: 0.20
+    other: 0.03
+  recent_sim_share: 0.04
+  ported_share: 0.05
+  income_lognormal:
+    normal:
+      median: 9000000
+      sigma: 0.6
+    elderly:
+      median: 5000000
+      sigma: 0.7
+    small_business:
+      median: 25000000
+      sigma: 0.8
+
+accounts:
+  banks: [B01, B02, B03, B04, B05, B06, B07, B08]
+  home_bank: B01
+  # Thị phần giả định. B01 là ngân hàng pilot; tỷ lệ này áp cho ngân hàng chính
+  # của khách hàng, nên khoảng 20% khách hàng có tài khoản tại B01.
+  bank_share:
+    B01: 0.20
+    B02: 0.16
+    B03: 0.14
+    B04: 0.13
+    B05: 0.12
+    B06: 0.10
+    B07: 0.08
+    B08: 0.07
+  accounts_per_customer:
+    1: 0.55
+    2: 0.35
+    3: 0.10
+  savings_share: 0.30
+  securities_share: 0.10
+  n_merchants: 3000
+  merchant_verified_share: 0.40
+  external_with_account_share: 0.60
+  new_account_in_window_share: 0.03
+  android_share: 0.70
+  second_device_share: 0.08        # dùng HAI máy SONG SONG trong suốt cửa sổ
+  rooted_share: 0.01
+  new_device_in_window_share: 0.05 # ĐỔI máy: máy cũ ngừng dùng, tính RIÊNG, không gộp vào 8%
+  family_shared_device_share: 0.02
+  balance_multiple_of_income:
+    default:
+      median: 3.0
+      sigma: 1.0
+    elderly:
+      median: 6.0
+      sigma: 1.0
+
+limits:
+  per_txn: {normal: 100_000_000, elderly: 50_000_000, small_business: 500_000_000}
+  per_day: {normal: 300_000_000, elderly: 100_000_000, small_business: 2_000_000_000}
+  above_default_share: 0.15        # khách đã tự nâng hạn mức từ trước
+
+history:
+  tx_per_month_median: 25          # theo activity_level, lognormal, sigma 0.7
+  card_payments_aggregate_daily: true
+  renter_share_young: 0.30          # 18–35 tuổi trả tiền nhà hàng tháng
+  school_fee_parent_share: 0.25     # hộ có con đi học, đóng học phí tháng 8–9
+  school_fee_monthly_share: 0.85    # phổ thông thu theo tháng; đại học luôn theo học kỳ
+  school_enrollment_fee_share: 0.30 # trường thu thêm phí giữ chỗ tháng 8 cho học sinh mới
+  school_change_yearly_share: 0.03  # đổi trường mỗi năm, trong khoảng 2–5%
+  large_oneoff_share: 0.003         # đặt cọc nhà/xe, viện phí trong 90 ngày
+  own_transfer_drain_share: 0.02    # chuyển > 80% số dư sang tài khoản của chính mình
+  legit_passthrough_share: 0.005    # thủ quỹ nhóm, cha mẹ nhận rồi chuyển cho con
+  round_amount_share: 0.70          # số tiền tròn nghìn/trăm nghìn
+  payee_add_method: {contact: 0.55, paste: 0.25, qr: 0.15, typed: 0.05}
+  limit_raise_share: 0.02           # khách có khoản vượt hạn mức để nâng hoặc chia
+  over_limit_split_share: 0.25      # lệnh hợp lệ vượt hạn mức thì chia nhỏ
+  over_limit_split_share_sme: 0.40  # doanh nghiệp nhỏ chia nhiều hơn
+  limit_raise_idle_share: 0.15      # nâng hạn mức nhưng không chi lớn trong 7 ngày sau
+  popular_payee_young_share: 0.20   # người nhận phổ biến có tuổi tài khoản < 180 ngày
+  phone_change_share: 0.005
+  savings_maturity_share: 0.03      # tất toán sổ đáo hạn, trên số sổ tiết kiệm, mỗi quý
+  savings_early_share: 0.003        # tất toán trước hạn (mua nhà, viện phí)
+  quick_loan_share: 0.005
+  card_cash_advance_share: 0.005
+  popular_payee_share: 0.003        # external_person nhận tiền lặp lại từ nhiều khách không liên quan
+  popular_payee_per_month: {min: 5, max: 40}
+  bank_calls_per_month: 0.015
+
+bank_call_log_completeness: 0.95  # 5% cuộc gọi qua đối tác không được ghi
+
+red_team:
+  one_mule_per_b01_victim: false    # bật để thử né T4b: mỗi nạn nhân B01 một mule riêng
+
+mules:
+  n_active_rings: 40              # đường dây hoạt động trong cửa sổ
+  n_old_rings: 15                 # đường dây cũ, bị đóng băng trước sim_start
+  ring_size: {min: 5, max: 30}    # lognormal
+  layer_share: {l1: 0.50, l2: 0.35, cashout: 0.15}
+  type_share: {rented: 0.50, new_opened: 0.35, recruited_victim: 0.15}
+  new_opened_age_days: {min: 2, max: 30}
+  own_device_share: 0.40          # mule dùng máy riêng, không lộ qua thiết bị
+  farm_devices_per_ring: {min: 1, max: 4}
+  old_ring_device_reuse: 0.30     # thiết bị của đường dây cũ được dùng lại ở đường dây mới
+  dormant_share_rented: 0.30      # tài khoản thuê ngủ ≥ 60 ngày rồi hoạt động lại
+  simo_false_listing_rate: 0.05
+
+cases:
+  n_cases: 2500                     # tỷ lệ cao để đủ mẫu; khi đánh giá sẽ tái trọng số
+  type_share: {police: 0.22, investment: 0.30, bank_staff: 0.15, relative: 0.10, deposit: 0.10, romance: 0.05, tax_authority: 0.08}
+  extra_fee_share_min: 0.30          # police, bank_staff, tax_authority, investment
+  extra_fee_share_max: 0.50
+  limit_raise_on_call: {police: 0.30, bank_staff: 0.40}
+  bank_staff_fake_hotline_share: 0.50
+  ott_share: 0.50
+  spoofed_caller_share: 0.10
+  scammer_number_prereported_share: 0.20
+  scammer_number_new_sim_share: 0.70  # đăng ký trong 30 ngày; 30% số cũ mua lại
+  split_share: 0.30
+  declines_permission_share: 0.30
+  hangs_up_before_transfer_share: 0.40
+  repeat_victim_share: 0.03
+  l1_mule_max_cases: 15
+  victim_bank_B01_weight: 1.0       # không ưu tiên B01; để tự nhiên ~20%
+  own_name_safe_account_share: 0.15 # police và bank_staff chuyển vào tài khoản mới đứng tên nạn nhân
+
+sessions:
+  session_banks: [B01]                 # FIDES chạy ở B01
+  session_txn_types: [transfer, rent, school_fee, large_oneoff, own_transfer, own_transfer_drain, passthrough_out]
+  legit_on_call_known: 0.06            # phiên hợp lệ đang gọi với người quen (gia đình, công việc)
+  legit_on_call_unknown: 0.015         # đang gọi số lạ hợp lệ: shipper, người bán, chủ nhà
+  legit_ott_call: 0.03
+  paste_share_new_payee: {legit: 0.45, fraud: 0.70}
+  investment_non_monotonic_share: 0.15  # sửa bước 5: chững lại/giảm sau đỉnh
+  bank_staff_remote_app: 0.60           # vụ giả nhân viên ngân hàng có cài app điều khiển từ xa
+  coached_lie_yes_no: 0.60              # nạn nhân bị dặn nói dối khi được hỏi có/không
+  hard_negative_min_sessions: 400   # mỗi loại mẫu khó cần đủ bấy nhiêu phiên
+  ott_visible_to_device_share: 0.80
+  acct_input_share:
+    legit: {typed: 0.34, typed_chunked: 0.28, pasted: 0.16, chosen: 0.22}
+    fraud: {typed: 0.12, typed_chunked: 0.18, pasted: 0.52, chosen: 0.18}
+  app_switch_count_share:
+    legit: {0: 0.62, 1: 0.24, 2: 0.10, 3: 0.04}
+    fraud: {0: 0.28, 1: 0.32, 2: 0.26, 3: 0.14}
+  guardian_confirm_relative: 0.90
+  guardian_deny_fraud: 0.70
+  l1_stuck_share: 0.04                 # khoản vào mule lớp 1 bị đóng băng trước khi chuyển tiếp
+
+labels:
+  report_rate: {police: 0.75, bank_staff: 0.70, relative: 0.70, deposit: 0.50, investment: 0.45, romance: 0.30, tax_authority: 0.75, own_name_safe_account: 0.75}
+  report_delay_days:          # tính từ khoản chuyển cuối của vụ
+    police: [0, 3]
+    tax_authority: [0, 3]
+    bank_staff: [0, 2]
+    relative: [0, 2]
+    deposit: [1, 10]
+    investment: [3, 30]
+    romance: [7, 60]
+  bank_processing_days: [0, 7]    # báo cáo → nhãn có trong hệ thống
+  false_report_rate: 0.0002       # giao dịch hợp lệ bị báo nhầm là lừa đảo
+  simo_listing_delay_days: [0, 2]
+  # GIẢ ĐỊNH: tỷ lệ vụ nạn nhân B01 đã báo cáo có phiếu nội bộ, trước khi vụ lên SIMO.
+  internal_complaint_share: 0.60
+  # GIẢ ĐỊNH: mọi xác suất dưới đây là giả định thiết kế, không ước lượng từ dữ liệu.
+  response_assumptions:
+    note: "GIẢ ĐỊNH"
+    actions: [allow, g1_banner, pause_and_verify, guardian_confirm, friction, show_chain, recovery_window, hangup_required, hold]
+    p_stop_fraud:
+      allow: 0.03
+      g1_banner: 0.08
+      pause_and_verify: 0.12
+      guardian_confirm: 0.18
+      friction: 0.35
+      show_chain: 0.45
+      recovery_window: 0.55
+      hangup_required: 0.60
+      hold: 0.65
+    p_stop_fraud_coached_friction: 0.22
+    p_stop_hold_if_hangs_up: 0.10   # cộng thêm cho hold và hangup_required
+    p_stop_guardian_alone: 0.20
+    p_stop_guardian: 0.15
+    p_stop_cap: 0.99
+    p_abandon_legit:
+      allow: 0.00
+      g1_banner: 0.01
+      pause_and_verify: 0.03
+      guardian_confirm: 0.04
+      friction: 0.05
+      show_chain: 0.08
+      recovery_window: 0.10
+      hangup_required: 0.12
+      hold: 0.15
+    p_abandon_guided_hangup_required: 0.40   # legit_guided_by_relative gặp hangup_required
+    p_complaint_legit:
+      hold: 0.03
+      hangup_required: 0.02
+      recovery_window: 0.01
+  sensitivity:
+    ott_share: [0.3, 0.5, 0.7]
+    report_rate_scale: [0.7, 1.0, 1.3]
+    eta_scale: [0.5, 1.0]
+
+# GIẢ ĐỊNH: chi phí báo động sai với doanh nghiệp nhỏ gấp 3, vì làm gián đoạn dòng tiền kinh doanh.
+# Không ước lượng từ dữ liệu. c_FP(A) = hệ số × (50.000 + 0,002·A).
+decision:
+  note: "GIẢ ĐỊNH"
+  c_fp_scale:
+    doanh nghiệp nhỏ: 3
