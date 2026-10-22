@@ -303,15 +303,16 @@ def _matrix(frame: pd.DataFrame, columns: list[str], categories: dict[str, pd.Ca
     return matrix
 
 
-def _booster(train: pd.DataFrame, columns: list[str], categories: dict[str, pd.CategoricalDtype]):
+def _booster(train: pd.DataFrame, columns: list[str], categories: dict[str, pd.CategoricalDtype], seed: int = SEED):
     import lightgbm as lgb
 
     matrix = _matrix(train, columns, categories)
     categorical = [name for name in columns if name in categories]
+    weight = train["sample_weight"].to_numpy(dtype=float)
     dataset = lgb.Dataset(
         matrix,
         label=train["label"].to_numpy(),
-        weight=train["sample_weight"].to_numpy(dtype=float),
+        weight=weight,
         categorical_feature=categorical or "auto",
         free_raw_data=False,
     )
@@ -325,21 +326,22 @@ def _booster(train: pd.DataFrame, columns: list[str], categories: dict[str, pd.C
             "bagging_freq": 1,
             "feature_fraction": 0.8,
             "verbosity": -1,
-            "seed": SEED,
+            "seed": int(seed),
         },
         dataset,
         num_boost_round=200,
     )
+    model._fides_weight_sum = float(weight.sum())
     return model
 
 
-def _out_of_fold(train: pd.DataFrame, columns: list[str]) -> np.ndarray:
+def _out_of_fold(train: pd.DataFrame, columns: list[str], seed: int = SEED) -> np.ndarray:
     raw = np.zeros(len(train), dtype=float)
     groups = _label_groups(train["case_id"], train["session_id"], "c")
-    for train_mask, test_mask in group_folds(groups, n_splits=5, seed=SEED):
+    for train_mask, test_mask in group_folds(groups, n_splits=5, seed=seed):
         held = train.iloc[np.flatnonzero(train_mask)]
         categories = _categories(held, columns)
-        model = _booster(held, columns, categories)
+        model = _booster(held, columns, categories, seed)
         scored = train.iloc[np.flatnonzero(test_mask)]
         raw[test_mask] = model.predict(_matrix(scored, columns, categories))
     return raw
@@ -378,15 +380,22 @@ def _context(frames: dict[str, pd.DataFrame]) -> dict:
     }
 
 
-def _metrics(bundle: dict, frames: dict[str, pd.DataFrame], scores: dict, tau_hi: float | None) -> dict:
+def _metrics(
+    bundle: dict,
+    frames: dict[str, pd.DataFrame],
+    scores: dict,
+    tau_hi: float | None,
+    families_n: np.ndarray | None = None,
+) -> dict:
     population = bundle["population"]
     probability = population["session_id"].map(scores["map"]).to_numpy(dtype=float)
     amount = population["amount"].to_numpy(dtype=float)
-    families = population["families_n"].to_numpy(dtype=int)
+    families = population["families_n"].to_numpy(dtype=int) if families_n is None else np.asarray(families_n, dtype=int)
     scale = scale_for(population["segment"], bundle["fp_table"])
     if tau_hi is None:
         tau_hi = choose_tau_hi(probability, amount, families, bundle["legit"], scale, quiet=True)
-    level = levels_from_counts(probability, amount, families, COST_ETA, scale, tau_hi)
+    pop_level = levels_from_counts(probability, amount, families, COST_ETA, scale, tau_hi)
+    level = pop_level
     scored = population.copy()
     scored["level"] = level
     test = scored.loc[scored["session_id"].isin(bundle["test_ids"])].reset_index(drop=True)
@@ -433,14 +442,18 @@ def _metrics(bundle: dict, frames: dict[str, pd.DataFrame], scores: dict, tau_hi
         "_raw": raw,
         "_label": label,
         "_groups": groups,
+        "_pop_level": pop_level,
+        "_friend": friend,
+        "_guided": guided,
+        "_action": answered["action"].astype(str).to_numpy(),
     }
 
 
-def fit_profile(frames: dict[str, pd.DataFrame], columns: list[str]) -> dict:
+def fit_profile(frames: dict[str, pd.DataFrame], columns: list[str], seed: int = SEED) -> dict:
     categories = _categories(frames["train"], columns)
-    raw_oof = _out_of_fold(frames["train"], columns)
+    raw_oof = _out_of_fold(frames["train"], columns, seed)
     _, apply = calibrate(raw_oof, frames["train"]["is_fraud"].to_numpy(dtype=float))
-    model = _booster(frames["train"], columns, categories)
+    model = _booster(frames["train"], columns, categories, seed)
     raw_test = model.predict(_matrix(frames["test"], columns, categories))
     raw_buffer = model.predict(_matrix(frames["buffer"], columns, categories))
     mapping = dict(zip(frames["train"]["session_id"].astype(str), apply(raw_oof)))
