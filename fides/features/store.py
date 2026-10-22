@@ -22,6 +22,7 @@ FEATURE_COLUMNS = [
     "cusum_out_30d",
     "amount_rise_run",
     "balance_out_ratio_30d",
+    "amount_to_p95_90d",
     "has_tx_signals",
     "payee_name_matches_holder",
     "merchant_verified",
@@ -73,6 +74,7 @@ _TX_SIGNALS = [
     "cusum_out_30d",
     "amount_rise_run",
     "balance_out_ratio_30d",
+    "amount_to_p95_90d",
     "has_tx_signals",
     "payee_name_matches_holder",
     "merchant_verified",
@@ -447,7 +449,10 @@ class FeatureStore:
             login = self._event_ts(code, as_of, "login")
             row["seconds_since_login"] = (when - login) / NS if login is not None and when >= login else None
             self._payee(row, account, payee, as_of, network and "payee_account_age_days" in allowed)
-        row.update(self._behavior(history, as_of, int(decision["payee"]) if decision is not None else -1))
+        payee = int(decision["payee"]) if decision is not None else -1
+        current_amount = int(decision["amount"]) if decision is not None else None
+        current_ts = int(decision["ts"]) if decision is not None else None
+        row.update(self._behavior(history, as_of, payee, account, current_amount, current_ts))
         if "has_device_signals" in allowed:
             self._device(row, code, as_of)
         if "has_telco_signals" in allowed:
@@ -458,18 +463,21 @@ class FeatureStore:
         return apply_profile(row, profile, view)
 
     def behavior_at(self, session_id: str, as_of_ts, view: str) -> dict:
-        """Năm đặc trưng dài hạn tại as_of_ts. Cùng công thức với compute."""
+        """Đặc trưng dài hạn và tỷ lệ so với p95 90 ngày, tại as_of_ts. Cùng công thức với compute."""
         as_of = _as_ns(as_of_ts)
+        blank = {name: None for name in [*LONG_TERM, "amount_to_p95_90d"]}
         code = self.session_of.get(str(session_id))
         if code is None or self.sess_start[code] >= as_of:
-            return {name: None for name in LONG_TERM}
+            return blank
         account = int(self.sess_acc[code])
         customer = int(self.sess_cust[code])
         sources = self.accounts_of.get(customer, np.array([account], dtype=np.int32)) if view == "network" else np.array([account], dtype=np.int32)
         history = self._history(sources, as_of)
         decision = self._decision(history, code, as_of)
         payee = int(decision["payee"]) if decision is not None else -1
-        return self._behavior(history, as_of, payee)
+        current_amount = int(decision["amount"]) if decision is not None else None
+        current_ts = int(decision["ts"]) if decision is not None else None
+        return self._behavior(history, as_of, payee, account, current_amount, current_ts)
 
     def _span(self, bound: dict[int, tuple[int, int]], key: int) -> tuple[int, int]:
         return bound.get(int(key), (0, 0))
@@ -516,7 +524,15 @@ class FeatureStore:
             "new": bool(payee not in earlier),
         }
 
-    def _behavior(self, history: dict[str, np.ndarray], as_of: int, payee: int) -> dict:
+    def _behavior(
+        self,
+        history: dict[str, np.ndarray],
+        as_of: int,
+        payee: int,
+        account: int | None = None,
+        current_amount: int | None = None,
+        current_ts: int | None = None,
+    ) -> dict:
         """Hành vi dài hạn chỉ từ giao dịch có ts < as_of."""
         ts = history["ts"]
         dest = history["to"]
@@ -526,6 +542,7 @@ class FeatureStore:
         sent = xfer & (dest >= 0) & (ts < as_of)
         start_30 = as_of - 30 * DAY_NS
         start_7 = as_of - 7 * DAY_NS
+        ratio_p95 = self._amount_to_p95(history, sent, as_of, account, current_amount, current_ts)
         if not np.any(sent):
             return {
                 "cusum_out_30d": 0.0,
@@ -533,6 +550,7 @@ class FeatureStore:
                 "new_payees_30d": 0,
                 "amount_rise_run": 0,
                 "balance_out_ratio_30d": 0.0,
+                "amount_to_p95_90d": ratio_p95,
             }
         order = np.argsort(ts[sent], kind="mergesort")
         sent_ts = ts[sent][order]
@@ -570,7 +588,36 @@ class FeatureStore:
             "new_payees_30d": fresh_30,
             "amount_rise_run": run,
             "balance_out_ratio_30d": ratio,
+            "amount_to_p95_90d": ratio_p95,
         }
+
+    def _amount_to_p95(
+        self,
+        history: dict[str, np.ndarray],
+        sent: np.ndarray,
+        as_of: int,
+        account: int | None,
+        current_amount: int | None,
+        current_ts: int | None,
+    ) -> float | None:
+        """Số tiền quyết định chia p95 các khoản đi của chính tài khoản trong 90 ngày trước khoản đó."""
+        if current_amount is None or current_ts is None or not np.any(sent):
+            return None
+        order = np.argsort(history["ts"][sent], kind="mergesort")
+        own_ts = history["ts"][sent][order]
+        own_amt = history["amt"][sent][order]
+        if account is not None:
+            own = history["acc"][sent][order] == int(account)
+            own_ts = own_ts[own]
+            own_amt = own_amt[own]
+        window = (own_ts > as_of - 90 * DAY_NS) & (own_ts < int(current_ts))
+        baseline_amt = own_amt[window]
+        if len(baseline_amt) == 0:
+            return None
+        baseline = float(np.quantile(baseline_amt.astype(float), 0.95))
+        if baseline <= 0:
+            return None
+        return float(current_amount) / baseline
 
     def _window_amount(self, history: dict[str, np.ndarray], as_of: int, _when: int) -> int:
         start = as_of - DAY_NS

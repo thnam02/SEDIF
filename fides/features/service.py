@@ -89,6 +89,63 @@ def decide_levels(
     return level
 
 
+COST_ETA = 1.0
+
+
+def cost_tau(amount: np.ndarray, eta: float = COST_ETA, fp_scale: float | np.ndarray = 1.0) -> np.ndarray:
+    """τ(A) = c_FP(A) / (c_FP(A) + η·A), với c_FP(A) = hệ số × (50.000 + 0,002·A)."""
+    paid = np.maximum(np.nan_to_num(np.asarray(amount, dtype=float), nan=0.0), 0.0)
+    scale = np.asarray(fp_scale, dtype=float)
+    false_positive = (50_000.0 + 0.002 * paid) * scale
+    return false_positive / (false_positive + float(eta) * paid)
+
+
+def levels_from_counts(
+    score: np.ndarray,
+    amount: np.ndarray,
+    families: np.ndarray,
+    eta: float = COST_ETA,
+    fp_scale: float | np.ndarray = 1.0,
+    tau_hi: float | None = None,
+) -> np.ndarray:
+    """Vượt τ(A) mới can thiệp. p ≥ τ_hi thì 0–1 họ vẫn được tối thiểu Medium."""
+    probability = np.clip(np.nan_to_num(np.asarray(score, dtype=float), nan=0.0), 0.0, 1.0)
+    count = np.asarray(families, dtype=np.int8)
+    fired = probability >= cost_tau(amount, eta, fp_scale)
+    level = np.full(len(probability), "none", dtype=object)
+    level[fired] = "banner"
+    level[fired & (count == 2)] = "medium"
+    level[fired & (count >= 3)] = "high"
+    if tau_hi is not None:
+        promote = (probability >= float(tau_hi)) & (count <= 1) & np.isin(level, ["none", "banner"])
+        level[promote] = "medium"
+    return level
+
+
+def decide_cost(
+    score: np.ndarray,
+    amount: np.ndarray,
+    call: np.ndarray,
+    entry: np.ndarray,
+    payee: np.ndarray,
+    funding: np.ndarray,
+    eta: float = COST_ETA,
+    anomaly: np.ndarray | None = None,
+    fp_scale: float | np.ndarray = 1.0,
+    tau_hi: float | None = None,
+) -> np.ndarray:
+    """Vượt τ(A) mới can thiệp. Hai họ là Medium, từ ba họ là High, ít hơn là banner."""
+    families = (
+        np.asarray(call, dtype=bool).astype(np.int8)
+        + np.asarray(entry, dtype=bool).astype(np.int8)
+        + np.asarray(payee, dtype=bool).astype(np.int8)
+        + np.asarray(funding, dtype=bool).astype(np.int8)
+    )
+    if anomaly is not None:
+        families = families + np.asarray(anomaly, dtype=bool).astype(np.int8)
+    return levels_from_counts(score, amount, families, eta, fp_scale, tau_hi)
+
+
 def fit_tau(score: np.ndarray, amount: np.ndarray) -> tuple[float, float, float]:
     """Ba ngưỡng kỳ vọng tổn thất, lấy trên train: phân vị 90, 97 và 99 của p×A."""
     value = np.asarray(score, dtype=float) * np.maximum(np.nan_to_num(np.asarray(amount, dtype=float), nan=0.0), 1.0)

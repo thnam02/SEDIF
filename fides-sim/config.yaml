@@ -229,3 +229,10 @@ labels:
     ott_share: [0.3, 0.5, 0.7]
     report_rate_scale: [0.7, 1.0, 1.3]
     eta_scale: [0.5, 1.0]
+
+# GIẢ ĐỊNH: chi phí báo động sai với doanh nghiệp nhỏ gấp 3, vì làm gián đoạn dòng tiền kinh doanh.
+# Không ước lượng từ dữ liệu. c_FP(A) = hệ số × (50.000 + 0,002·A).
+decision:
+  note: "GIẢ ĐỊNH"
+  c_fp_scale:
+    doanh nghiệp nhỏ: 3

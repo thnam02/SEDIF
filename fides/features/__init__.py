@@ -3,7 +3,17 @@
 Thư viện này chỉ nhận bảng đã quan sát. Không mở dữ liệu nhãn.
 """
 
-from features.service import FeatureService, action_for, actions_from_families, decide_levels, fit_tau, session_families, severity
+from features.service import (
+    FeatureService,
+    action_for,
+    actions_from_families,
+    cost_tau,
+    decide_cost,
+    decide_levels,
+    fit_tau,
+    session_families,
+    severity,
+)
 from features.store import FEATURE_COLUMNS, LONG_TERM, NETWORK_ONLY, PROFILES, FeatureStore, using_store
 
 
@@ -26,6 +36,8 @@ __all__ = [
     "action_for",
     "actions_from_families",
     "compute_features",
+    "cost_tau",
+    "decide_cost",
     "decide_levels",
     "fit_tau",
     "session_families",
