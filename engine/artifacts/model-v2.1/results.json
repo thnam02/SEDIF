@@ -1,101 +1,655 @@
 {
   "seed": 42,
+  "column_map": [
+    {
+      "column": "amount",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "amount_to_balance",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "a_w",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "quên. Sổ 24 giờ của v2.0, đưa lại vào basic."
+    },
+    {
+      "column": "new_payee",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "pasted",
+      "v20": true,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "quên. Cờ paste_account, không trùng acct_input. Đưa lại vào standard."
+    },
+    {
+      "column": "add_method",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "quên. Cách lưu người nhận. Đưa lại vào basic."
+    },
+    {
+      "column": "hour",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "seconds_since_login",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "quên. Mốc login của phiên. Đưa lại vào basic."
+    },
+    {
+      "column": "new_payees_24h",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "has_tx_signals",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "payee_name_matches_holder",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "tra cứu tên. Chuyển vào basic."
+    },
+    {
+      "column": "merchant_verified",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "danh sách tổ chức. Chuyển vào basic."
+    },
+    {
+      "column": "simo_listed",
+      "v20": true,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "has_payee_signals",
+      "v20": true,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cờ tra cứu người nhận. Chuyển vào basic."
+    },
+    {
+      "column": "in_call_audio_mode",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "demo không có. SDK chỉ gửi in_call. Sim vẫn có, chỉ bản telco+PAD."
+    },
+    {
+      "column": "accessibility_new",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "PAD. Chỉ bản telco+PAD."
+    },
+    {
+      "column": "remote_access_app",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "PAD. Chỉ bản telco+PAD."
+    },
+    {
+      "column": "screen_sharing",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "PAD. Chỉ bản telco+PAD."
+    },
+    {
+      "column": "overlay",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "PAD. Chỉ bản telco+PAD."
+    },
+    {
+      "column": "new_device",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "demo không có. SDK không gửi tuổi thiết bị. Chỉ bản telco+PAD."
+    },
+    {
+      "column": "has_device_signals",
+      "v20": true,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "quên. Cờ có khối thiết bị. Đưa lại vào standard."
+    },
+    {
+      "column": "on_call",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "recent_call_minutes_ago",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "counterparty_is_new",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "counterparty_number_age_days",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "counterparty_report_count",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "has_telco_signals",
+      "v20": true,
+      "profiles": [
+        "advanced+telco+PAD"
+      ],
+      "note": "giữ từ v2.0"
+    },
+    {
+      "column": "product_savings_7d",
+      "v20": false,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "product_loan_7d",
+      "v20": false,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "product_cash_advance_7d",
+      "v20": false,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "limit_raise_1d",
+      "v20": false,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "phone_change_7d",
+      "v20": false,
+      "profiles": [
+        "basic",
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "in_call",
+      "v20": false,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "đổi tên gần. SDK dùng in_call; v2.0 dùng in_call_audio_mode."
+    },
+    {
+      "column": "call_seconds_since_open",
+      "v20": false,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "call_ended_in_session",
+      "v20": false,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "acct_input",
+      "v20": false,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của SDK, bốn giá trị. Không thay pasted."
+    },
+    {
+      "column": "app_switches",
+      "v20": false,
+      "profiles": [
+        "standard",
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "payee_account_age_days",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "distinct_senders_7d",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "passthrough_24h",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "device_holder_count",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "payee_account_age_days_missing",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "distinct_senders_7d_missing",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "passthrough_24h_missing",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    },
+    {
+      "column": "device_holder_count_missing",
+      "v20": false,
+      "profiles": [
+        "advanced",
+        "advanced+telco+PAD"
+      ],
+      "note": "cột mới của demo"
+    }
+  ],
   "rows": [
     {
-      "tau_hi": 0.2083334154135256,
-      "saved": 2313603620.0,
-      "saved_low": 1511924997.0,
-      "saved_high": 3326437011.5000005,
+      "tau_hi": 0.3333333333333333,
+      "saved": 3279809280.0,
+      "saved_low": 2331598933.5,
+      "saved_high": 4501487191.5,
       "damage": 12539478000.0,
-      "rate": 0.18450557670741957,
-      "recall_at_1": 0.300982800982801,
-      "legit_mh": 0.004385336777073775,
-      "medium_loan": 0.046753246753246755,
+      "rate": 0.26155867732293164,
+      "recall_at_1": 0.5,
+      "legit_mh": 0.004271752603793711,
+      "medium_loan": 0.6051948051948052,
       "guided_hangup": 0.002717391304347826,
       "scenario_recall": {
-        "police": 0.708029197080292,
-        "tax_authority": 0.75,
-        "bank_staff": 0.8157894736842105,
-        "relative": 0.5882352941176471,
-        "deposit": 0.2545454545454545,
-        "investment": 0.5580808080808081,
-        "romance": 0.7619047619047619,
-        "own_name_safe_account": 0.7272727272727273
+        "police": 0.9708029197080292,
+        "tax_authority": 0.9464285714285714,
+        "bank_staff": 0.9473684210526315,
+        "relative": 0.9019607843137255,
+        "deposit": 0.8181818181818182,
+        "investment": 0.9141414141414141,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "money_by_level": {
+        "medium": 793775280.0,
+        "high": 2486034000.0
+      },
+      "money_by_scenario": {
+        "police": 1744500300.0,
+        "tax_authority": 286799220.0,
+        "bank_staff": 287773700.0,
+        "relative": 78551580.0,
+        "deposit": 13324200.0,
+        "investment": 391832980.0,
+        "romance": 14086920.0,
+        "own_name_safe_account": 462940380.0
       },
       "profile": "basic",
-      "columns": 11
-    },
-    {
-      "tau_hi": 0.43080439377598273,
-      "saved": 2547352860.0,
-      "saved_low": 1655449411.0,
-      "saved_high": 3576597095.5,
-      "damage": 12539478000.0,
-      "rate": 0.20314664294638102,
-      "recall_at_1": 0.32063882063882065,
-      "legit_mh": 0.00402976893028401,
-      "medium_loan": 0.046753246753246755,
-      "guided_hangup": 0.002717391304347826,
-      "scenario_recall": {
-        "police": 0.7226277372262774,
-        "tax_authority": 0.6071428571428571,
-        "bank_staff": 0.6842105263157895,
-        "relative": 0.7058823529411765,
-        "deposit": 0.3090909090909091,
-        "investment": 0.6414141414141414,
-        "romance": 0.6190476190476191,
-        "own_name_safe_account": 0.9090909090909091
-      },
-      "profile": "standard",
-      "columns": 16
-    },
-    {
-      "tau_hi": 0.282280782692399,
-      "saved": 2075856660.0,
-      "saved_low": 1434782720.0,
-      "saved_high": 3000176100.0,
-      "damage": 12539478000.0,
-      "rate": 0.165545699749224,
-      "recall_at_1": 0.40663390663390664,
-      "legit_mh": 0.0043902752193903,
-      "medium_loan": 0.015584415584415584,
-      "guided_hangup": 0.0,
-      "scenario_recall": {
-        "police": 0.6642335766423357,
-        "tax_authority": 0.5714285714285714,
-        "bank_staff": 0.7236842105263158,
-        "relative": 0.6274509803921569,
-        "deposit": 0.2727272727272727,
-        "investment": 0.6590909090909091,
-        "romance": 0.47619047619047616,
-        "own_name_safe_account": 0.6363636363636364
-      },
-      "profile": "advanced",
-      "columns": 25
+      "columns": 17
     },
     {
       "tau_hi": 1.0,
-      "saved": 2449947080.0,
-      "saved_low": 1498859140.5,
-      "saved_high": 3575212710.0000005,
+      "saved": 2336924400.0,
+      "saved_low": 1518210240.0,
+      "saved_high": 3374875679.0,
       "damage": 12539478000.0,
-      "rate": 0.1953787135317754,
-      "recall_at_1": 0.35626535626535627,
-      "legit_mh": 0.001279056559979851,
-      "medium_loan": 0.01038961038961039,
-      "guided_hangup": 0.0,
+      "rate": 0.1863653654482268,
+      "recall_at_1": 0.300982800982801,
+      "legit_mh": 0.0018469774263801713,
+      "medium_loan": 0.06233766233766234,
+      "guided_hangup": 0.002717391304347826,
       "scenario_recall": {
-        "police": 0.6788321167883211,
-        "tax_authority": 0.625,
-        "bank_staff": 0.7236842105263158,
-        "relative": 0.5490196078431373,
-        "deposit": 0.2727272727272727,
-        "investment": 0.3661616161616162,
-        "romance": 0.2857142857142857,
+        "police": 0.7372262773722628,
+        "tax_authority": 0.5535714285714286,
+        "bank_staff": 0.618421052631579,
+        "relative": 0.7450980392156863,
+        "deposit": 0.36363636363636365,
+        "investment": 0.7449494949494949,
+        "romance": 0.6190476190476191,
+        "own_name_safe_account": 0.6363636363636364
+      },
+      "money_by_level": {
+        "medium": 282498900.0,
+        "high": 2054425500.0
+      },
+      "money_by_scenario": {
+        "police": 1349485380.0,
+        "tax_authority": 191436600.0,
+        "bank_staff": 197180100.0,
+        "relative": 62724780.0,
+        "deposit": 4612680.0,
+        "investment": 90407340.0,
+        "romance": 4819800.0,
+        "own_name_safe_account": 436257720.0
+      },
+      "profile": "standard",
+      "columns": 24
+    },
+    {
+      "tau_hi": 0.23618570814641304,
+      "saved": 3309467140.0,
+      "saved_low": 2343082982.5,
+      "saved_high": 4501274485.0,
+      "damage": 12539478000.0,
+      "rate": 0.26392383638298184,
+      "recall_at_1": 0.538083538083538,
+      "legit_mh": 0.004192737526729319,
+      "medium_loan": 0.025974025974025976,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9635036496350365,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9473684210526315,
+        "relative": 0.9019607843137255,
+        "deposit": 0.45454545454545453,
+        "investment": 0.7297979797979798,
+        "romance": 0.8571428571428571,
         "own_name_safe_account": 0.9545454545454546
       },
+      "money_by_level": {
+        "medium": 811217640.0,
+        "high": 2498249500.0
+      },
+      "money_by_scenario": {
+        "police": 1727092520.0,
+        "tax_authority": 282518820.0,
+        "bank_staff": 306685340.0,
+        "relative": 81066300.0,
+        "deposit": 7824720.0,
+        "investment": 428323860.0,
+        "romance": 13427280.0,
+        "own_name_safe_account": 462528300.0
+      },
+      "profile": "advanced",
+      "columns": 33
+    },
+    {
+      "tau_hi": 0.12259363498227785,
+      "saved": 3026031040.0,
+      "saved_low": 2115261845.5,
+      "saved_high": 4152980763.0000005,
+      "damage": 12539478000.0,
+      "rate": 0.24132033566309538,
+      "recall_at_1": 0.5773955773955773,
+      "legit_mh": 0.004207552853678893,
+      "medium_loan": 0.005194805194805195,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.8321167883211679,
+        "tax_authority": 0.8571428571428571,
+        "bank_staff": 0.8157894736842105,
+        "relative": 0.9019607843137255,
+        "deposit": 0.43636363636363634,
+        "investment": 0.5934343434343434,
+        "romance": 0.6666666666666666,
+        "own_name_safe_account": 0.8181818181818182
+      },
+      "money_by_level": {
+        "medium": 761162940.0,
+        "high": 2264868100.0
+      },
+      "money_by_scenario": {
+        "police": 1645601160.0,
+        "tax_authority": 268394340.0,
+        "bank_staff": 296469620.0,
+        "relative": 83018460.0,
+        "deposit": 7699200.0,
+        "investment": 355623680.0,
+        "romance": 10000080.0,
+        "own_name_safe_account": 359224500.0
+      },
       "profile": "advanced+telco+PAD",
-      "columns": 34
+      "columns": 45
+    }
+  ],
+  "pairs": [
+    {
+      "left": "basic",
+      "right": "standard",
+      "money": 942884880.0,
+      "money_low": 659033348.0,
+      "money_high": 1391647356.5,
+      "recall_at_1": 0.199017199017199,
+      "recall_low": 0.16272627635960044,
+      "recall_high": 0.23890816785553626
+    },
+    {
+      "left": "basic",
+      "right": "advanced",
+      "money": -29657860.0,
+      "money_low": -134864939.0,
+      "money_high": 71043281.50000003,
+      "recall_at_1": -0.03808353808353804,
+      "recall_low": -0.07519851457913075,
+      "recall_high": 2.941176470588866e-05
+    },
+    {
+      "left": "basic",
+      "right": "advanced+telco+PAD",
+      "money": 253778240.0,
+      "money_low": 57604532.0,
+      "money_high": 473007231.00000024,
+      "recall_at_1": -0.07739557739557734,
+      "recall_low": -0.11769081250754561,
+      "recall_high": -0.03543249895759072
+    },
+    {
+      "left": "standard",
+      "right": "advanced",
+      "money": -972542740.0,
+      "money_low": -1396837791.0,
+      "money_high": -666909927.5,
+      "recall_at_1": -0.23710073710073704,
+      "recall_low": -0.2764920608937633,
+      "recall_high": -0.19198645880177884
+    },
+    {
+      "left": "standard",
+      "right": "advanced+telco+PAD",
+      "money": -689106640.0,
+      "money_low": -1144122414.0,
+      "money_high": -387845234.0,
+      "recall_at_1": -0.27641277641277634,
+      "recall_low": -0.3168351701923658,
+      "recall_high": -0.23563814379236422
+    },
+    {
+      "left": "advanced",
+      "right": "advanced+telco+PAD",
+      "money": 283436100.0,
+      "money_low": 105470284.0,
+      "money_high": 509091211.00000006,
+      "recall_at_1": -0.039312039312039304,
+      "recall_low": -0.0936867991589908,
+      "recall_high": 0.00848182705869588
     }
   ]
 }

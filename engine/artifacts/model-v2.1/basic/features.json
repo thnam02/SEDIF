@@ -3,15 +3,23 @@
   "columns": [
     "amount",
     "amount_to_balance",
-    "hour",
+    "a_w",
     "new_payee",
+    "add_method",
+    "hour",
+    "seconds_since_login",
     "new_payees_24h",
     "has_tx_signals",
+    "payee_name_matches_holder",
+    "merchant_verified",
+    "has_payee_signals",
     "product_savings_7d",
     "product_loan_7d",
     "product_cash_advance_7d",
     "limit_raise_1d",
     "phone_change_7d"
   ],
-  "categorical": []
+  "categorical": [
+    "add_method"
+  ]
 }

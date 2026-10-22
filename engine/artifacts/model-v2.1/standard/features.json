@@ -3,10 +3,16 @@
   "columns": [
     "amount",
     "amount_to_balance",
-    "hour",
+    "a_w",
     "new_payee",
+    "add_method",
+    "hour",
+    "seconds_since_login",
     "new_payees_24h",
     "has_tx_signals",
+    "payee_name_matches_holder",
+    "merchant_verified",
+    "has_payee_signals",
     "product_savings_7d",
     "product_loan_7d",
     "product_cash_advance_7d",
@@ -16,9 +22,12 @@
     "call_seconds_since_open",
     "call_ended_in_session",
     "acct_input",
-    "app_switches"
+    "app_switches",
+    "pasted",
+    "has_device_signals"
   ],
   "categorical": [
+    "add_method",
     "acct_input"
   ]
 }

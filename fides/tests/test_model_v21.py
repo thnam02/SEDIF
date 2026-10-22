@@ -27,5 +27,5 @@ def test_packaged_profiles_match_table():
     for name in PACKAGED:
         actual = score_saved(name, frames, bundle)
         expected = next(row for row in table["rows"] if row["profile"] == name)
-        for key in ("tau_hi", "saved", "saved_low", "saved_high", "damage", "rate", "recall_at_1", "legit_mh", "medium_loan", "guided_hangup", "scenario_recall"):
+        for key in ("tau_hi", "saved", "saved_low", "saved_high", "damage", "rate", "recall_at_1", "legit_mh", "medium_loan", "guided_hangup", "scenario_recall", "money_by_level", "money_by_scenario"):
             assert _same(actual[key], expected[key]), (name, key, actual[key], expected[key])

@@ -1,9 +1,9 @@
 """Ba profile demo model v2.1 và một bản lộ trình không đóng gói.
 
-basic là sổ, sản phẩm và thay đổi tài khoản.
+basic là sổ, sản phẩm, thay đổi tài khoản, và tra cứu tên người nhận.
 standard thêm khối thiết bị của SDK.
 advanced thêm T4c, cờ thiếu và simo_listed.
-advanced+telco+PAD thêm telco và thư mục người nhận. Bản này chỉ để báo cáo.
+advanced+telco+PAD thêm telco và PAD (accessibility, remote, screen sharing, overlay).
 """
 
 from __future__ import annotations
@@ -40,14 +40,26 @@ NS = 1_000_000_000
 LEDGER = [
     "amount",
     "amount_to_balance",
-    "hour",
+    "a_w",
     "new_payee",
+    "add_method",
+    "hour",
+    "seconds_since_login",
     "new_payees_24h",
     "has_tx_signals",
 ]
+PAYEE_BOOK = ["payee_name_matches_holder", "merchant_verified", "has_payee_signals"]
 PRODUCTS = ["product_savings_7d", "product_loan_7d", "product_cash_advance_7d"]
 CHANGES = ["limit_raise_1d", "phone_change_7d"]
-DEVICE = ["in_call", "call_seconds_since_open", "call_ended_in_session", "acct_input", "app_switches"]
+DEVICE = [
+    "in_call",
+    "call_seconds_since_open",
+    "call_ended_in_session",
+    "acct_input",
+    "app_switches",
+    "pasted",
+    "has_device_signals",
+]
 TELCO = [
     "on_call",
     "recent_call_minutes_ago",
@@ -56,11 +68,59 @@ TELCO = [
     "counterparty_report_count",
     "has_telco_signals",
 ]
-PAD = ["payee_name_matches_holder", "merchant_verified", "has_payee_signals"]
-BASIC = [*LEDGER, *PRODUCTS, *CHANGES]
+PAD = ["accessibility_new", "remote_access_app", "screen_sharing", "overlay"]
+SIM_DEVICE = ["in_call_audio_mode", "new_device"]
+BASIC = [*LEDGER, *PAYEE_BOOK, *PRODUCTS, *CHANGES]
 STANDARD = [*BASIC, *DEVICE]
 ADVANCED = [*STANDARD, *T4C, *FLAGS, "simo_listed"]
-ROADMAP = [*ADVANCED, *TELCO, *PAD]
+ROADMAP = [*ADVANCED, *TELCO, *PAD, *SIM_DEVICE]
+V20_COLUMNS = [
+    "amount",
+    "amount_to_balance",
+    "a_w",
+    "new_payee",
+    "pasted",
+    "add_method",
+    "hour",
+    "seconds_since_login",
+    "new_payees_24h",
+    "has_tx_signals",
+    "payee_name_matches_holder",
+    "merchant_verified",
+    "simo_listed",
+    "has_payee_signals",
+    "in_call_audio_mode",
+    "accessibility_new",
+    "remote_access_app",
+    "screen_sharing",
+    "overlay",
+    "new_device",
+    "has_device_signals",
+    "on_call",
+    "recent_call_minutes_ago",
+    "counterparty_is_new",
+    "counterparty_number_age_days",
+    "counterparty_report_count",
+    "has_telco_signals",
+]
+COLUMN_NOTE = {
+    "a_w": "quên. Sổ 24 giờ của v2.0, đưa lại vào basic.",
+    "pasted": "quên. Cờ paste_account, không trùng acct_input. Đưa lại vào standard.",
+    "add_method": "quên. Cách lưu người nhận. Đưa lại vào basic.",
+    "seconds_since_login": "quên. Mốc login của phiên. Đưa lại vào basic.",
+    "has_device_signals": "quên. Cờ có khối thiết bị. Đưa lại vào standard.",
+    "in_call_audio_mode": "demo không có. SDK chỉ gửi in_call. Sim vẫn có, chỉ bản telco+PAD.",
+    "new_device": "demo không có. SDK không gửi tuổi thiết bị. Chỉ bản telco+PAD.",
+    "accessibility_new": "PAD. Chỉ bản telco+PAD.",
+    "remote_access_app": "PAD. Chỉ bản telco+PAD.",
+    "screen_sharing": "PAD. Chỉ bản telco+PAD.",
+    "overlay": "PAD. Chỉ bản telco+PAD.",
+    "payee_name_matches_holder": "tra cứu tên. Chuyển vào basic.",
+    "merchant_verified": "danh sách tổ chức. Chuyển vào basic.",
+    "has_payee_signals": "cờ tra cứu người nhận. Chuyển vào basic.",
+    "in_call": "đổi tên gần. SDK dùng in_call; v2.0 dùng in_call_audio_mode.",
+    "acct_input": "cột mới của SDK, bốn giá trị. Không thay pasted.",
+}
 PROFILES = {
     "basic": BASIC,
     "standard": STANDARD,
@@ -342,9 +402,16 @@ def _metrics(bundle: dict, frames: dict[str, pd.DataFrame], scores: dict, tau_hi
     scenario = answered["scam_type"].astype(str).to_numpy()
     caught = answered["level"].isin(["banner", "medium", "high"]).to_numpy()
     by_scenario = {}
+    money_by_scenario = {}
     for name in FRAUD_TYPES:
         mask = fraud & (scenario == name)
         by_scenario[name] = float(caught[mask].mean()) if mask.any() else float("nan")
+        money_by_scenario[name] = float(saved_row[mask].sum()) if mask.any() else 0.0
+    level = answered["level"].to_numpy()
+    money_by_level = {
+        "medium": float(saved_row[level == "medium"].sum()),
+        "high": float(saved_row[level == "high"].sum()),
+    }
     label = frames["test"]["is_fraud"].to_numpy(dtype=float)
     order = frames["test"]["session_id"].astype(str)
     raw = order.map(dict(zip(frames["test"]["session_id"].astype(str), scores["raw_test"]))).to_numpy(dtype=float)
@@ -360,6 +427,12 @@ def _metrics(bundle: dict, frames: dict[str, pd.DataFrame], scores: dict, tau_hi
         "medium_loan": float(np.mean(answered["level"].to_numpy()[friend] == "medium")) if friend.any() else float("nan"),
         "guided_hangup": float(np.mean(answered["action"].to_numpy()[guided] == "hangup_required")) if guided.any() else float("nan"),
         "scenario_recall": by_scenario,
+        "money_by_level": money_by_level,
+        "money_by_scenario": money_by_scenario,
+        "_saved_row": saved_row,
+        "_raw": raw,
+        "_label": label,
+        "_groups": groups,
     }
 
 
@@ -473,7 +546,72 @@ def prepare() -> tuple[dict[str, pd.DataFrame], dict]:
     return frames, _context(frames)
 
 
+def column_map() -> list[dict]:
+    """Mọi cột v2.0 và mọi cột v2.1, kèm lý do nếu v2.0 không còn."""
+    rows = []
+    seen = set()
+    for name in V20_COLUMNS:
+        home = [profile for profile, columns in PROFILES.items() if name in columns]
+        rows.append(
+            {
+                "column": name,
+                "v20": True,
+                "profiles": home,
+                "note": COLUMN_NOTE.get(name, "giữ từ v2.0"),
+            }
+        )
+        seen.add(name)
+    for profile, columns in PROFILES.items():
+        for name in columns:
+            if name in seen:
+                continue
+            rows.append({"column": name, "v20": False, "profiles": [item for item, cols in PROFILES.items() if name in cols], "note": COLUMN_NOTE.get(name, "cột mới của demo")})
+            seen.add(name)
+    missing = [name for name in V20_COLUMNS if name not in ROADMAP]
+    if missing:
+        raise RuntimeError(f"cột v2.0 chưa được đưa lại: {missing}")
+    return rows
+
+
+def _paired(rows: list[dict]) -> list[dict]:
+    out = []
+    for left in range(len(rows)):
+        for right in range(left + 1, len(rows)):
+            a = rows[left]
+            b = rows[right]
+            groups = a["_groups"]
+            money = bootstrap_values(groups, lambda index, a=a, b=b: float(a["_saved_row"][index].sum() - b["_saved_row"][index].sum()), 200, SEED)
+            recall = bootstrap_values(
+                groups,
+                lambda index, a=a, b=b: float(recall_at(a["_label"][index], a["_raw"][index]) - recall_at(b["_label"][index], b["_raw"][index])),
+                200,
+                SEED,
+            )
+            out.append(
+                {
+                    "left": a["profile"],
+                    "right": b["profile"],
+                    "money": float(a["saved"] - b["saved"]),
+                    "money_low": float(np.nanpercentile(money, 2.5)),
+                    "money_high": float(np.nanpercentile(money, 97.5)),
+                    "recall_at_1": float(a["recall_at_1"] - b["recall_at_1"]),
+                    "recall_low": float(np.nanpercentile(recall, 2.5)),
+                    "recall_high": float(np.nanpercentile(recall, 97.5)),
+                }
+            )
+    return out
+
+
+def _public(row: dict) -> dict:
+    return {key: value for key, value in row.items() if not key.startswith("_")}
+
+
 def run() -> list[dict]:
+    mapping = column_map()
+    print("đối chiếu cột", flush=True)
+    for item in mapping:
+        where = ",".join(item["profiles"]) if item["profiles"] else "không"
+        print(f"  {item['column']}: {where}. {item['note']}", flush=True)
     frames, bundle = prepare()
     rows = []
     for name, columns in PROFILES.items():
@@ -484,12 +622,21 @@ def run() -> list[dict]:
         metrics["columns"] = len(columns)
         rows.append(metrics)
         if name in PACKAGED:
-            save_profile(name, columns, fitted, metrics)
+            save_profile(name, columns, fitted, {key: value for key, value in metrics.items() if not key.startswith("_")})
             print(f"  đã ghi {ARTIFACTS / name}", flush=True)
+    pairs = _paired(rows)
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    payload = {"seed": SEED, "rows": rows}
+    payload = {"seed": SEED, "column_map": mapping, "rows": [_public(row) for row in rows], "pairs": pairs}
     (ARTIFACTS / "results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    _print_table(rows)
+    _print_table([_public(row) for row in rows])
+    for item in pairs:
+        print(
+            f"  {item['left']} - {item['right']}: tiền {item['money']:,.0f} "
+            f"[{item['money_low']:,.0f}–{item['money_high']:,.0f}], "
+            f"recall@1% {100 * item['recall_at_1']:.2f} điểm "
+            f"[{100 * item['recall_low']:.2f}–{100 * item['recall_high']:.2f}]",
+            flush=True,
+        )
     return rows
 
 
