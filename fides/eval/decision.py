@@ -317,8 +317,8 @@ def _tree_depth(tree, matrix: np.ndarray) -> np.ndarray:
     return path
 
 
-def isolation_score(train: np.ndarray, score_on: np.ndarray, trees: int = 100, sample: int = 256, seed: int = SEED) -> np.ndarray:
-    """Điểm càng cao càng lệch khỏi phiên hợp lệ. Forest chỉ học trên các dòng train."""
+def build_isolation_forest(train: np.ndarray, trees: int = 100, sample: int = 256, seed: int = SEED):
+    """Forest chỉ phụ thuộc tập tham chiếu và seed. Gói mô hình giữ nguyên, không học lại."""
     rng = np.random.default_rng(seed)
     width = min(sample, len(train))
     limit = int(np.ceil(np.log2(max(width, 2))))
@@ -326,9 +326,18 @@ def isolation_score(train: np.ndarray, score_on: np.ndarray, trees: int = 100, s
     for _ in range(trees):
         chosen = rng.choice(len(train), size=width, replace=False)
         forest.append(_isolation_tree(train[chosen], 0, limit, rng))
-    normaliser = _c_factor(width)
+    return forest, _c_factor(width)
+
+
+def apply_isolation_forest(forest, normaliser: float, score_on: np.ndarray) -> np.ndarray:
     depth = np.mean([_tree_depth(tree, score_on) for tree in forest], axis=0)
     return np.power(2.0, -depth / normaliser)
+
+
+def isolation_score(train: np.ndarray, score_on: np.ndarray, trees: int = 100, sample: int = 256, seed: int = SEED) -> np.ndarray:
+    """Điểm càng cao càng lệch khỏi phiên hợp lệ. Forest chỉ học trên các dòng train."""
+    forest, normaliser = build_isolation_forest(train, trees, sample, seed)
+    return apply_isolation_forest(forest, normaliser, score_on)
 
 
 def train_model(train: pd.DataFrame, columns: list[str]):
@@ -393,6 +402,10 @@ def calibrate(raw_train: np.ndarray, fraud: np.ndarray) -> tuple[np.ndarray, cal
     def apply(raw: np.ndarray) -> np.ndarray:
         return shift_rate(isotonic_apply(raw, edges, values), source, target)
 
+    apply.edges = edges
+    apply.values = values
+    apply.source = source
+    apply.target = target
     return adjusted, apply
 
 
@@ -644,6 +657,7 @@ def choose_tau_hi(
     families: np.ndarray,
     legit: np.ndarray,
     fp_scale: np.ndarray,
+    quiet: bool = False,
 ) -> float:
     """Ngưỡng thấp nhất còn giữ Medium+High trên phiên hợp lệ không quá 0,45%."""
     base = levels_from_counts(probability, amount, families, COST_ETA, fp_scale, None)
@@ -669,12 +683,13 @@ def choose_tau_hi(
             included += count
             tau = value
             start = end
-    level = levels_from_counts(probability, amount, families, COST_ETA, fp_scale, tau)
-    rate = float(np.isin(level[legit], ["medium", "high"]).mean()) if n else float("nan")
-    print(
-        f"τ_hi = {tau:.4f}. Nâng thêm {included:,} phiên hợp lệ có 0–1 họ. "
-        f"Medium+High {rate:.2%} trên {n:,} phiên hợp lệ. Trần 0,45%."
-    )
+    if not quiet:
+        level = levels_from_counts(probability, amount, families, COST_ETA, fp_scale, tau)
+        rate = float(np.isin(level[legit], ["medium", "high"]).mean()) if n else float("nan")
+        print(
+            f"τ_hi = {tau:.4f}. Nâng thêm {included:,} phiên hợp lệ có 0–1 họ. "
+            f"Medium+High {rate:.2%} trên {n:,} phiên hợp lệ. Trần 0,45%."
+        )
     return tau
 
 
