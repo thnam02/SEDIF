@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Nhật ký sinh khi chạy test. Gói mô hình và parquet đặc trưng trong fides/out/ vẫn được theo dõi.
+fides/out/audit/
