@@ -25,9 +25,15 @@ Tiền kèm phần trăm so với trần của chính biến thể đó. Trần 
 
 ## Artifact seed 45
 
-Tiền 3.250.266.440 VND, 92,0% trần 3.531.704.180. Recall@1% 60,81%. MH hợp lệ 0,12%. Medium người nhà 12,50%. Medium vay bạn 22,08%. Cúp máy người nhà 0%. ≥ Medium: police 87,6%, investment 58,1%, own_name 95,5%, relative 94,1%. τ_hi = 0,8125. 101 vòng.
+Tiêu chí chọn τ_hi: ngưỡng lớn nhất còn giữ tiền ≥ 99,5% mức tối đa dưới trần Medium+High hợp lệ 0,45%, và ≥Medium của từng scenario giảm không quá 1 điểm so với mức tối đa đó. Mức tối đa là 3.251.223.920 VND.
+
+τ_hi đóng gói là **0,8125**. Bậc kế tiếp của hiệu chỉnh isotonic là 0,8182. Bậc đó vẫn giữ 99,66% tiền tối đa (3.240.287.120 VND) nhưng ≥Medium của investment giảm 7,07 điểm (58,08% → 51,01%) và deposit giảm 7,28 điểm (52,73% → 45,45%). Vì vậy giữ 0,8125.
+
+Tiền 3.250.266.440 VND, 92,0% trần 3.531.704.180. Recall@1% 60,81%. MH hợp lệ 0,12%. Medium người nhà 12,50%. Medium vay bạn 22,08%. Cúp máy người nhà 0%. ≥ Medium: police 87,6%, investment 58,1%, own_name 95,5%, relative 94,1%. 101 vòng. Ngưỡng ghi trong `policy.json` và `policy.yaml`.
 
 ## Giới hạn
+
+Hiệu chỉnh isotonic tạo bậc điểm. Kết quả nhạy với τ_hi quanh 0,81–0,82: một bậc làm investment và deposit mất khoảng 7 điểm ≥Medium.
 
 Vay bạn Medium ~22%. 86/385 phiên vay bạn có đúng hai họ, toàn bộ là entry+payee (50) hoặc call+payee (36). 81 phiên còn Medium vì thiếu passthrough, 4 vì tuổi dưới 365 và thiếu passthrough, 1 bị tắt vì đủ bình thường. Luật ≥2 họ đặt các phiên còn lại ở Medium trước khi τ_hi chạy.
 

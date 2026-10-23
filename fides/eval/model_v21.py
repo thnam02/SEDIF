@@ -625,6 +625,46 @@ def _choose_tau(
     return tau
 
 
+def choose_tau_least_bother(
+    probability: np.ndarray,
+    amount: np.ndarray,
+    families: np.ndarray,
+    scale: np.ndarray,
+    legit: np.ndarray,
+    eligible: np.ndarray,
+    money_of,
+    scenario_of,
+) -> tuple[float, float]:
+    """τ_hi lớn nhất dưới trần MH 0,45% mà tiền còn ≥ 99,5% mức tối đa và ≥Medium từng scenario giảm ≤ 1 điểm."""
+    base = _assign_levels(probability, amount, families, scale, None, eligible)
+    legit = np.asarray(legit, dtype=bool)
+    can = np.asarray(eligible, dtype=bool) & (np.asarray(families) <= 1) & np.isin(base, ["none", "banner"])
+    candidates = np.unique(np.asarray(probability, dtype=float)[can])
+    candidates = np.concatenate([candidates, np.array([1.0])])
+    feasible: list[tuple[float, float, dict[str, float]]] = []
+    for tau in candidates:
+        level = _assign_levels(probability, amount, families, scale, float(tau), eligible)
+        mh = float(np.isin(level[legit], ["medium", "high"]).mean()) if legit.any() else 0.0
+        if mh > MH_CAP:
+            continue
+        feasible.append((float(tau), float(money_of(level)), scenario_of(level)))
+    if not feasible:
+        return 1.0, 0.0
+    reference = max(feasible, key=lambda item: (item[1], item[0]))
+    floor = 0.995 * reference[1]
+    allowed = []
+    for tau, saved, rates in feasible:
+        if saved < floor:
+            continue
+        if any(rates[name] < reference[2][name] - 0.01 for name in reference[2]):
+            continue
+        allowed.append((tau, saved))
+    if not allowed:
+        return reference[0], reference[1]
+    chosen = max(allowed, key=lambda item: item[0])
+    return chosen[0], reference[1]
+
+
 def _metrics(
     bundle: dict,
     frames: dict[str, pd.DataFrame],
