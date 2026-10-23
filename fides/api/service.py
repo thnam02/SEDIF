@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
@@ -16,13 +15,16 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+REPO = ROOT.parent
+for path in (ROOT, REPO):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from api.reasons import reasons_from_contrib
 from api.runtime import BadRequest, Runtime, UnknownSession
+from engine.common.hashing import account_hash, require_key
+from engine.policy import LEVELS, actions_for, apply_respond, raise_level
 
-LEVELS = ["none", "banner", "medium", "high"]
 GROUPS = ("g1", "g2", "g3", "g4")
 FAMILY_NAMES = ("call", "entry", "payee", "funding")
 RECOVERY_S = 24 * 60 * 60
@@ -74,71 +76,6 @@ class AuditLog:
             self.path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
-def account_hash(account: str) -> str:
-    return hashlib.sha256(str(account).encode("utf-8")).hexdigest()
-
-
-def guiding(answer) -> bool:
-    if answer is None or answer is False:
-        return False
-    if isinstance(answer, str) and answer.strip().lower() in {"", "không", "khong", "no", "false", "0"}:
-        return False
-    return True
-
-
-def raise_level(level: str, answer) -> str:
-    """who_guides chỉ được nâng mức, không bao giờ hạ."""
-    if not guiding(answer):
-        return level
-    return LEVELS[min(LEVELS.index(level) + 1, len(LEVELS) - 1)]
-
-
-def actions_for(level: str, segment: str, has_guardian: bool) -> list[str]:
-    if level == "none":
-        return ["allow"]
-    if level == "banner":
-        return ["g1_banner"]
-    if level == "medium" and segment == "cao tuổi" and has_guardian:
-        return ["pause_and_verify", "guardian_confirm"]
-    if level == "medium":
-        return ["pause_and_verify"]
-    return ["hangup_required", "recovery_window"]
-
-
-def apply_respond(record: dict, body: RespondIn, now: float) -> dict:
-    level = raise_level(record["level"], body.who_guides_answer)
-    if LEVELS.index(level) < LEVELS.index(record["level"]):
-        level = record["level"]
-    record["level"] = level
-    record["actions"] = actions_for(level, record["segment"], record["has_guardian"])
-    status = record.get("status", "open")
-    if record["has_guardian"] and level == "medium" and not record.get("guardian_confirmed"):
-        status = "waiting_guardian"
-    elif status == "waiting_guardian":
-        status = "open"
-    if body.guardian_confirm is True and record["has_guardian"] and level == "medium":
-        record["guardian_confirmed"] = True
-        status = "released"
-    if body.hung_up is True:
-        record["hung_up"] = True
-        if level == "high":
-            status = "hung_up"
-    if body.cancel is True:
-        if now - float(record["decided_at"]) <= RECOVERY_S:
-            status = "cancelled"
-        else:
-            record["cancel_rejected"] = True
-    record["status"] = status
-    record["respond"] = {
-        "who_guides_answer": body.who_guides_answer,
-        "guardian_confirm": body.guardian_confirm,
-        "hung_up": body.hung_up,
-        "cancel": body.cancel,
-        "status": status,
-    }
-    return record
-
-
 def audit_path() -> Path:
     raw = os.environ.get("FIDES_AUDIT")
     if raw:
@@ -148,6 +85,7 @@ def audit_path() -> Path:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    require_key()
     app.state.runtime = Runtime.load()
     app.state.audit = AuditLog(audit_path())
     yield

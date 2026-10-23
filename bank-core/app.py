@@ -1,8 +1,10 @@
-"""Dịch vụ rỗng. Chỉ trả /health để compose kiểm tra được."""
+"""Bank-core. /health, và cùng HMAC với engine. Thiếu FIDES_HMAC_KEY thì không khởi động."""
 
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from engine.common.hashing import require_key
 
 NAME = os.environ.get("SERVICE_NAME", "bank-core")
 
@@ -25,4 +27,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    require_key()
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()

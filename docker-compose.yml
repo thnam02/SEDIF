@@ -26,11 +26,15 @@ services:
       start_period: 3s
 
   engine:
-    build: ./engine
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
     environment:
       SERVICE_NAME: engine
       DATABASE_URL: postgresql://fides:fides@postgres:5432/fides
       REDIS_URL: redis://redis:6379/0
+      FIDES_HMAC_KEY: fides-demo-hmac
+      FIDES_API_KEY: fides-demo-key
     ports:
       - "8081:8080"
     depends_on:
@@ -50,12 +54,15 @@ services:
       start_period: 5s
 
   bank-core:
-    build: ./bank-core
+    build:
+      context: .
+      dockerfile: bank-core/Dockerfile
     environment:
       SERVICE_NAME: bank-core
       DATABASE_URL: postgresql://fides:fides@postgres:5432/fides
       REDIS_URL: redis://redis:6379/0
       ENGINE_URL: http://engine:8080
+      FIDES_HMAC_KEY: fides-demo-hmac
     ports:
       - "8082:8080"
     depends_on:

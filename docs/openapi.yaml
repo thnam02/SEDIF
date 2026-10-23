@@ -748,6 +748,7 @@ components:
         - $ref: "#/components/schemas/DeviceChangeEvent"
         - $ref: "#/components/schemas/ProductEvent"
         - $ref: "#/components/schemas/ComplaintEvent"
+        - $ref: "#/components/schemas/SimoListingEvent"
       discriminator:
         propertyName: type
         mapping:
@@ -756,6 +757,7 @@ components:
           device_change: "#/components/schemas/DeviceChangeEvent"
           product: "#/components/schemas/ProductEvent"
           complaint: "#/components/schemas/ComplaintEvent"
+          simo_listing: "#/components/schemas/SimoListingEvent"
     EventBase:
       type: object
       required: [event_id, type, ts, account_hash]
@@ -832,6 +834,20 @@ components:
             session_ref:
               type: string
               description: Sổ sim chỉ có complaint_id, customer, account, session và complaint_ts. Không có loại khiếu nại.
+    SimoListingEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          required: [listed_at, source]
+          properties:
+            type:
+              const: simo_listing
+            listed_at:
+              type: string
+              format: date-time
+            source:
+              type: string
+              description: Nguồn liệt kê trong observed/simo_list.parquet, ví dụ victim, bank, victim_report, police.
     EventReceipt:
       type: object
       required: [event_id, stored]
