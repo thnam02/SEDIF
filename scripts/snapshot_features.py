@@ -19,8 +19,12 @@ def configure(store: OnlineStore) -> None:
     store.redis.config_set("maxmemory-policy", "noeviction")
 
 
-def snapshot(until: str, redis_url: str | None = None) -> None:
+def snapshot(until: str, redis_url: str | None = None, rebuild: bool = False) -> None:
     require_key()
+    if rebuild:
+        from scripts.replay import build_until, OBSERVED
+
+        build_until(OBSERVED, until, redis_url)
     store = OnlineStore(redis_url, flush=False)
     configure(store)
     stamp = int(to_us(pd.Series([pd.Timestamp(until)]))[0])
@@ -37,8 +41,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--until", required=True)
     parser.add_argument("--redis", default=None)
+    parser.add_argument("--rebuild", action="store_true")
     args = parser.parse_args()
-    snapshot(args.until, args.redis)
+    snapshot(args.until, args.redis, args.rebuild)
 
 
 if __name__ == "__main__":

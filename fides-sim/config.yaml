@@ -245,3 +245,10 @@ decision:
   cancel_anytime: true
   guardian_confirm_releases: true
   proceed_after_countdown_releases: true
+
+# GIẢ ĐỊNH: 5% tài khoản không phải mule, chưa có listing, bị liệt kê nhầm.
+# Không ước lượng từ dữ liệu.
+simo:
+  note: "GIẢ ĐỊNH"
+  false_list_rate: 0.05
+  false_list_seed: 42

@@ -34,7 +34,11 @@ from engine.decide import (
 )
 from engine.events import connect, ensure_schema, insert_event
 from engine.features.online import OnlineStore
+from engine.features.stream import TRANSFER_TYPES
 from engine.model import Scorer
+from engine.review import confirm as confirm_review
+from engine.review import consider as consider_review
+from engine.review import queue as review_queue
 from engine.policy import actions_for
 
 NAME = os.environ.get("SERVICE_NAME", "engine")
@@ -119,10 +123,46 @@ def _stream_event(event: dict) -> bool:
     return isinstance(event, dict) and event.get("type") in STREAM and ("account" in event or event.get("type") in {"session", "session_event", "device_signal", "payee_add"})
 
 
+def _ledger_stream(event: dict) -> dict | None:
+    kind = event.get("type")
+    if kind not in TYPES or "account_hash" not in event:
+        return None
+    stamp = event.get("ts")
+    us = to_us(parse_ts(stamp)) if isinstance(stamp, str) else int(stamp)
+    if kind == "txn" or kind == "product":
+        tx = event.get("tx_type") or event.get("product_type")
+        return {
+            "type": "txn",
+            "ts": us,
+            "account": event["account_hash"],
+            "payee": event.get("counterparty_hash"),
+            "known_payee": bool(event.get("counterparty_hash")),
+            "amount": int(event.get("amount") or 0),
+            "balance": int(event.get("balance") or 0),
+            "session": event.get("session_id") or "",
+            "tx_type": tx,
+            "xfer": tx in TRANSFER_TYPES,
+        }
+    if kind == "account_change":
+        return {"type": "account_change", "ts": us, "account": event["account_hash"], "change_type": event.get("change_type")}
+    if kind == "simo_listing":
+        return {"type": "simo_listing", "ts": us, "account": event["account_hash"]}
+    return None
+
+
 def ingest(event: dict) -> bool:
     """Cùng đường POST /events: cập nhật feature store, rồi ghi sổ nếu là event sổ cái."""
-    if STORE is not None and _stream_event(event):
-        STORE.update(event)
+    stream = event if _stream_event(event) else _ledger_stream(event)
+    if STORE is not None and stream is not None:
+        STORE.update(stream)
+        if stream.get("type") == "txn":
+            from datetime import datetime
+
+            from engine.decide import ICT
+
+            raw_ts = event.get("ts")
+            when = parse_ts(raw_ts) if isinstance(raw_ts, str) else datetime.fromtimestamp(int(stream["ts"]) / 1_000_000, ICT)
+            consider_review(STORE, stream, when)
         if event.get("type") == "device_signal" and event.get("in_call") == "1":
             account = STORE.session_account.get(event.get("session", ""))
             if account:
@@ -168,7 +208,17 @@ def decide(body: dict) -> tuple[int, dict]:
     session_id = body.get("session_id") or STORE.session_at(body["sender_hash"], to_us(decided))
     if not session_id:
         return 404, {"detail": "không có phiên tại ts"}
-    row = STORE.get(body["sender_hash"], body["payee_hash"], to_us(decided), str(session_id))
+    pending = None
+    if body.get("score_request"):
+        pending = {
+            "ts": to_us(decided),
+            "payee": body["payee_hash"],
+            "amount": int(body["amount"]),
+            "balance": int(body.get("balance") or 0),
+        }
+    row = STORE.get(body["sender_hash"], body["payee_hash"], to_us(decided), str(session_id), pending)
+    if pending and row.get("new_payee"):
+        row["payee_family"] = 1
     with SCORE_LOCK:
         probability = MODEL.score(row)
     families = gated_families(row)
@@ -273,9 +323,22 @@ class Handler(BaseHTTPRequestHandler):
         if not _authorized(self):
             return
         if parsed.path == "/decisions":
-            level = parse_qs(parsed.query).get("level", [None])[0]
+            query = parse_qs(parsed.query)
+            level = query.get("level", [None])[0]
+            raw_limit = query.get("limit", ["50"])[0]
+            limit = min(max(int(raw_limit or 50), 1), 200)
+            cursor = query.get("cursor", [None])[0]
+            cursor_ts = cursor_id = None
+            if cursor:
+                cursor_ts, cursor_id = parse_ts(cursor.split("|", 1)[0]), cursor.split("|", 1)[1]
+            from_ts = parse_ts(query["from_ts"][0]) if query.get("from_ts") else None
+            to_ts = parse_ts(query["to_ts"][0]) if query.get("to_ts") else None
             with audit_conn() as conn:
-                rows = list_decisions(conn, level)
+                rows = list_decisions(conn, level, limit + 1, cursor_ts, cursor_id, from_ts, to_ts)
+            page = rows[:limit]
+            nxt = None
+            if len(rows) > limit and page:
+                nxt = f"{iso(page[-1]['ts'])}|{page[-1]['decision_id']}"
             _json(
                 self,
                 200,
@@ -283,15 +346,22 @@ class Handler(BaseHTTPRequestHandler):
                     "decisions": [
                         {
                             "decision_id": row["decision_id"],
+                            "ts": iso(row["ts"]),
                             "level": row["level"],
                             "funds_status": row["funds_status"],
                             "hold_until": iso(row["hold_until"]),
                             "countdown_until": iso(row["countdown_until"]),
                         }
-                        for row in rows
-                    ]
+                        for row in page
+                    ],
+                    "next_cursor": nxt,
                 },
             )
+            return
+        if parsed.path == "/review-queue":
+            with connect() as conn:
+                rows = review_queue(conn)
+            _json(self, 200, {"reviews": [{**row, "ts": iso(row["ts"])} for row in rows]})
             return
         if parsed.path.startswith("/decisions/"):
             decision_id = parsed.path.removeprefix("/decisions/")
@@ -313,6 +383,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _post(self):
         path = self.path.split("?", 1)[0]
+        if path.startswith("/review/") and path.endswith("/confirm"):
+            if not _authorized(self):
+                return
+            review_id = path.removeprefix("/review/").removesuffix("/confirm")
+            with connect() as conn:
+                result = confirm_review(conn, review_id)
+            if result is None:
+                _bad(self, 404, "không có review")
+                return
+            _json(self, 200, result)
+            return
         if path not in {"/events", "/decide", "/respond"}:
             self.send_response(404)
             self.end_headers()

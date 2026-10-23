@@ -180,11 +180,20 @@ def load_state(conn, decision_id: str) -> dict | None:
     return _state(dict(record), dict(latest) if latest is not None else None)
 
 
-def list_decisions(conn, level: str | None) -> list[dict]:
+def list_decisions(
+    conn,
+    level: str | None,
+    limit: int = 50,
+    cursor_ts=None,
+    cursor_id: str | None = None,
+    from_ts=None,
+    to_ts=None,
+) -> list[dict]:
     conn.row_factory = dict_row
     rows = conn.execute(
         """
         SELECT d.decision_id,
+               d.ts,
                COALESCE(r.level, d.level) AS level,
                COALESCE(r.funds_status, d.funds_status) AS funds_status,
                CASE WHEN r.id IS NULL THEN d.hold_until ELSE r.hold_until END AS hold_until,
@@ -194,10 +203,24 @@ def list_decisions(conn, level: str | None) -> list[dict]:
             SELECT id, level, funds_status, hold_until, countdown_until
             FROM responses WHERE decision_id = d.decision_id ORDER BY id DESC LIMIT 1
         ) r ON true
-        WHERE %s::text IS NULL OR COALESCE(r.level, d.level) = %s::text
+        WHERE (%(level)s::text IS NULL OR COALESCE(r.level, d.level) = %(level)s::text)
+          AND (%(from_ts)s::timestamptz IS NULL OR d.ts >= %(from_ts)s::timestamptz)
+          AND (%(to_ts)s::timestamptz IS NULL OR d.ts < %(to_ts)s::timestamptz)
+          AND (
+                %(cursor_ts)s::timestamptz IS NULL
+                OR (d.ts, d.decision_id) > (%(cursor_ts)s::timestamptz, %(cursor_id)s::text)
+              )
         ORDER BY d.ts, d.decision_id
+        LIMIT %(limit)s
         """,
-        (level, level),
+        {
+            "level": level,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "cursor_ts": cursor_ts,
+            "cursor_id": cursor_id,
+            "limit": int(limit),
+        },
     ).fetchall()
     return [dict(row) for row in rows]
 

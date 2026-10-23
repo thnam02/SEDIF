@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pandas
+pyyaml
+numpy
+psycopg[binary]

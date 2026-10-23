@@ -96,6 +96,36 @@ def run(observed: Path, test_ids: set[str] | None, until: str, redis_url: str | 
     return results, stats
 
 
+def build_until(observed: Path, until: str, redis_url: str | None) -> OnlineStore:
+    """Nạp mọi sự kiện trước until. Đây là trạng thái snapshot, không chấm phiên."""
+    cache = IdCache(observed)
+    until_us = _until_us(until)
+    sessions = pd.read_parquet(observed / "sessions.parquet", columns=["session_id", "account_id"])
+    sessions["session_id"] = sessions["session_id"].astype(str)
+    sessions["account_id"] = sessions["account_id"].astype(str)
+    store = OnlineStore(redis_url, flush=True)
+    store.session_account = {
+        row.session_id: cache.get(row.account_id)
+        for row in sessions.itertuples(index=False)
+        if cache.get(row.account_id)
+    }
+    for event in account_events(observed, cache):
+        store.update(event)
+    for event in session_bootstrap(observed, cache):
+        store.update(event)
+    store.flush()
+    seen = 0
+    for _stamp, _rank, _index, event in timed_events(observed, cache, until_us):
+        store.update(event)
+        seen += 1
+        if seen % 500_000 == 0:
+            print(f"  snapshot {seen}", flush=True)
+    store.flush()
+    store.redis.set("f:snapshot_until", until)
+    print(f"snapshot built events {seen} bytes {store.memory_bytes()}", flush=True)
+    return store
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--observed", type=Path, default=OBSERVED)

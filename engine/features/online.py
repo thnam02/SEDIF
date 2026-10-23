@@ -64,8 +64,9 @@ class OnlineStore:
         self.redis.ping()
         if flush:
             self.redis.flushdb()
+        self.hydrate = not flush
         self.pipe = self.redis.pipeline(transaction=False)
-        self.seq = 0
+        self.seq = int(self.redis.get("f:seq") or 0) if self.hydrate else 0
         self.first: dict[tuple[str, str], tuple[int, int, int]] = {}
         self.cust_first: set[tuple[str, str]] = set()
         self.main: dict[str, tuple[int, int, str]] = {}
@@ -76,9 +77,32 @@ class OnlineStore:
         self.get_times: list[float] = []
 
     def flush(self) -> None:
+        self.pipe.set("f:seq", self.seq)
         if len(self.pipe.command_stack) if hasattr(self.pipe, "command_stack") else True:
             self.pipe.execute()
         self.pipe = self.redis.pipeline(transaction=False)
+
+    def _cached_first(self, account: str, payee: str):
+        key = (account, payee)
+        if key in self.first:
+            return self.first[key]
+        if not self.hydrate:
+            return None
+        raw = self.redis.hget(f"f:fst:{account}", payee)
+        if not raw:
+            return None
+        seq, stamp, xfer = raw.split("|")
+        self.first[key] = (int(seq), int(stamp), int(xfer))
+        return self.first[key]
+
+    def _ensure_party(self, account: str) -> None:
+        if account in self.customer_of or not self.hydrate:
+            return
+        meta = self.redis.hgetall(f"f:meta:{account}")
+        if not meta:
+            return
+        self.customer_of[account] = meta.get("customer", "")
+        self.limit_of[account] = int(meta.get("limit") or 0)
 
     def _flush_often(self) -> None:
         pending = len(getattr(self.pipe, "command_stack", []))
@@ -127,6 +151,8 @@ class OnlineStore:
                 "limit": int(event.get("limit", 0)),
             },
         )
+        if event.get("customer"):
+            self.pipe.sadd(f"f:cacc:{event['customer']}", event["account"])
         self.customer_of[event["account"]] = event["customer"]
         self.limit_of[event["account"]] = int(event.get("limit", 0))
 
@@ -176,18 +202,23 @@ class OnlineStore:
                 {f"{event['ts']}|{seq}|{event['account']}|{event['amount']}": event["ts"]},
             )
             key = (event["account"], event["payee"])
-            if key not in self.first:
+            if self._cached_first(event["account"], event["payee"]) is None and key not in self.first:
                 self.first[key] = (seq, int(event["ts"]), int(event["xfer"]))
                 self.pipe.hset(f"f:fst:{event['account']}", event["payee"], f"{seq}|{event['ts']}|{int(event['xfer'])}")
                 if event["xfer"]:
                     self.pipe.zadd(f"f:fresh:{event['account']}", {event["payee"]: event["ts"]})
         if event["payee"]:
+            self._ensure_party(event["account"])
             customer = self.customer_of.get(event["account"], "")
             pair = (customer, event["payee"])
             if customer and pair not in self.cust_first:
-                self.cust_first.add(pair)
-                stamp = int(event["ts"])
-                self.pipe.hset(f"f:fstc:{customer}", event["payee"], stamp)
+                prior = self.redis.hget(f"f:fstc:{customer}", event["payee"]) if self.hydrate else None
+                if prior:
+                    self.cust_first.add(pair)
+                else:
+                    self.cust_first.add(pair)
+                    stamp = int(event["ts"])
+                    self.pipe.hset(f"f:fstc:{customer}", event["payee"], stamp)
         if event["xfer"] and event["payee"]:
             limit = self.limit_of.get(event["account"], 0)
             if event["session"] and limit > 0 and int(event["amount"]) >= 0.85 * limit:
@@ -219,6 +250,10 @@ class OnlineStore:
         session = event["session"]
         if not session:
             return
+        if session not in self.main and self.hydrate:
+            raw = self.redis.hgetall(f"f:main:{session}")
+            if raw:
+                self.main[session] = (int(raw["amount"]), int(raw["ts"]), raw["payee"])
         amount = int(event["amount"])
         stamp = int(event["ts"])
         current = self.main.get(session)
@@ -258,6 +293,9 @@ class OnlineStore:
         session = event["session"]
         if not session or session in self.signaled:
             return
+        if self.hydrate and self.redis.exists(f"f:sig:{session}"):
+            self.signaled.add(session)
+            return
         self.signaled.add(session)
         self.pipe.hset(
             f"f:sig:{session}",
@@ -269,14 +307,14 @@ class OnlineStore:
         info = self.redis.info("memory")
         return int(info["used_memory"])
 
-    def get(self, sender: str, payee: str | None, ts: int, session_id: str) -> dict:
+    def get(self, sender: str, payee: str | None, ts: int, session_id: str, pending: dict | None = None) -> dict:
         started = time.perf_counter()
         self.flush()
-        row = self._read(sender, payee, int(ts), session_id)
+        row = self._read(sender, payee, int(ts), session_id, pending)
         self.get_times.append(time.perf_counter() - started)
         return row
 
-    def _read(self, sender: str, payee: str | None, as_of: int, session_id: str) -> dict:
+    def _read(self, sender: str, payee: str | None, as_of: int, session_id: str, pending: dict | None = None) -> dict:
         client = self.redis
         pipe = client.pipeline(transaction=False)
         pipe.hgetall(f"f:dec:{session_id}")
@@ -305,6 +343,14 @@ class OnlineStore:
             phones,
         ) = pipe.execute()
         decision = _decision(decision_raw)
+        if pending:
+            decision = {
+                "ts": int(pending["ts"]),
+                "seq": -1,
+                "payee": pending["payee"],
+                "amt": int(pending["amount"]),
+                "bal": int(pending.get("balance") or 0),
+            }
         counterparty = decision["payee"] if decision else payee
         row = {name: None for name in (*COLUMNS, *FAMILY_COLUMNS)}
         row["new_payee"] = 0
@@ -333,13 +379,24 @@ class OnlineStore:
         row["pasted"] = 1 if pasted else 0
         if login is not None and decision["ts"] >= int(login):
             row["seconds_since_login"] = (decision["ts"] - int(login)) / 1_000_000
-        row["a_w"] = self._window_amount(sender, as_of)
-        row["new_payees_24h"] = int(client.zcount(f"f:fresh:{sender}", f"({as_of - DAY_US}", f"({as_of}"))
-        first = client.hget(f"f:fst:{sender}", decision["payee"])
-        row["new_payee"] = int(bool(first) and int(first.split("|", 1)[0]) == decision["seq"])
+        row["a_w"] = self._window_amount(sender, as_of, str(sender_meta.get("customer") or ""))
+        row["new_payees_24h"] = self._new_payees(sender, as_of, str(sender_meta.get("customer") or ""))
+        customer = str(sender_meta.get("customer") or "")
+        first = client.hget(f"f:fstc:{customer}", decision["payee"]) if customer else client.hget(f"f:fst:{sender}", decision["payee"])
+        if decision["seq"] < 0:
+            if customer:
+                row["new_payee"] = 0 if first and int(first) < decision["ts"] else 1
+            else:
+                row["new_payee"] = 0 if first and int(first.split("|")[1]) < decision["ts"] else 1
+        elif customer:
+            row["new_payee"] = int(bool(first) and int(first) == decision["ts"])
+        else:
+            row["new_payee"] = int(bool(first) and int(first.split("|", 1)[0]) == decision["seq"])
         method = client.get(f"f:pm:{sender}:{decision['payee']}")
         row["add_method"] = method if method is not None else None
         self._payee_fields(row, sender, decision["payee"], as_of, sender_meta)
+        if pending and (row["new_payee"] or row["simo_listed"]):
+            row["a_w"] = int(row["a_w"] or 0) + int(pending["amount"])
         return row
 
     def _families(self, sender: str, session_id: str, sender_meta: dict, signal: dict, mobilized) -> dict:
@@ -391,28 +448,92 @@ class OnlineStore:
             if cursor == 0:
                 break
 
-    def _window_amount(self, sender: str, as_of: int) -> int:
-        members = self.redis.zrangebyscore(f"f:out:{sender}", f"({as_of - DAY_US}", f"({as_of}")
+    def index_customers(self) -> None:
+        """Lập tập tài khoản theo khách từ meta đã có, để a_w gộp như khung network."""
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor, match="f:meta:*", count=500)
+            if keys:
+                pipe = self.redis.pipeline(transaction=False)
+                for key in keys:
+                    pipe.hgetall(key)
+                metas = pipe.execute()
+                write = self.redis.pipeline(transaction=False)
+                queued = 0
+                for key, meta in zip(keys, metas):
+                    customer = meta.get("customer")
+                    if customer:
+                        write.sadd(f"f:cacc:{customer}", key.removeprefix("f:meta:"))
+                        queued += 1
+                if queued:
+                    write.execute()
+            if cursor == 0:
+                break
+
+    def _accounts(self, sender: str, customer: str) -> list[str]:
+        if not customer:
+            return [sender]
+        found = self.redis.smembers(f"f:cacc:{customer}")
+        return list(found) if found else [sender]
+
+    def _window_amount(self, sender: str, as_of: int, customer: str = "") -> int:
+        start = f"({as_of - DAY_US}"
+        stop = f"({as_of}"
         chosen = []
-        pipe = self.redis.pipeline(transaction=False)
-        for member in members:
-            ts, seq, payee, amt, _bal, xfer, _session, _kind = _split(member, 8)
-            if xfer != "1" or payee == "-":
-                continue
-            chosen.append((int(seq), payee, int(amt), int(ts)))
-            pipe.hget(f"f:fst:{sender}", payee)
-            pipe.zcount(f"f:simo:{payee}", "-inf", f"({int(ts)}")
+        for account in self._accounts(sender, customer):
+            members = self.redis.zrangebyscore(f"f:out:{account}", start, stop)
+            for member in members:
+                ts, _seq, payee, amt, _bal, xfer, _session, _kind = _split(member, 8)
+                if xfer != "1" or payee == "-":
+                    continue
+                chosen.append((account, int(ts), payee, int(amt)))
         if not chosen:
             return 0
+        pipe = self.redis.pipeline(transaction=False)
+        for account, _ts, payee, _amt in chosen:
+            pipe.hget(f"f:fst:{account}", payee)
+            if customer:
+                pipe.hget(f"f:fstc:{customer}", payee)
+            pipe.zcount(f"f:simo:{payee}", "-inf", f"({_ts}")
         fetched = pipe.execute()
+        width = 3 if customer else 2
         total = 0
-        for index, (seq, _payee, amt, _ts) in enumerate(chosen):
-            first = fetched[index * 2]
-            listed = int(fetched[index * 2 + 1]) > 0
-            is_first = bool(first) and int(first.split("|", 1)[0]) == seq
-            if is_first or listed:
+        for index, (_account, ts, _payee, amt) in enumerate(chosen):
+            base = index * width
+            known = fetched[base]
+            if customer:
+                stamp = fetched[base + 1]
+                listed = int(fetched[base + 2]) > 0
+                is_first = bool(known) and bool(stamp) and int(stamp) == ts
+            else:
+                listed = int(fetched[base + 1]) > 0
+                parts = known.split("|") if known else []
+                is_first = len(parts) >= 3 and int(parts[1]) == ts and parts[2] == "1"
+            if is_first or (listed and known):
                 total += amt
         return total
+
+    def _new_payees(self, sender: str, as_of: int, customer: str) -> int:
+        start = f"({as_of - DAY_US}"
+        stop = f"({as_of}"
+        if not customer:
+            return int(self.redis.zcount(f"f:fresh:{sender}", start, stop))
+        found = set()
+        for account in self._accounts(sender, customer):
+            payees = self.redis.zrangebyscore(f"f:fresh:{account}", start, stop)
+            if not payees:
+                continue
+            pipe = self.redis.pipeline(transaction=False)
+            for payee in payees:
+                pipe.zscore(f"f:fresh:{account}", payee)
+                pipe.hget(f"f:fstc:{customer}", payee)
+            fetched = pipe.execute()
+            for index, payee in enumerate(payees):
+                score = fetched[index * 2]
+                stamp = fetched[index * 2 + 1]
+                if score is not None and stamp is not None and int(float(score)) == int(stamp):
+                    found.add(payee)
+        return len(found)
 
     def _payee_fields(self, row: dict, sender: str, payee: str, as_of: int, sender_meta: dict) -> None:
         client = self.redis
@@ -428,7 +549,7 @@ class OnlineStore:
         payee_name = str(meta.get("holder", "")) if visible and meta else ""
         if sender_name and payee_name:
             row["payee_name_matches_holder"] = int(sender_name == payee_name)
-        if visible and meta and int(meta.get("b01", "0") or 0):
+        if visible and meta:
             row["merchant_verified"] = int(meta.get("merchant", "0") or 0)
         if not visible:
             _t4c_missing(row)
