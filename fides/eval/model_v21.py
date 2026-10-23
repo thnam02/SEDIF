@@ -478,6 +478,10 @@ def _context(frames: dict[str, pd.DataFrame]) -> dict:
         work["distinct_senders_7d"] = pd.to_numeric(frame["distinct_senders_7d"], errors="coerce").to_numpy()
         work["passthrough_24h"] = pd.to_numeric(frame["passthrough_24h"], errors="coerce").to_numpy()
         work["payee_account_age_days"] = pd.to_numeric(frame["payee_account_age_days"], errors="coerce").to_numpy()
+        if "simo_listed" in frame.columns:
+            work["simo_listed"] = pd.to_numeric(frame["simo_listed"], errors="coerce").fillna(0).to_numpy()
+        else:
+            work["simo_listed"] = 0
         pieces.append(work)
     population = pd.concat(pieces, ignore_index=True)
     population["customer_id"] = population["customer_id"].astype(str)
@@ -687,6 +691,10 @@ def _metrics(
     if tau_hi is None:
         tau_hi = _choose_tau(probability, amount, families, scale, bundle["legit"], eligible, friend_test)
     pop_level = _assign_levels(probability, amount, families, scale, tau_hi, eligible)
+    listed = pd.to_numeric(population["simo_listed"], errors="coerce").fillna(0).to_numpy() >= 1
+    banner_added = (pop_level == "none") & listed
+    pop_level = pop_level.copy()
+    pop_level[banner_added] = "banner"
     level = pop_level
     scored = population.copy()
     scored["families_n"] = families
@@ -742,6 +750,7 @@ def _metrics(
         "rate": float(rate),
         "recall_at_1": float(recall_at(label, raw)),
         "legit_mh": mh,
+        "banner_added": int(banner_added[on_test].sum()),
         "medium_loan": float(np.mean(level[friend] == "medium")) if friend.any() else float("nan"),
         "medium_guided": float(np.mean(level[guided] == "medium")) if guided.any() else float("nan"),
         "guided_hangup": float(np.mean(answered["action"].to_numpy()[guided] == "hangup_required")) if guided.any() else float("nan"),

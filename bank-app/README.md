@@ -1,3 +1,3 @@
 # bank-app
 
-Ứng dụng ngân hàng phía khách. Thư mục để trống, sẽ nối vào `bank-core` sau. `fides-sim/` và `fides/` giữ nguyên.
+Ứng dụng ngân hàng phía khách. Màn chuyển tiền dùng `fides-sdk` và gửi khối device kèm `POST /transfer` lên bank-core.

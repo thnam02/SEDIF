@@ -96,7 +96,9 @@ def assign_level(probability: float, amount: float, families: dict[str, int], se
     else:
         level = "banner"
     if probability >= TAU_HI and eligible(row, families) and count <= 1 and level in {"none", "banner"}:
-        return "medium"
+        level = "medium"
+    if level == "none" and int(row.get("simo_listed") or 0) == 1:
+        return "banner"
     return level
 
 
@@ -114,7 +116,10 @@ def reasons_for(row: dict, families: dict[str, int]) -> list[dict[str, str]]:
     if families["mobilization"]:
         picked.append({"code": "mobilization", "text": REASONS[4][2]})
     if int(row.get("simo_listed") or 0) == 1:
-        picked.append({"code": "simo_listed", "text": REASONS[5][2]})
+        simo = {"code": "simo_listed", "text": REASONS[5][2]}
+        if len(picked) >= 3:
+            picked = picked[:2]
+        picked.append(simo)
     return picked[:3]
 
 

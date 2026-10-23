@@ -1,0 +1,11 @@
+{
+  "name": "bank-app",
+  "private": true,
+  "main": "App.tsx",
+  "dependencies": {
+    "fides-sdk": "file:../fides-sdk",
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

@@ -7,11 +7,13 @@ import os
 import threading
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime
+from typing import Annotated
 
 import pandas as pd
 import psycopg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from clock import DemoClock
@@ -114,12 +116,24 @@ def credit(conn, account: str, amount: int) -> None:
     conn.execute("UPDATE bank.accounts SET balance = balance + %s WHERE id = %s", (amount, account))
 
 
-def debit(conn, account: str, amount: int) -> None:
-    row = conn.execute("SELECT balance FROM bank.accounts WHERE id = %s", (account,)).fetchone()
+def debit(conn, account: str, amount: int, now: datetime) -> None:
+    row = conn.execute("SELECT balance, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s", (account,)).fetchone()
     if row is None:
         raise HTTPException(404, "không có tài khoản")
     if int(row["balance"]) < amount:
         raise HTTPException(400, "không đủ số dư")
+    if amount > int(row["limit_per_txn"]):
+        raise HTTPException(400, "vượt hạn mức giao dịch")
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    spent = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS n FROM bank.transfers
+        WHERE from_account = %s AND created_at >= %s AND status <> 'cancelled'
+        """,
+        (account, start),
+    ).fetchone()
+    if int(spent["n"]) + amount > int(row["limit_per_day"]):
+        raise HTTPException(400, "vượt hạn mức ngày")
     conn.execute("UPDATE bank.accounts SET balance = balance - %s WHERE id = %s", (amount, account))
 
 
@@ -368,19 +382,28 @@ def beneficiary(beneficiary_id: str) -> dict:
     }
 
 
-def _next_id(conn, prefix: str) -> str:
-    row = conn.execute("SELECT count(*) AS n FROM bank.transfers").fetchone()
-    return f"{prefix}-{int(row['n']) + 1}"
+def _next_id(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:16]}"
 
 
 @app.post("/transfer")
-def transfer(body: TransferIn) -> dict:
+def transfer(
+    body: TransferIn,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> dict:
     now = CLOCK.now()
+    key = (idempotency_key or "").strip() or None
+    if key:
+        with connect() as conn:
+            prior = conn.execute("SELECT response FROM bank.idempotency WHERE key = %s", (key,)).fetchone()
+        if prior is not None:
+            stored = prior["response"]
+            return stored if isinstance(stored, dict) else json.loads(stored)
     session = touch_session(body.from_account, body.device, now)
     with connect() as conn:
-        debit(conn, body.from_account, body.amount)
+        debit(conn, body.from_account, body.amount, now)
         balance = conn.execute("SELECT balance, segment, has_guardian FROM bank.accounts WHERE id = %s", (body.from_account,)).fetchone()
-        transfer_id = _next_id(conn, "X")
+        transfer_id = _next_id("X")
         decision_id = f"dec-{transfer_id}"
         decided = engine_post(
             "/decide",
@@ -439,13 +462,28 @@ def transfer(body: TransferIn) -> dict:
                 (f"G-{transfer_id}", body.from_account, transfer_id, level, funds),
             )
         conn.commit()
-    return {
+    result = {
         "transfer_id": transfer_id,
         "status": status,
         "funds_status": funds,
         "hold_until": decided.get("hold_until"),
         "decision": {"level": level, "actions": decided.get("actions") or [], "reasons": decided.get("reasons") or []},
     }
+    if key:
+        with connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO bank.idempotency (key, transfer_id, response)
+                VALUES (%s, %s, %s::jsonb)
+                ON CONFLICT (key) DO NOTHING
+                """,
+                (key, transfer_id, json.dumps(result, ensure_ascii=False)),
+            )
+            conn.commit()
+            prior = conn.execute("SELECT response FROM bank.idempotency WHERE key = %s", (key,)).fetchone()
+        stored = prior["response"]
+        return stored if isinstance(stored, dict) else json.loads(stored)
+    return result
 
 
 @app.post("/transfer/{transfer_id}/respond")
@@ -489,8 +527,7 @@ def _product(body: ProductIn, kind: str, tx_type: str) -> dict:
     now = CLOCK.now()
     touch_session(body.account_id, body.device, now)
     with connect() as conn:
-        row = conn.execute("SELECT count(*) AS n FROM bank.products").fetchone()
-        product_id = f"P-{int(row['n']) + 1}"
+        product_id = f"P-{uuid.uuid4().hex[:16]}"
         credit(conn, body.account_id, body.amount)
         entry(conn, body.account_id, product_id, now, "in", body.amount, tx_type, kind, "done")
         conn.execute(
@@ -535,8 +572,7 @@ def limit(body: LimitIn) -> dict:
         row = conn.execute("UPDATE bank.accounts SET limit_per_txn=%s, limit_per_day=%s WHERE id=%s RETURNING id", (body.limit_per_txn, body.limit_per_day, body.account_id)).fetchone()
         if row is None:
             raise HTTPException(404, "không có tài khoản")
-        count = conn.execute("SELECT count(*) AS n FROM bank.products").fetchone()
-        change_id = f"L-{int(count['n']) + 1}"
+        change_id = f"L-{uuid.uuid4().hex[:16]}"
         conn.execute(
             "INSERT INTO bank.products (id, account_id, amount, kind, ts) VALUES (%s,%s,%s,'limit_raise',%s)",
             (change_id, body.account_id, body.limit_per_txn, now),

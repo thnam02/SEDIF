@@ -409,8 +409,14 @@ paths:
       summary: Tạo lệnh chuyển
       description: >
         App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256
-        rồi gọi POST /decide. none và banner cho đi. medium giữ 30 phút. high giữ 24 giờ
-        và chặn cho đến khi cúp máy.
+        rồi gọi POST /decide. none và banner cho đi. Người nhận simo_listed được ít nhất banner.
+        medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy.
+        Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: {type: string}
       requestBody:
         required: true
         content:
