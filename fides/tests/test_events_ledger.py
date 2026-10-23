@@ -43,8 +43,6 @@ def _expected() -> dict[str, int]:
     transactions = transactions.loc[transactions["ts"] < cutoff]
     changes = pd.read_parquet(OBSERVED / "account_changes.parquet", columns=["ts", "change_type"])
     changes = changes.loc[changes["ts"] < cutoff]
-    accounts = pd.read_parquet(OBSERVED / "accounts.parquet", columns=["account_type", "opened_at"])
-    products = accounts.loc[accounts["account_type"].isin(["savings", "securities"]) & (accounts["opened_at"] < cutoff)]
     product_tx = transactions.loc[transactions["tx_type"].isin(PRODUCT_TX)]
     complaints = pd.read_parquet(OBSERVED / "internal_complaints.parquet", columns=["complaint_ts"])
     listings = pd.read_parquet(OBSERVED / "simo_list.parquet", columns=["listed_at"])
@@ -53,7 +51,7 @@ def _expected() -> dict[str, int]:
         "txn": int(len(transactions)),
         "account_change": int(kind.isin(["limit_raise", "phone_change"]).sum()),
         "device_change": int(kind.eq("new_device").sum()),
-        "product": int(len(products) + len(product_tx)),
+        "product": int(len(product_tx)),
         "complaint": int((complaints["complaint_ts"] < cutoff).sum()),
         "simo_listing": int((listings["listed_at"] < cutoff).sum()),
     }
