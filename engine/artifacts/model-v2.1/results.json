@@ -1,655 +1,4943 @@
 {
-  "seed": 42,
-  "column_map": [
-    {
-      "column": "amount",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "amount_to_balance",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "a_w",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "quên. Sổ 24 giờ của v2.0, đưa lại vào basic."
-    },
-    {
-      "column": "new_payee",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "pasted",
-      "v20": true,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "quên. Cờ paste_account, không trùng acct_input. Đưa lại vào standard."
-    },
-    {
-      "column": "add_method",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "quên. Cách lưu người nhận. Đưa lại vào basic."
-    },
-    {
-      "column": "hour",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "seconds_since_login",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "quên. Mốc login của phiên. Đưa lại vào basic."
-    },
-    {
-      "column": "new_payees_24h",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "has_tx_signals",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "payee_name_matches_holder",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "tra cứu tên. Chuyển vào basic."
-    },
-    {
-      "column": "merchant_verified",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "danh sách tổ chức. Chuyển vào basic."
-    },
-    {
-      "column": "simo_listed",
-      "v20": true,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "has_payee_signals",
-      "v20": true,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cờ tra cứu người nhận. Chuyển vào basic."
-    },
-    {
-      "column": "in_call_audio_mode",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "demo không có. SDK chỉ gửi in_call. Sim vẫn có, chỉ bản telco+PAD."
-    },
-    {
-      "column": "accessibility_new",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "PAD. Chỉ bản telco+PAD."
-    },
-    {
-      "column": "remote_access_app",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "PAD. Chỉ bản telco+PAD."
-    },
-    {
-      "column": "screen_sharing",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "PAD. Chỉ bản telco+PAD."
-    },
-    {
-      "column": "overlay",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "PAD. Chỉ bản telco+PAD."
-    },
-    {
-      "column": "new_device",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "demo không có. SDK không gửi tuổi thiết bị. Chỉ bản telco+PAD."
-    },
-    {
-      "column": "has_device_signals",
-      "v20": true,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "quên. Cờ có khối thiết bị. Đưa lại vào standard."
-    },
-    {
-      "column": "on_call",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "recent_call_minutes_ago",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "counterparty_is_new",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "counterparty_number_age_days",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "counterparty_report_count",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "has_telco_signals",
-      "v20": true,
-      "profiles": [
-        "advanced+telco+PAD"
-      ],
-      "note": "giữ từ v2.0"
-    },
-    {
-      "column": "product_savings_7d",
-      "v20": false,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "product_loan_7d",
-      "v20": false,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "product_cash_advance_7d",
-      "v20": false,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "limit_raise_1d",
-      "v20": false,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "phone_change_7d",
-      "v20": false,
-      "profiles": [
-        "basic",
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "in_call",
-      "v20": false,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "đổi tên gần. SDK dùng in_call; v2.0 dùng in_call_audio_mode."
-    },
-    {
-      "column": "call_seconds_since_open",
-      "v20": false,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "call_ended_in_session",
-      "v20": false,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "acct_input",
-      "v20": false,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của SDK, bốn giá trị. Không thay pasted."
-    },
-    {
-      "column": "app_switches",
-      "v20": false,
-      "profiles": [
-        "standard",
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "payee_account_age_days",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "distinct_senders_7d",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "passthrough_24h",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "device_holder_count",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "payee_account_age_days_missing",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "distinct_senders_7d_missing",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "passthrough_24h_missing",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    },
-    {
-      "column": "device_holder_count_missing",
-      "v20": false,
-      "profiles": [
-        "advanced",
-        "advanced+telco+PAD"
-      ],
-      "note": "cột mới của demo"
-    }
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
   ],
+  "demo_profile": "advanced_ctx_payee",
+  "eligible": [
+    "advanced_ctx_payee",
+    "basic",
+    "advanced_ctx",
+    "advanced_payee",
+    "advanced",
+    "standard"
+  ],
+  "summary": {
+    "basic": {
+      "saved": {
+        "mean": 3263432264.0,
+        "sd": 1645943.3252940394
+      },
+      "recall_at_1": {
+        "mean": 0.42211302211302215,
+        "sd": 0.010517864763146915
+      },
+      "legit_mh": {
+        "mean": 0.0012346105791311303,
+        "sd": 4.291048875018583e-05
+      },
+      "medium_loan": {
+        "mean": 0.22337662337662337,
+        "sd": 0.0
+      },
+      "medium_guided": {
+        "mean": 0.12880434782608696,
+        "sd": 0.002430508671195422
+      },
+      "guided_hangup": {
+        "mean": 0.002717391304347826,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8759124087591241,
+        "sd": 0.0
+      },
+      "medium_investment": {
+        "mean": 0.5717171717171718,
+        "sd": 0.014681254397725876
+      },
+      "medium_own_name": {
+        "mean": 0.9545454545454547,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.9215686274509803,
+        "sd": 0.019607843137254888
+      },
+      "ceiling": {
+        "mean": 3546264020.0,
+        "sd": 0.0
+      }
+    },
+    "basic_payee": {
+      "saved": {
+        "mean": 2999080988.0,
+        "sd": 1702260.3872263492
+      },
+      "recall_at_1": {
+        "mean": 0.42211302211302215,
+        "sd": 0.010517864763146915
+      },
+      "legit_mh": {
+        "mean": 0.001042999017249979,
+        "sd": 3.39282129008266e-05
+      },
+      "medium_loan": {
+        "mean": 0.2207792207792208,
+        "sd": 3.1031676915590914e-17
+      },
+      "medium_guided": {
+        "mean": 0.03641304347826087,
+        "sd": 0.0030983027855954848
+      },
+      "guided_hangup": {
+        "mean": 0.0,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8467153284671532,
+        "sd": 0.0
+      },
+      "medium_investment": {
+        "mean": 0.2429292929292929,
+        "sd": 0.0021127778447830193
+      },
+      "medium_own_name": {
+        "mean": 0.909090909090909,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.7254901960784315,
+        "sd": 0.01386483884679504
+      },
+      "ceiling": {
+        "mean": 3531704180.0,
+        "sd": 0.0
+      }
+    },
+    "standard": {
+      "saved": {
+        "mean": 3265783760.0,
+        "sd": 0.0
+      },
+      "recall_at_1": {
+        "mean": 0.4707616707616708,
+        "sd": 0.008027670394449418
+      },
+      "legit_mh": {
+        "mean": 0.0020780965267935187,
+        "sd": 0.00019292819891948788
+      },
+      "medium_loan": {
+        "mean": 0.22337662337662337,
+        "sd": 0.0
+      },
+      "medium_guided": {
+        "mean": 0.5559782608695653,
+        "sd": 0.08392296911335723
+      },
+      "guided_hangup": {
+        "mean": 0.002717391304347826,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8759124087591241,
+        "sd": 0.0
+      },
+      "medium_investment": {
+        "mean": 0.5934343434343434,
+        "sd": 0.0
+      },
+      "medium_own_name": {
+        "mean": 0.9545454545454547,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.9411764705882353,
+        "sd": 0.0
+      },
+      "ceiling": {
+        "mean": 3546264020.0,
+        "sd": 0.0
+      }
+    },
+    "standard_payee": {
+      "saved": {
+        "mean": 2948254532.0,
+        "sd": 105468126.21027607
+      },
+      "recall_at_1": {
+        "mean": 0.4707616707616708,
+        "sd": 0.008027670394449418
+      },
+      "legit_mh": {
+        "mean": 0.0012978226407826445,
+        "sd": 7.827080543488981e-05
+      },
+      "medium_loan": {
+        "mean": 0.2207792207792208,
+        "sd": 3.1031676915590914e-17
+      },
+      "medium_guided": {
+        "mean": 0.15108695652173915,
+        "sd": 0.03787813448196266
+      },
+      "guided_hangup": {
+        "mean": 0.0,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8277372262773722,
+        "sd": 0.025073816112872477
+      },
+      "medium_investment": {
+        "mean": 0.26363636363636367,
+        "sd": 0.06723055067593428
+      },
+      "medium_own_name": {
+        "mean": 0.8818181818181818,
+        "sd": 0.0406557814090871
+      },
+      "medium_relative": {
+        "mean": 0.6470588235294117,
+        "sd": 0.09091782838721281
+      },
+      "ceiling": {
+        "mean": 3531704180.0,
+        "sd": 0.0
+      }
+    },
+    "advanced": {
+      "saved": {
+        "mean": 3265784072.0,
+        "sd": 375.65942021996466
+      },
+      "recall_at_1": {
+        "mean": 0.7029484029484029,
+        "sd": 0.00972768201220108
+      },
+      "legit_mh": {
+        "mean": 0.0022134098462662905,
+        "sd": 0.0007031117545598594
+      },
+      "medium_loan": {
+        "mean": 0.21818181818181817,
+        "sd": 0.006091449038731717
+      },
+      "medium_guided": {
+        "mean": 0.49076086956521736,
+        "sd": 0.1911236176930408
+      },
+      "guided_hangup": {
+        "mean": 0.002717391304347826,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8802919708029198,
+        "sd": 0.003997974872300477
+      },
+      "medium_investment": {
+        "mean": 0.5934343434343434,
+        "sd": 0.0
+      },
+      "medium_own_name": {
+        "mean": 0.9545454545454547,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.9411764705882353,
+        "sd": 0.0
+      },
+      "ceiling": {
+        "mean": 3546264212.0,
+        "sd": 262.9068276024797
+      }
+    },
+    "advanced_payee": {
+      "saved": {
+        "mean": 3249964184.0,
+        "sd": 1144304.3876871224
+      },
+      "recall_at_1": {
+        "mean": 0.7029484029484029,
+        "sd": 0.00972768201220108
+      },
+      "legit_mh": {
+        "mean": 0.0014242467640856722,
+        "sd": 0.00015727989049012318
+      },
+      "medium_loan": {
+        "mean": 0.2155844155844156,
+        "sd": 0.006091449038731717
+      },
+      "medium_guided": {
+        "mean": 0.1869565217391304,
+        "sd": 0.030466307430812963
+      },
+      "guided_hangup": {
+        "mean": 0.0,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8802919708029198,
+        "sd": 0.003997974872300477
+      },
+      "medium_investment": {
+        "mean": 0.5742424242424242,
+        "sd": 0.014351790139780659
+      },
+      "medium_own_name": {
+        "mean": 0.9545454545454547,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.9411764705882353,
+        "sd": 0.0
+      },
+      "ceiling": {
+        "mean": 3531704372.0,
+        "sd": 262.9068276024797
+      }
+    },
+    "advanced_ctx": {
+      "saved": {
+        "mean": 3265783904.0,
+        "sd": 321.99378875996973
+      },
+      "recall_at_1": {
+        "mean": 0.6117936117936118,
+        "sd": 0.030945065645724794
+      },
+      "legit_mh": {
+        "mean": 0.0016267228990631774,
+        "sd": 0.0005251099381491164
+      },
+      "medium_loan": {
+        "mean": 0.22233766233766233,
+        "sd": 0.0014226559935199125
+      },
+      "medium_guided": {
+        "mean": 0.17173913043478262,
+        "sd": 0.055470736422404354
+      },
+      "guided_hangup": {
+        "mean": 0.002717391304347826,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8773722627737225,
+        "sd": 0.003264332813868302
+      },
+      "medium_investment": {
+        "mean": 0.5934343434343434,
+        "sd": 0.0
+      },
+      "medium_own_name": {
+        "mean": 0.9545454545454547,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.9411764705882353,
+        "sd": 0.0
+      },
+      "ceiling": {
+        "mean": 3546264116.0,
+        "sd": 214.66252583997982
+      }
+    },
+    "advanced_ctx_payee": {
+      "saved": {
+        "mean": 3250113680.0,
+        "sd": 275742.7931968486
+      },
+      "recall_at_1": {
+        "mean": 0.6117936117936118,
+        "sd": 0.030945065645724794
+      },
+      "legit_mh": {
+        "mean": 0.0013165887215854373,
+        "sd": 0.00010409458592938588
+      },
+      "medium_loan": {
+        "mean": 0.21974025974025974,
+        "sd": 0.0014226559935199125
+      },
+      "medium_guided": {
+        "mean": 0.1309782608695652,
+        "sd": 0.006196605571190968
+      },
+      "guided_hangup": {
+        "mean": 0.0,
+        "sd": 0.0
+      },
+      "medium_police": {
+        "mean": 0.8773722627737225,
+        "sd": 0.003264332813868302
+      },
+      "medium_investment": {
+        "mean": 0.5757575757575758,
+        "sd": 0.007142492739258043
+      },
+      "medium_own_name": {
+        "mean": 0.9545454545454547,
+        "sd": 1.2412670766236366e-16
+      },
+      "medium_relative": {
+        "mean": 0.9411764705882353,
+        "sd": 0.0
+      },
+      "ceiling": {
+        "mean": 3531704276.0,
+        "sd": 214.66252583997982
+      }
+    }
+  },
   "rows": [
     {
-      "tau_hi": 0.3333333333333333,
-      "saved": 3279809280.0,
-      "saved_low": 2331598933.5,
-      "saved_high": 4501487191.5,
+      "tau_hi": 0.8125,
+      "saved": 3250266440.0,
+      "saved_low": 2308759941.5,
+      "saved_high": 4450263506.0,
       "damage": 12539478000.0,
-      "rate": 0.26155867732293164,
-      "recall_at_1": 0.5,
-      "legit_mh": 0.004271752603793711,
-      "medium_loan": 0.6051948051948052,
+      "rate": 0.2592026908935125,
+      "recall_at_1": 0.6081081081081081,
+      "legit_mh": 0.0012247336944980814,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.125,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4727272727272727,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.4116161616161616,
+          "medium": 0.48737373737373735,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752887740.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9967440.0,
+        "investment": 379449940.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 403629720.0,
+      "banner_money": 184798320.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.2727272727272727,
+        "medium": 0.4926289926289926,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5808080808080808,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx_payee",
+      "model": "advanced_ctx",
+      "seed": 45,
+      "columns": 28,
+      "rounds": 101
+    }
+  ],
+  "runs": [
+    {
+      "tau_hi": 0.8484848484848485,
+      "saved": 3264537320.0,
+      "saved_low": 2323856691.5,
+      "saved_high": 4464271202.0,
+      "damage": 12539478000.0,
+      "rate": 0.26034076697610536,
+      "recall_at_1": 0.40540540540540543,
+      "legit_mh": 0.0012049799252319834,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.12771739130434784,
       "guided_hangup": 0.002717391304347826,
       "scenario_recall": {
-        "police": 0.9708029197080292,
-        "tax_authority": 0.9464285714285714,
-        "bank_staff": 0.9473684210526315,
-        "relative": 0.9019607843137255,
-        "deposit": 0.8181818181818182,
-        "investment": 0.9141414141414141,
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9636363636363636,
+        "investment": 0.9823232323232324,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.03636363636363636,
+          "banner": 0.41818181818181815,
+          "medium": 0.5454545454545454,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.017676767676767676,
+          "banner": 0.40404040404040403,
+          "medium": 0.48484848484848486,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 748958820.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9997920.0,
+        "investment": 379130500.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 378658560.0,
+      "banner_money": 184659200.0,
+      "fraud_levels": {
+        "none": 0.019656019656019656,
+        "banner": 0.26535626535626533,
+        "medium": 0.49017199017199015,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5782828282828283,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "basic",
+      "model": "basic",
+      "seed": 42,
+      "columns": 17,
+      "rounds": 96
+    },
+    {
+      "tau_hi": 0.6923076923076923,
+      "saved": 3262018160.0,
+      "saved_low": 2317914519.5,
+      "saved_high": 4461866846.0,
+      "damage": 12539478000.0,
+      "rate": 0.2601398686611995,
+      "recall_at_1": 0.43366093366093367,
+      "legit_mh": 0.0012296721368146059,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.12771739130434784,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9454545454545454,
+        "investment": 0.9797979797979798,
         "romance": 0.9523809523809523,
         "own_name_safe_account": 1.0
       },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.058823529411764705,
+          "medium": 0.7843137254901961,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.05454545454545454,
+          "banner": 0.41818181818181815,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.020202020202020204,
+          "banner": 0.4116161616161616,
+          "medium": 0.47474747474747475,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.2857142857142857,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
       "money_by_level": {
-        "medium": 793775280.0,
-        "high": 2486034000.0
+        "medium": 746439660.0,
+        "high": 2515578500.0
       },
       "money_by_scenario": {
-        "police": 1744500300.0,
-        "tax_authority": 286799220.0,
-        "bank_staff": 287773700.0,
-        "relative": 78551580.0,
-        "deposit": 13324200.0,
-        "investment": 391832980.0,
-        "romance": 14086920.0,
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83501580.0,
+        "deposit": 9967440.0,
+        "investment": 376708180.0,
+        "romance": 11036040.0,
         "own_name_safe_account": 462940380.0
       },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 376139400.0,
+      "banner_money": 185988720.0,
+      "fraud_levels": {
+        "none": 0.02334152334152334,
+        "banner": 0.269041769041769,
+        "medium": 0.4828009828009828,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5681818181818182,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9215686274509803,
       "profile": "basic",
-      "columns": 17
+      "model": "basic",
+      "seed": 43,
+      "columns": 17,
+      "rounds": 98
     },
     {
-      "tau_hi": 1.0,
-      "saved": 2336924400.0,
-      "saved_low": 1518210240.0,
-      "saved_high": 3374875679.0,
+      "tau_hi": 0.8606060606060606,
+      "saved": 3262397840.0,
+      "saved_low": 2319152685.5,
+      "saved_high": 4462108592.0,
       "damage": 12539478000.0,
-      "rate": 0.1863653654482268,
-      "recall_at_1": 0.300982800982801,
-      "legit_mh": 0.0018469774263801713,
-      "medium_loan": 0.06233766233766234,
+      "rate": 0.2601701474335694,
+      "recall_at_1": 0.4226044226044226,
+      "legit_mh": 0.0012247336944980814,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.12771739130434784,
       "guided_hangup": 0.002717391304347826,
       "scenario_recall": {
-        "police": 0.7372262773722628,
-        "tax_authority": 0.5535714285714286,
-        "bank_staff": 0.618421052631579,
-        "relative": 0.7450980392156863,
-        "deposit": 0.36363636363636365,
-        "investment": 0.7449494949494949,
-        "romance": 0.6190476190476191,
-        "own_name_safe_account": 0.6363636363636364
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9454545454545454,
+        "investment": 0.9848484848484849,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0784313725490196,
+          "medium": 0.7647058823529411,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.05454545454545454,
+          "banner": 0.43636363636363634,
+          "medium": 0.509090909090909,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.015151515151515152,
+          "banner": 0.4292929292929293,
+          "medium": 0.4621212121212121,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
       },
       "money_by_level": {
-        "medium": 282498900.0,
-        "high": 2054425500.0
+        "medium": 746819340.0,
+        "high": 2515578500.0
       },
       "money_by_scenario": {
-        "police": 1349485380.0,
-        "tax_authority": 191436600.0,
-        "bank_staff": 197180100.0,
-        "relative": 62724780.0,
-        "deposit": 4612680.0,
-        "investment": 90407340.0,
-        "romance": 4819800.0,
-        "own_name_safe_account": 436257720.0
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83129700.0,
+        "deposit": 9964080.0,
+        "investment": 377463100.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
       },
-      "profile": "standard",
-      "columns": 24
+      "ceiling": 3546264020.0,
+      "saved_family": 2885875400.0,
+      "saved_tau_hi": 376522440.0,
+      "banner_money": 186368080.0,
+      "fraud_levels": {
+        "none": 0.019656019656019656,
+        "banner": 0.28132678132678135,
+        "medium": 0.4742014742014742,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5555555555555556,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9019607843137255,
+      "profile": "basic",
+      "model": "basic",
+      "seed": 44,
+      "columns": 17,
+      "rounds": 82
     },
     {
-      "tau_hi": 0.23618570814641304,
-      "saved": 3309467140.0,
-      "saved_low": 2343082982.5,
-      "saved_high": 4501274485.0,
+      "tau_hi": 0.8698630136986302,
+      "saved": 3262424240.0,
+      "saved_low": 2319112125.5,
+      "saved_high": 4461621074.0,
       "damage": 12539478000.0,
-      "rate": 0.26392383638298184,
-      "recall_at_1": 0.538083538083538,
-      "legit_mh": 0.004192737526729319,
-      "medium_loan": 0.025974025974025976,
+      "rate": 0.2601722527843663,
+      "recall_at_1": 0.4213759213759214,
+      "legit_mh": 0.0012049799252319834,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.12771739130434784,
       "guided_hangup": 0.002717391304347826,
       "scenario_recall": {
-        "police": 0.9635036496350365,
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9272727272727272,
+        "investment": 0.9823232323232324,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0784313725490196,
+          "medium": 0.7647058823529411,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.07272727272727272,
+          "banner": 0.4,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.017676767676767676,
+          "banner": 0.41919191919191917,
+          "medium": 0.4696969696969697,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 746845740.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83129700.0,
+        "deposit": 9967440.0,
+        "investment": 377486140.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 376545480.0,
+      "banner_money": 186035840.0,
+      "fraud_levels": {
+        "none": 0.022113022113022112,
+        "banner": 0.273955773955774,
+        "medium": 0.47911547911547914,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5631313131313131,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9019607843137255,
+      "profile": "basic",
+      "model": "basic",
+      "seed": 45,
+      "columns": 17,
+      "rounds": 112
+    },
+    {
+      "tau_hi": 0.01470588235294118,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.4275184275184275,
+      "legit_mh": 0.0013086872138789983,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.1331521739130435,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.26044226044226043,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "basic",
+      "model": "basic",
+      "seed": 46,
+      "columns": 17,
+      "rounds": 105
+    },
+    {
+      "tau_hi": 0.9090909090909091,
+      "saved": 3001138820.0,
+      "saved_low": 2032662369.5,
+      "saved_high": 4196552073.5,
+      "damage": 12539478000.0,
+      "rate": 0.23933522751106545,
+      "recall_at_1": 0.40540540540540543,
+      "legit_mh": 0.0010173191172040514,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.035326086956521736,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
         "tax_authority": 0.875,
-        "bank_staff": 0.9473684210526315,
-        "relative": 0.9019607843137255,
-        "deposit": 0.45454545454545453,
-        "investment": 0.7297979797979798,
-        "romance": 0.8571428571428571,
-        "own_name_safe_account": 0.9545454545454546
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9636363636363636,
+        "investment": 0.9823232323232324,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.145985401459854,
+          "medium": 0.27007299270072993,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.05357142857142857,
+          "medium": 0.48214285714285715,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.11842105263157894,
+          "medium": 0.47368421052631576,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.23529411764705882,
+          "medium": 0.6078431372549019,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.03636363636363636,
+          "banner": 0.5636363636363636,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.017676767676767676,
+          "banner": 0.7373737373737373,
+          "medium": 0.15151515151515152,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.42857142857142855,
+          "medium": 0.5714285714285714,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.09090909090909091,
+          "medium": 0.4090909090909091,
+          "high": 0.5
+        }
       },
       "money_by_level": {
-        "medium": 811217640.0,
-        "high": 2498249500.0
+        "medium": 503760120.0,
+        "high": 2497378700.0
       },
       "money_by_scenario": {
-        "police": 1727092520.0,
-        "tax_authority": 282518820.0,
-        "bank_staff": 306685340.0,
-        "relative": 81066300.0,
-        "deposit": 7824720.0,
-        "investment": 428323860.0,
-        "romance": 13427280.0,
+        "police": 1708641980.0,
+        "tax_authority": 283289820.0,
+        "bank_staff": 300914900.0,
+        "relative": 78629940.0,
+        "deposit": 8591040.0,
+        "investment": 148310320.0,
+        "romance": 10232520.0,
         "own_name_safe_account": 462528300.0
       },
-      "profile": "advanced",
-      "columns": 33
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 154502100.0,
+      "banner_money": 349627520.0,
+      "fraud_levels": {
+        "none": 0.025798525798525797,
+        "banner": 0.4643734643734644,
+        "medium": 0.28746928746928746,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8467153284671532,
+      "medium_investment": 0.24494949494949494,
+      "medium_own_name": 0.9090909090909091,
+      "medium_relative": 0.7450980392156863,
+      "profile": "basic_payee",
+      "model": "basic",
+      "seed": 42,
+      "columns": 17,
+      "rounds": 96
     },
     {
-      "tau_hi": 0.12259363498227785,
-      "saved": 3026031040.0,
-      "saved_low": 2115261845.5,
-      "saved_high": 4152980763.0000005,
+      "tau_hi": 0.9431818181818182,
+      "saved": 2998425500.0,
+      "saved_low": 2029460580.5,
+      "saved_high": 4194021300.5,
       "damage": 12539478000.0,
-      "rate": 0.24132033566309538,
-      "recall_at_1": 0.5773955773955773,
-      "legit_mh": 0.004207552853678893,
-      "medium_loan": 0.005194805194805195,
-      "guided_hangup": 0.002717391304347826,
+      "rate": 0.23911884529802596,
+      "recall_at_1": 0.43366093366093367,
+      "legit_mh": 0.0010420113287866741,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.035326086956521736,
+      "guided_hangup": 0.0,
       "scenario_recall": {
-        "police": 0.8321167883211679,
-        "tax_authority": 0.8571428571428571,
-        "bank_staff": 0.8157894736842105,
-        "relative": 0.9019607843137255,
-        "deposit": 0.43636363636363634,
-        "investment": 0.5934343434343434,
-        "romance": 0.6666666666666666,
-        "own_name_safe_account": 0.8181818181818182
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9454545454545454,
+        "investment": 0.9797979797979798,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.145985401459854,
+          "medium": 0.27007299270072993,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.05357142857142857,
+          "medium": 0.48214285714285715,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.11842105263157894,
+          "medium": 0.47368421052631576,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.2549019607843137,
+          "medium": 0.5882352941176471,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.05454545454545454,
+          "banner": 0.5454545454545454,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.020202020202020204,
+          "banner": 0.7373737373737373,
+          "medium": 0.14898989898989898,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.42857142857142855,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.09090909090909091,
+          "medium": 0.4090909090909091,
+          "high": 0.5
+        }
       },
       "money_by_level": {
-        "medium": 761162940.0,
-        "high": 2264868100.0
+        "medium": 501046800.0,
+        "high": 2497378700.0
       },
       "money_by_scenario": {
-        "police": 1645601160.0,
-        "tax_authority": 268394340.0,
-        "bank_staff": 296469620.0,
-        "relative": 83018460.0,
-        "deposit": 7699200.0,
-        "investment": 355623680.0,
-        "romance": 10000080.0,
-        "own_name_safe_account": 359224500.0
+        "police": 1708641980.0,
+        "tax_authority": 283289820.0,
+        "bank_staff": 300914900.0,
+        "relative": 78353580.0,
+        "deposit": 8591040.0,
+        "investment": 147326680.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 462528300.0
       },
-      "profile": "advanced+telco+PAD",
-      "columns": 45
-    }
-  ],
-  "pairs": [
-    {
-      "left": "basic",
-      "right": "standard",
-      "money": 942884880.0,
-      "money_low": 659033348.0,
-      "money_high": 1391647356.5,
-      "recall_at_1": 0.199017199017199,
-      "recall_low": 0.16272627635960044,
-      "recall_high": 0.23890816785553626
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 151788780.0,
+      "banner_money": 351086480.0,
+      "fraud_levels": {
+        "none": 0.029484029484029485,
+        "banner": 0.4643734643734644,
+        "medium": 0.28378378378378377,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8467153284671532,
+      "medium_investment": 0.24242424242424243,
+      "medium_own_name": 0.9090909090909091,
+      "medium_relative": 0.7254901960784313,
+      "profile": "basic_payee",
+      "model": "basic",
+      "seed": 43,
+      "columns": 17,
+      "rounds": 98
     },
     {
-      "left": "basic",
-      "right": "advanced",
-      "money": -29657860.0,
-      "money_low": -134864939.0,
-      "money_high": 71043281.50000003,
-      "recall_at_1": -0.03808353808353804,
-      "recall_low": -0.07519851457913075,
-      "recall_high": 2.941176470588866e-05
+      "tau_hi": 0.9107142857142857,
+      "saved": 2998384340.0,
+      "saved_low": 2030153940.5,
+      "saved_high": 4194722152.5,
+      "damage": 12539478000.0,
+      "rate": 0.23911556286473806,
+      "recall_at_1": 0.4226044226044226,
+      "legit_mh": 0.001032134444153625,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.03260869565217391,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9454545454545454,
+        "investment": 0.9848484848484849,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.145985401459854,
+          "medium": 0.27007299270072993,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.03571428571428571,
+          "medium": 0.5,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.13157894736842105,
+          "medium": 0.4605263157894737,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.27450980392156865,
+          "medium": 0.5686274509803921,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.05454545454545454,
+          "banner": 0.5636363636363636,
+          "medium": 0.38181818181818183,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.015151515151515152,
+          "banner": 0.7424242424242424,
+          "medium": 0.14898989898989898,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.47619047619047616,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.09090909090909091,
+          "medium": 0.4090909090909091,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 501005640.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1708641980.0,
+        "tax_authority": 284024460.0,
+        "bank_staff": 300509420.0,
+        "relative": 77986620.0,
+        "deposit": 8587680.0,
+        "investment": 147326680.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 462528300.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846633360.0,
+      "saved_tau_hi": 151750980.0,
+      "banner_money": 351746400.0,
+      "fraud_levels": {
+        "none": 0.025798525798525797,
+        "banner": 0.4705159705159705,
+        "medium": 0.28132678132678135,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8467153284671532,
+      "medium_investment": 0.24242424242424243,
+      "medium_own_name": 0.9090909090909091,
+      "medium_relative": 0.7058823529411765,
+      "profile": "basic_payee",
+      "model": "basic",
+      "seed": 44,
+      "columns": 17,
+      "rounds": 82
     },
     {
-      "left": "basic",
-      "right": "advanced+telco+PAD",
-      "money": 253778240.0,
-      "money_low": 57604532.0,
-      "money_high": 473007231.00000024,
-      "recall_at_1": -0.07739557739557734,
-      "recall_low": -0.11769081250754561,
-      "recall_high": -0.03543249895759072
+      "tau_hi": 0.8888888888888888,
+      "saved": 3000487700.0,
+      "saved_low": 2031027054.5,
+      "saved_high": 4197405913.5,
+      "damage": 12539478000.0,
+      "rate": 0.23928330190459285,
+      "recall_at_1": 0.4213759213759214,
+      "legit_mh": 0.001022257559520576,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.04076086956521739,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9272727272727272,
+        "investment": 0.9823232323232324,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.145985401459854,
+          "medium": 0.27007299270072993,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.03571428571428571,
+          "medium": 0.5,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.11842105263157894,
+          "medium": 0.47368421052631576,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.2549019607843137,
+          "medium": 0.5882352941176471,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.07272727272727272,
+          "banner": 0.509090909090909,
+          "medium": 0.41818181818181815,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.017676767676767676,
+          "banner": 0.7373737373737373,
+          "medium": 0.15151515151515152,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.47619047619047616,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.09090909090909091,
+          "medium": 0.4090909090909091,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 503109000.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1708641980.0,
+        "tax_authority": 284024460.0,
+        "bank_staff": 300914900.0,
+        "relative": 78353580.0,
+        "deposit": 8934960.0,
+        "investment": 148310320.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 462528300.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 153850980.0,
+      "banner_money": 350029520.0,
+      "fraud_levels": {
+        "none": 0.028255528255528257,
+        "banner": 0.4619164619164619,
+        "medium": 0.28746928746928746,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8467153284671532,
+      "medium_investment": 0.24494949494949494,
+      "medium_own_name": 0.9090909090909091,
+      "medium_relative": 0.7254901960784313,
+      "profile": "basic_payee",
+      "model": "basic",
+      "seed": 45,
+      "columns": 17,
+      "rounds": 112
     },
     {
-      "left": "standard",
-      "right": "advanced",
-      "money": -972542740.0,
-      "money_low": -1396837791.0,
-      "money_high": -666909927.5,
-      "recall_at_1": -0.23710073710073704,
-      "recall_low": -0.2764920608937633,
-      "recall_high": -0.19198645880177884
+      "tau_hi": 0.918918918918919,
+      "saved": 2996968580.0,
+      "saved_low": 2029414020.5,
+      "saved_high": 4191549363.5,
+      "damage": 12539478000.0,
+      "rate": 0.23900265864336617,
+      "recall_at_1": 0.4275184275184275,
+      "legit_mh": 0.0011012726365849685,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.03804347826086957,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.145985401459854,
+          "medium": 0.27007299270072993,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.05357142857142857,
+          "medium": 0.48214285714285715,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.13157894736842105,
+          "medium": 0.4605263157894737,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.2549019607843137,
+          "medium": 0.5882352941176471,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.6,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.75,
+          "medium": 0.14646464646464646,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.47619047619047616,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.09090909090909091,
+          "medium": 0.4090909090909091,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 499589880.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1708641980.0,
+        "tax_authority": 283289820.0,
+        "bank_staff": 300509420.0,
+        "relative": 78353580.0,
+        "deposit": 8591040.0,
+        "investment": 146275240.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 462528300.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 150331860.0,
+      "banner_money": 352739360.0,
+      "fraud_levels": {
+        "none": 0.019656019656019656,
+        "banner": 0.47665847665847666,
+        "medium": 0.28132678132678135,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8467153284671532,
+      "medium_investment": 0.2398989898989899,
+      "medium_own_name": 0.9090909090909091,
+      "medium_relative": 0.7254901960784313,
+      "profile": "basic_payee",
+      "model": "basic",
+      "seed": 46,
+      "columns": 17,
+      "rounds": 105
     },
     {
-      "left": "standard",
-      "right": "advanced+telco+PAD",
-      "money": -689106640.0,
-      "money_low": -1144122414.0,
-      "money_high": -387845234.0,
-      "recall_at_1": -0.27641277641277634,
-      "recall_low": -0.3168351701923658,
-      "recall_high": -0.23563814379236422
+      "tau_hi": 0.23999999999999996,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.4668304668304668,
+      "legit_mh": 0.0017827776762653525,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.41847826086956524,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9873737373737373,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.012626262626262626,
+          "banner": 0.3939393939393939,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.2857142857142857,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 183886320.0,
+      "fraud_levels": {
+        "none": 0.01597051597051597,
+        "banner": 0.25675675675675674,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "standard",
+      "model": "standard",
+      "seed": 42,
+      "columns": 27,
+      "rounds": 164
     },
     {
-      "left": "advanced",
-      "right": "advanced+telco+PAD",
-      "money": 283436100.0,
-      "money_low": 105470284.0,
-      "money_high": 509091211.00000006,
-      "recall_at_1": -0.039312039312039304,
-      "recall_low": -0.0936867991589908,
-      "recall_high": 0.00848182705869588
+      "tau_hi": 0.04545454545454545,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.4742014742014742,
+      "legit_mh": 0.002138345523055118,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.5869565217391305,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9818181818181818,
+        "investment": 0.9848484848484849,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.01818181818181818,
+          "banner": 0.36363636363636365,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.015151515151515152,
+          "banner": 0.39141414141414144,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.2857142857142857,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 183862080.0,
+      "fraud_levels": {
+        "none": 0.018427518427518427,
+        "banner": 0.2542997542997543,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "standard",
+      "model": "standard",
+      "seed": 43,
+      "columns": 27,
+      "rounds": 153
+    },
+    {
+      "tau_hi": 0.14814814814814817,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.4680589680589681,
+      "legit_mh": 0.002158099292321216,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.592391304347826,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.2857142857142857,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184158480.0,
+      "fraud_levels": {
+        "none": 0.013513513513513514,
+        "banner": 0.2592137592137592,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "standard",
+      "model": "standard",
+      "seed": 44,
+      "columns": 27,
+      "rounds": 133
+    },
+    {
+      "tau_hi": 0.06666666666666668,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.4619164619164619,
+      "legit_mh": 0.002014884465142005,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.5434782608695652,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.39646464646464646,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.2857142857142857,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184147760.0,
+      "fraud_levels": {
+        "none": 0.014742014742014743,
+        "banner": 0.257985257985258,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "standard",
+      "model": "standard",
+      "seed": 45,
+      "columns": 27,
+      "rounds": 133
+    },
+    {
+      "tau_hi": 0.1,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.4828009828009828,
+      "legit_mh": 0.0022963756771839025,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.6385869565217391,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9818181818181818,
+        "investment": 0.98989898989899,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.01818181818181818,
+          "banner": 0.36363636363636365,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.39646464646464646,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.2857142857142857,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184135680.0,
+      "fraud_levels": {
+        "none": 0.01597051597051597,
+        "banner": 0.25675675675675674,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "standard",
+      "model": "standard",
+      "seed": 46,
+      "columns": 27,
+      "rounds": 145
+    },
+    {
+      "tau_hi": 0.999999,
+      "saved": 2883707180.0,
+      "saved_low": 1928641505.0,
+      "saved_high": 4054685070.5,
+      "damage": 12539478000.0,
+      "rate": 0.22997027308473286,
+      "recall_at_1": 0.4668304668304668,
+      "legit_mh": 0.0011852261559658853,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.11141304347826086,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9818181818181818,
+        "investment": 0.9848484848484849,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.1897810218978102,
+          "medium": 0.22627737226277372,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.16071428571428573,
+          "medium": 0.375,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.15789473684210525,
+          "medium": 0.4342105263157895,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.4117647058823529,
+          "medium": 0.43137254901960786,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.01818181818181818,
+          "banner": 0.5818181818181818,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.015151515151515152,
+          "banner": 0.7525252525252525,
+          "medium": 0.1388888888888889,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.42857142857142855,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.13636363636363635,
+          "medium": 0.36363636363636365,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 386328480.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1682360060.0,
+        "tax_authority": 255484500.0,
+        "bank_staff": 277618700.0,
+        "relative": 69954420.0,
+        "deposit": 8591040.0,
+        "investment": 133477480.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 447441780.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 37070460.0,
+      "banner_money": 424608960.0,
+      "fraud_levels": {
+        "none": 0.02457002457002457,
+        "banner": 0.5036855036855037,
+        "medium": 0.2493857493857494,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8029197080291971,
+      "medium_investment": 0.23232323232323232,
+      "medium_own_name": 0.8636363636363636,
+      "medium_relative": 0.5686274509803921,
+      "profile": "standard_payee",
+      "model": "standard",
+      "seed": 42,
+      "columns": 27,
+      "rounds": 164
+    },
+    {
+      "tau_hi": 0.999999,
+      "saved": 2884160660.0,
+      "saved_low": 1929947637.0,
+      "saved_high": 4054771147.5,
+      "damage": 12539478000.0,
+      "rate": 0.2300064372695578,
+      "recall_at_1": 0.4742014742014742,
+      "legit_mh": 0.0012691796753468022,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.13043478260869565,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9636363636363636,
+        "investment": 0.9823232323232324,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.1897810218978102,
+          "medium": 0.22627737226277372,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.16071428571428573,
+          "medium": 0.375,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.15789473684210525,
+          "medium": 0.4342105263157895,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.37254901960784315,
+          "medium": 0.47058823529411764,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.03636363636363636,
+          "banner": 0.5636363636363636,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.017676767676767676,
+          "banner": 0.75,
+          "medium": 0.1388888888888889,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.42857142857142855,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.13636363636363635,
+          "medium": 0.36363636363636365,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 386781960.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1680836420.0,
+        "tax_authority": 255484500.0,
+        "bank_staff": 277618700.0,
+        "relative": 71931540.0,
+        "deposit": 8591040.0,
+        "investment": 133477480.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 447441780.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 37523940.0,
+      "banner_money": 424282400.0,
+      "fraud_levels": {
+        "none": 0.02702702702702703,
+        "banner": 0.4987714987714988,
+        "medium": 0.25184275184275184,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8029197080291971,
+      "medium_investment": 0.23232323232323232,
+      "medium_own_name": 0.8636363636363636,
+      "medium_relative": 0.6078431372549019,
+      "profile": "standard_payee",
+      "model": "standard",
+      "seed": 43,
+      "columns": 27,
+      "rounds": 153
+    },
+    {
+      "tau_hi": 0.9166666666666666,
+      "saved": 2912545940.0,
+      "saved_low": 1955629887.0,
+      "saved_high": 4080819494.0,
+      "damage": 12539478000.0,
+      "rate": 0.23227011044638382,
+      "recall_at_1": 0.4680589680589681,
+      "legit_mh": 0.0013086872138789983,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.14673913043478262,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.16058394160583941,
+          "medium": 0.25547445255474455,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.16071428571428573,
+          "medium": 0.375,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.11842105263157894,
+          "medium": 0.47368421052631576,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.35294117647058826,
+          "medium": 0.49019607843137253,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.6,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.7575757575757576,
+          "medium": 0.1388888888888889,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.42857142857142855,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.13636363636363635,
+          "medium": 0.36363636363636365,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 415167240.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1686593540.0,
+        "tax_authority": 255484500.0,
+        "bank_staff": 299295860.0,
+        "relative": 72882540.0,
+        "deposit": 8591040.0,
+        "investment": 133477480.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 447441780.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 65909220.0,
+      "banner_money": 405667040.0,
+      "fraud_levels": {
+        "none": 0.020884520884520884,
+        "banner": 0.4950859950859951,
+        "medium": 0.2616707616707617,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8321167883211679,
+      "medium_investment": 0.23232323232323232,
+      "medium_own_name": 0.8636363636363636,
+      "medium_relative": 0.6274509803921569,
+      "profile": "standard_payee",
+      "model": "standard",
+      "seed": 44,
+      "columns": 27,
+      "rounds": 133
+    },
+    {
+      "tau_hi": 0.8839779005524863,
+      "saved": 3133964900.0,
+      "saved_low": 2186334764.0,
+      "saved_high": 4342674935.0,
+      "damage": 12539478000.0,
+      "rate": 0.2499278598359517,
+      "recall_at_1": 0.4619164619164619,
+      "legit_mh": 0.0013975791755764396,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.21195652173913043,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9818181818181818,
+        "investment": 0.9873737373737373,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.13138686131386862,
+          "medium": 0.2846715328467153,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.03571428571428571,
+          "medium": 0.5,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.07894736842105263,
+          "medium": 0.5131578947368421,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.17647058823529413,
+          "medium": 0.6666666666666666,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.01818181818181818,
+          "banner": 0.5636363636363636,
+          "medium": 0.41818181818181815,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.012626262626262626,
+          "banner": 0.6035353535353535,
+          "medium": 0.2904040404040404,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.3333333333333333,
+          "medium": 0.6190476190476191,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 636586200.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1709304260.0,
+        "tax_authority": 284024460.0,
+        "bank_staff": 302800940.0,
+        "relative": 79597140.0,
+        "deposit": 8934960.0,
+        "investment": 275520880.0,
+        "romance": 10841880.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 287328180.0,
+      "banner_money": 261384480.0,
+      "fraud_levels": {
+        "none": 0.02334152334152334,
+        "banner": 0.3845208845208845,
+        "medium": 0.36977886977886976,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8613138686131386,
+      "medium_investment": 0.3838383838383838,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.803921568627451,
+      "profile": "standard_payee",
+      "model": "standard",
+      "seed": 45,
+      "columns": 27,
+      "rounds": 133
+    },
+    {
+      "tau_hi": 0.9,
+      "saved": 2926893980.0,
+      "saved_low": 1959970665.5,
+      "saved_high": 4096694285.0,
+      "damage": 12539478000.0,
+      "rate": 0.2334143398951695,
+      "recall_at_1": 0.4828009828009828,
+      "legit_mh": 0.0013284409831450963,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.15489130434782608,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.875,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 0.9818181818181818,
+        "investment": 0.9873737373737373,
+        "romance": 0.9523809523809523,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.15328467153284672,
+          "medium": 0.26277372262773724,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.125,
+          "banner": 0.14285714285714285,
+          "medium": 0.39285714285714285,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.09210526315789473,
+          "medium": 0.5,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.35294117647058826,
+          "medium": 0.49019607843137253,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.01818181818181818,
+          "banner": 0.5818181818181818,
+          "medium": 0.4,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.012626262626262626,
+          "banner": 0.75,
+          "medium": 0.14393939393939395,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.047619047619047616,
+          "banner": 0.42857142857142855,
+          "medium": 0.5238095238095238,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.13636363636363635,
+          "medium": 0.36363636363636365,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 429515280.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1689152540.0,
+        "tax_authority": 259606980.0,
+        "bank_staff": 299973020.0,
+        "relative": 72882540.0,
+        "deposit": 8591040.0,
+        "investment": 140466880.0,
+        "romance": 8779200.0,
+        "own_name_safe_account": 447441780.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 80257260.0,
+      "banner_money": 396078880.0,
+      "fraud_levels": {
+        "none": 0.02334152334152334,
+        "banner": 0.48525798525798525,
+        "medium": 0.269041769041769,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8394160583941606,
+      "medium_investment": 0.23737373737373738,
+      "medium_own_name": 0.8636363636363636,
+      "medium_relative": 0.6274509803921569,
+      "profile": "standard_payee",
+      "model": "standard",
+      "seed": 46,
+      "columns": 27,
+      "rounds": 145
+    },
+    {
+      "tau_hi": 0.010752688172043012,
+      "saved": 3265783880.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816817.0,
+      "damage": 12539478000.0,
+      "rate": 0.2604401778128244,
+      "recall_at_1": 0.7088452088452089,
+      "legit_mh": 0.002014884465142005,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.5,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.291970802919708,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.39646464646464646,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205380.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613140.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878880.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184151520.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.2592137592137592,
+        "medium": 0.5036855036855037,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced",
+      "model": "advanced",
+      "seed": 42,
+      "columns": 36,
+      "rounds": 165
+    },
+    {
+      "tau_hi": 0.041666666666666664,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.6891891891891891,
+      "legit_mh": 0.0015556093297052244,
+      "medium_loan": 0.2077922077922078,
+      "medium_guided": 0.296195652173913,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.39646464646464646,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184151520.0,
+      "fraud_levels": {
+        "none": 0.013513513513513514,
+        "banner": 0.2592137592137592,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced",
+      "model": "advanced",
+      "seed": 43,
+      "columns": 36,
+      "rounds": 138
+    },
+    {
+      "tau_hi": 0.0058823529411764705,
+      "saved": 3265784480.0,
+      "saved_low": 2326226307.5,
+      "saved_high": 4465816832.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044022566170616,
+      "recall_at_1": 0.7125307125307125,
+      "legit_mh": 0.0030223266977130073,
+      "medium_loan": 0.21818181818181817,
+      "medium_guided": 0.6684782608695652,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9736842105263158,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.291970802919708,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.02631578947368421,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3815789473684211
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205380.0,
+        "high": 2515579100.0
+      },
+      "money_by_scenario": {
+        "police": 1730613140.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303227060.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264500.0,
+      "saved_family": 2885879480.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.009828009828009828,
+        "banner": 0.26044226044226043,
+        "medium": 0.5036855036855037,
+        "high": 0.22604422604422605
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced",
+      "model": "advanced",
+      "seed": 44,
+      "columns": 36,
+      "rounds": 162
+    },
+    {
+      "tau_hi": 0.0625,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.6965601965601965,
+      "legit_mh": 0.0015852399836043716,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.29891304347826086,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.26044226044226043,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced",
+      "model": "advanced",
+      "seed": 45,
+      "columns": 36,
+      "rounds": 165
+    },
+    {
+      "tau_hi": 0.008620689655172414,
+      "saved": 3265784480.0,
+      "saved_low": 2326226307.5,
+      "saved_high": 4465816832.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044022566170616,
+      "recall_at_1": 0.7076167076167076,
+      "legit_mh": 0.002888988755166845,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.6902173913043478,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9736842105263158,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.291970802919708,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.02631578947368421,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3815789473684211
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.39646464646464646,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205380.0,
+        "high": 2515579100.0
+      },
+      "money_by_scenario": {
+        "police": 1730613140.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303227060.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264500.0,
+      "saved_family": 2885879480.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184151520.0,
+      "fraud_levels": {
+        "none": 0.011056511056511056,
+        "banner": 0.2592137592137592,
+        "medium": 0.5036855036855037,
+        "high": 0.22604422604422605
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced",
+      "model": "advanced",
+      "seed": 46,
+      "columns": 36,
+      "rounds": 164
+    },
+    {
+      "tau_hi": 0.8169014084507042,
+      "saved": 3250331120.0,
+      "saved_low": 2308940658.5,
+      "saved_high": 4449944000.0,
+      "damage": 12539478000.0,
+      "rate": 0.2592078490029649,
+      "recall_at_1": 0.7088452088452089,
+      "legit_mh": 0.001333379425461621,
+      "medium_loan": 0.21818181818181817,
+      "medium_guided": 0.16847826086956522,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9873737373737373,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.30656934306569344,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.41818181818181815,
+          "medium": 0.5818181818181818,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.012626262626262626,
+          "banner": 0.4090909090909091,
+          "medium": 0.48484848484848486,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752952420.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053300.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10055160.0,
+        "investment": 379426780.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636840.0,
+      "saved_tau_hi": 403694280.0,
+      "banner_money": 184746720.0,
+      "fraud_levels": {
+        "none": 0.013513513513513514,
+        "banner": 0.2678132678132678,
+        "medium": 0.4963144963144963,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5782828282828283,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_payee",
+      "model": "advanced",
+      "seed": 42,
+      "columns": 36,
+      "rounds": 165
+    },
+    {
+      "tau_hi": 0.8043478260869565,
+      "saved": 3248383760.0,
+      "saved_low": 2306145879.5,
+      "saved_high": 4447447232.0,
+      "damage": 12539478000.0,
+      "rate": 0.2590525506723645,
+      "recall_at_1": 0.6891891891891891,
+      "legit_mh": 0.0012938718869294247,
+      "medium_loan": 0.2051948051948052,
+      "medium_guided": 0.16032608695652173,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9873737373737373,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4909090909090909,
+          "medium": 0.509090909090909,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.012626262626262626,
+          "banner": 0.4292929292929293,
+          "medium": 0.46464646464646464,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 751005060.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9909240.0,
+        "investment": 377625460.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 401747040.0,
+      "banner_money": 186044880.0,
+      "fraud_levels": {
+        "none": 0.014742014742014743,
+        "banner": 0.28255528255528256,
+        "medium": 0.48034398034398035,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5580808080808081,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_payee",
+      "model": "advanced",
+      "seed": 43,
+      "columns": 36,
+      "rounds": 138
+    },
+    {
+      "tau_hi": 0.7222222222222222,
+      "saved": 3250785560.0,
+      "saved_low": 2309482455.5,
+      "saved_high": 4450831121.0,
+      "damage": 12539478000.0,
+      "rate": 0.2592440897460006,
+      "recall_at_1": 0.7125307125307125,
+      "legit_mh": 0.0015753630989713224,
+      "medium_loan": 0.21558441558441557,
+      "medium_guided": 0.20652173913043478,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9736842105263158,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.30656934306569344,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.02631578947368421,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3815789473684211
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.41818181818181815,
+          "medium": 0.5818181818181818,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.4065656565656566,
+          "medium": 0.4898989898989899,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 753406260.0,
+        "high": 2497379300.0
+      },
+      "money_by_scenario": {
+        "police": 1716053300.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303227060.0,
+        "relative": 83567940.0,
+        "deposit": 10055160.0,
+        "investment": 379880620.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704660.0,
+      "saved_family": 2846637440.0,
+      "saved_tau_hi": 404148120.0,
+      "banner_money": 184452640.0,
+      "fraud_levels": {
+        "none": 0.011056511056511056,
+        "banner": 0.2665847665847666,
+        "medium": 0.4987714987714988,
+        "high": 0.22358722358722358
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5833333333333334,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_payee",
+      "model": "advanced",
+      "seed": 44,
+      "columns": 36,
+      "rounds": 162
+    },
+    {
+      "tau_hi": 0.847457627118644,
+      "saved": 3249197480.0,
+      "saved_low": 2307116253.5,
+      "saved_high": 4448543342.0,
+      "damage": 12539478000.0,
+      "rate": 0.25911744332579073,
+      "recall_at_1": 0.6965601965601965,
+      "legit_mh": 0.0013037487715624738,
+      "medium_loan": 0.21818181818181817,
+      "medium_guided": 0.16847826086956522,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4909090909090909,
+          "medium": 0.509090909090909,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.4292929292929293,
+          "medium": 0.4671717171717172,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 751818780.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9909240.0,
+        "investment": 378439180.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 402560760.0,
+      "banner_money": 185510880.0,
+      "fraud_levels": {
+        "none": 0.013513513513513514,
+        "banner": 0.28255528255528256,
+        "medium": 0.48157248157248156,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5606060606060606,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_payee",
+      "model": "advanced",
+      "seed": 45,
+      "columns": 36,
+      "rounds": 165
+    },
+    {
+      "tau_hi": 0.75,
+      "saved": 3251123000.0,
+      "saved_low": 2310084318.5,
+      "saved_high": 4451530688.0,
+      "damage": 12539478000.0,
+      "rate": 0.2592709999570955,
+      "recall_at_1": 0.7076167076167076,
+      "legit_mh": 0.0016148706375035187,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.23097826086956522,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9736842105263158,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.30656934306569344,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.02631578947368421,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3815789473684211
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4,
+          "medium": 0.6,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.398989898989899,
+          "medium": 0.49747474747474746,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 753743700.0,
+        "high": 2497379300.0
+      },
+      "money_by_scenario": {
+        "police": 1716053300.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303227060.0,
+        "relative": 83567940.0,
+        "deposit": 10085640.0,
+        "investment": 380187580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704660.0,
+      "saved_family": 2846637440.0,
+      "saved_tau_hi": 404485560.0,
+      "banner_money": 184219280.0,
+      "fraud_levels": {
+        "none": 0.011056511056511056,
+        "banner": 0.2616707616707617,
+        "medium": 0.5036855036855037,
+        "high": 0.22358722358722358
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5909090909090909,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_payee",
+      "model": "advanced",
+      "seed": 46,
+      "columns": 36,
+      "rounds": 164
+    },
+    {
+      "tau_hi": 0.031249999999999993,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.6117936117936118,
+      "legit_mh": 0.0013481947524111944,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.14130434782608695,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.26044226044226043,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx",
+      "model": "advanced_ctx",
+      "seed": 42,
+      "columns": 28,
+      "rounds": 105
+    },
+    {
+      "tau_hi": 0.05000000000000001,
+      "saved": 3265784480.0,
+      "saved_low": 2326226307.5,
+      "saved_high": 4465816832.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044022566170616,
+      "recall_at_1": 0.6363636363636364,
+      "legit_mh": 0.0013185640985120474,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.14130434782608695,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9736842105263158,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.291970802919708,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.02631578947368421,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3815789473684211
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205380.0,
+        "high": 2515579100.0
+      },
+      "money_by_scenario": {
+        "police": 1730613140.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303227060.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264500.0,
+      "saved_family": 2885879480.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.009828009828009828,
+        "banner": 0.26044226044226043,
+        "medium": 0.5036855036855037,
+        "high": 0.22604422604422605
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx",
+      "model": "advanced_ctx",
+      "seed": 43,
+      "columns": 28,
+      "rounds": 129
+    },
+    {
+      "tau_hi": 0.0024752475247524753,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.5626535626535627,
+      "legit_mh": 0.0025235440237440306,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.266304347826087,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.26044226044226043,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx",
+      "model": "advanced_ctx",
+      "seed": 44,
+      "columns": 28,
+      "rounds": 88
+    },
+    {
+      "tau_hi": 0.030303030303030304,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.6081081081081081,
+      "legit_mh": 0.0012741181176633266,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.1331521739130435,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.26044226044226043,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx",
+      "model": "advanced_ctx",
+      "seed": 45,
+      "columns": 28,
+      "rounds": 101
+    },
+    {
+      "tau_hi": 0.025,
+      "saved": 3265783760.0,
+      "saved_low": 2326225722.5,
+      "saved_high": 4465816700.0,
+      "damage": 12539478000.0,
+      "rate": 0.26044016824304805,
+      "recall_at_1": 0.64004914004914,
+      "legit_mh": 0.0016691935029852884,
+      "medium_loan": 0.22337662337662337,
+      "medium_guided": 0.1766304347826087,
+      "guided_hangup": 0.002717391304347826,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.2846715328467153,
+          "high": 0.5912408759124088
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.38181818181818183,
+          "medium": 0.6181818181818182,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.398989898989899,
+          "medium": 0.5,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 750205260.0,
+        "high": 2515578500.0
+      },
+      "money_by_scenario": {
+        "police": 1730613020.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 10103280.0,
+        "investment": 380271580.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3546264020.0,
+      "saved_family": 2885878760.0,
+      "saved_tau_hi": 379905000.0,
+      "banner_money": 184160000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.26044226044226043,
+        "medium": 0.5024570024570024,
+        "high": 0.22481572481572482
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": NaN,
+      "passthrough_p90": NaN,
+      "payee_gate": false,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5934343434343434,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx",
+      "model": "advanced_ctx",
+      "seed": 46,
+      "columns": 28,
+      "rounds": 121
+    },
+    {
+      "tau_hi": 0.7913043478260868,
+      "saved": 3249667280.0,
+      "saved_low": 2307643995.5,
+      "saved_high": 4449648425.0,
+      "damage": 12539478000.0,
+      "rate": 0.2591549090001992,
+      "recall_at_1": 0.6117936117936118,
+      "legit_mh": 0.001249425906080704,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.125,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4727272727272727,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.42424242424242425,
+          "medium": 0.4722222222222222,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752288580.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9967440.0,
+        "investment": 378850780.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 403030560.0,
+      "banner_money": 185197680.0,
+      "fraud_levels": {
+        "none": 0.013513513513513514,
+        "banner": 0.2788697788697789,
+        "medium": 0.48525798525798525,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5656565656565656,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx_payee",
+      "model": "advanced_ctx",
+      "seed": 42,
+      "columns": 28,
+      "rounds": 105
+    },
+    {
+      "tau_hi": 0.7886178861788617,
+      "saved": 3250267160.0,
+      "saved_low": 2308760526.5,
+      "saved_high": 4450263638.0,
+      "damage": 12539478000.0,
+      "rate": 0.25920274831217055,
+      "recall_at_1": 0.6363636363636364,
+      "legit_mh": 0.001249425906080704,
+      "medium_loan": 0.21818181818181817,
+      "medium_guided": 0.13043478260869565,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 1.0,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9736842105263158,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0,
+          "banner": 0.11678832116788321,
+          "medium": 0.30656934306569344,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.02631578947368421,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3815789473684211
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4727272727272727,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.4116161616161616,
+          "medium": 0.48737373737373735,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752887860.0,
+        "high": 2497379300.0
+      },
+      "money_by_scenario": {
+        "police": 1716053300.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303227060.0,
+        "relative": 83567940.0,
+        "deposit": 9967440.0,
+        "investment": 379449940.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704660.0,
+      "saved_family": 2846637440.0,
+      "saved_tau_hi": 403629720.0,
+      "banner_money": 184798320.0,
+      "fraud_levels": {
+        "none": 0.009828009828009828,
+        "banner": 0.2727272727272727,
+        "medium": 0.49385749385749383,
+        "high": 0.22358722358722358
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8832116788321168,
+      "medium_investment": 0.5808080808080808,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx_payee",
+      "model": "advanced_ctx",
+      "seed": 43,
+      "columns": 28,
+      "rounds": 129
+    },
+    {
+      "tau_hi": 0.7352941176470589,
+      "saved": 3250028600.0,
+      "saved_low": 2308419201.5,
+      "saved_high": 4450057457.0,
+      "damage": 12539478000.0,
+      "rate": 0.2591837235967877,
+      "recall_at_1": 0.5626535626535627,
+      "legit_mh": 0.0014173329448425379,
+      "medium_loan": 0.21818181818181817,
+      "medium_guided": 0.1358695652173913,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.98989898989899,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4909090909090909,
+          "medium": 0.509090909090909,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.010101010101010102,
+          "banner": 0.41919191919191917,
+          "medium": 0.4772727272727273,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752649900.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9909240.0,
+        "investment": 379270300.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 403391880.0,
+      "banner_money": 184956800.0,
+      "fraud_levels": {
+        "none": 0.013513513513513514,
+        "banner": 0.27764127764127766,
+        "medium": 0.4864864864864865,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5707070707070707,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx_payee",
+      "model": "advanced_ctx",
+      "seed": 44,
+      "columns": 28,
+      "rounds": 88
+    },
+    {
+      "tau_hi": 0.8125,
+      "saved": 3250266440.0,
+      "saved_low": 2308759941.5,
+      "saved_high": 4450263506.0,
+      "damage": 12539478000.0,
+      "rate": 0.2592026908935125,
+      "recall_at_1": 0.6081081081081081,
+      "legit_mh": 0.0012247336944980814,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.125,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4727272727272727,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.4116161616161616,
+          "medium": 0.48737373737373735,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752887740.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9967440.0,
+        "investment": 379449940.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 403629720.0,
+      "banner_money": 184798320.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.2727272727272727,
+        "medium": 0.4926289926289926,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5808080808080808,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx_payee",
+      "model": "advanced_ctx",
+      "seed": 45,
+      "columns": 28,
+      "rounds": 101
+    },
+    {
+      "tau_hi": 0.7391304347826086,
+      "saved": 3250338920.0,
+      "saved_low": 2308794699.5,
+      "saved_high": 4450367519.0,
+      "damage": 12539478000.0,
+      "rate": 0.2592084710384276,
+      "recall_at_1": 0.64004914004914,
+      "legit_mh": 0.0014420251564251604,
+      "medium_loan": 0.22077922077922077,
+      "medium_guided": 0.13858695652173914,
+      "guided_hangup": 0.0,
+      "scenario_recall": {
+        "police": 0.9927007299270073,
+        "tax_authority": 0.9642857142857143,
+        "bank_staff": 0.9605263157894737,
+        "relative": 0.9803921568627451,
+        "deposit": 1.0,
+        "investment": 0.9924242424242424,
+        "romance": 1.0,
+        "own_name_safe_account": 1.0
+      },
+      "scenario_levels": {
+        "police": {
+          "none": 0.0072992700729927005,
+          "banner": 0.11678832116788321,
+          "medium": 0.29927007299270075,
+          "high": 0.5766423357664233
+        },
+        "tax_authority": {
+          "none": 0.03571428571428571,
+          "banner": 0.03571428571428571,
+          "medium": 0.5892857142857143,
+          "high": 0.3392857142857143
+        },
+        "bank_staff": {
+          "none": 0.039473684210526314,
+          "banner": 0.06578947368421052,
+          "medium": 0.5263157894736842,
+          "high": 0.3684210526315789
+        },
+        "relative": {
+          "none": 0.0196078431372549,
+          "banner": 0.0392156862745098,
+          "medium": 0.803921568627451,
+          "high": 0.13725490196078433
+        },
+        "deposit": {
+          "none": 0.0,
+          "banner": 0.4727272727272727,
+          "medium": 0.5272727272727272,
+          "high": 0.0
+        },
+        "investment": {
+          "none": 0.007575757575757576,
+          "banner": 0.4116161616161616,
+          "medium": 0.48737373737373735,
+          "high": 0.09343434343434344
+        },
+        "romance": {
+          "none": 0.0,
+          "banner": 0.3333333333333333,
+          "medium": 0.6666666666666666,
+          "high": 0.0
+        },
+        "own_name_safe_account": {
+          "none": 0.0,
+          "banner": 0.045454545454545456,
+          "medium": 0.45454545454545453,
+          "high": 0.5
+        }
+      },
+      "money_by_level": {
+        "medium": 752960220.0,
+        "high": 2497378700.0
+      },
+      "money_by_scenario": {
+        "police": 1716053180.0,
+        "tax_authority": 284025060.0,
+        "bank_staff": 303226460.0,
+        "relative": 83567940.0,
+        "deposit": 9967440.0,
+        "investment": 379522420.0,
+        "romance": 11036040.0,
+        "own_name_safe_account": 462940380.0
+      },
+      "ceiling": 3531704180.0,
+      "saved_family": 2846636720.0,
+      "saved_tau_hi": 403702200.0,
+      "banner_money": 184750000.0,
+      "fraud_levels": {
+        "none": 0.012285012285012284,
+        "banner": 0.2727272727272727,
+        "medium": 0.4926289926289926,
+        "high": 0.22235872235872237
+      },
+      "senders_p99": 10.0,
+      "passthrough_p99": 1.0,
+      "senders_p90": 6.0,
+      "passthrough_p90": 0.9510390587806167,
+      "payee_gate": true,
+      "medium_police": 0.8759124087591241,
+      "medium_investment": 0.5808080808080808,
+      "medium_own_name": 0.9545454545454546,
+      "medium_relative": 0.9411764705882353,
+      "profile": "advanced_ctx_payee",
+      "model": "advanced_ctx",
+      "seed": 46,
+      "columns": 28,
+      "rounds": 121
     }
   ]
 }

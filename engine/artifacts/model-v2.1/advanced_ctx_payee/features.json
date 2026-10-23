@@ -1,5 +1,5 @@
 {
-  "profile": "basic",
+  "profile": "advanced_ctx_payee",
   "columns": [
     "amount",
     "amount_to_balance",
@@ -17,7 +17,18 @@
     "product_loan_7d",
     "product_cash_advance_7d",
     "limit_raise_1d",
-    "phone_change_7d"
+    "phone_change_7d",
+    "pasted",
+    "has_device_signals",
+    "payee_account_age_days",
+    "distinct_senders_7d",
+    "passthrough_24h",
+    "device_holder_count",
+    "payee_account_age_days_missing",
+    "distinct_senders_7d_missing",
+    "passthrough_24h_missing",
+    "device_holder_count_missing",
+    "simo_listed"
   ],
   "categorical": [
     "add_method"

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.model_v21 import ARTIFACTS, PACKAGED, prepare, score_saved
+from eval.model_v21 import ARTIFACTS, prepare, score_saved
 
 
 def _same(actual, expected) -> bool:
@@ -24,8 +24,33 @@ def _same(actual, expected) -> bool:
 def test_packaged_profiles_match_table():
     table = json.loads((ARTIFACTS / "results.json").read_text(encoding="utf-8"))
     frames, bundle = prepare()
-    for name in PACKAGED:
-        actual = score_saved(name, frames, bundle)
-        expected = next(row for row in table["rows"] if row["profile"] == name)
-        for key in ("tau_hi", "saved", "saved_low", "saved_high", "damage", "rate", "recall_at_1", "legit_mh", "medium_loan", "guided_hangup", "scenario_recall", "money_by_level", "money_by_scenario"):
-            assert _same(actual[key], expected[key]), (name, key, actual[key], expected[key])
+    name = table["demo_profile"]
+    actual = score_saved(name, frames, bundle)
+    expected = next(row for row in table["rows"] if row["profile"] == name)
+    for key in (
+        "tau_hi",
+        "saved",
+        "saved_low",
+        "saved_high",
+        "damage",
+        "rate",
+        "recall_at_1",
+        "legit_mh",
+        "medium_loan",
+        "medium_guided",
+        "guided_hangup",
+        "scenario_recall",
+        "money_by_level",
+        "money_by_scenario",
+        "ceiling",
+        "saved_family",
+        "saved_tau_hi",
+        "banner_money",
+        "fraud_levels",
+        "payee_gate",
+        "medium_police",
+        "medium_investment",
+        "medium_own_name",
+        "medium_relative",
+    ):
+        assert _same(actual[key], expected[key]), (name, key, actual[key], expected[key])

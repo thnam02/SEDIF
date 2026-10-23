@@ -1,111 +1,34 @@
 # FIDES model v2.1
 
-Seed 42. Cùng split: train trước ngày 50, nhãn là báo cáo đã tới hạn; test từ 2026-08-30, nhãn `is_fraud`. Hiệu chỉnh isotonic out-of-fold theo vụ, 5 fold, rồi dịch odds. Ngưỡng τ(A) = c_FP(A) / (c_FP(A) + η·A), η = 1. c_FP doanh nghiệp nhỏ ×3. τ_hi là mốc thấp nhất còn giữ Medium+High trên phiên hợp lệ ≤ 0,45%. CI 95% bootstrap theo vụ, 200 lần, seed 42. Hiệu số giữa các profile dùng cùng một lần resample.
+Seed của split là 42. Train trước ngày 50. Test từ 2026-08-30, nhãn `is_fraud`. Artifact demo ở `engine/artifacts/model-v2.1/advanced_ctx_payee/`.
 
-Ba profile được đóng gói ở `engine/artifacts/model-v2.1/<profile>/`: `model.txt`, `policy.json`, `features.json`, `oof.npy`, `SHA256SUMS`. Bản advanced+telco+PAD chỉ có trong bảng, không có thư mục artifact.
+Profile demo là **advanced_ctx_payee**. LightGBM dùng cột ngân hàng và T4c, 28 cột, không có năm cột SDK (`in_call`, `call_seconds_since_open`, `call_ended_in_session`, `acct_input`, `app_switches`). SDK chỉ vào luật họ call và entry. Họ payee chỉ bật khi người nhận mới với người gửi và tài khoản nhận không bình thường theo T4c. Bình thường = `payee_account_age_days` ≥ 365, `distinct_senders_7d` ≤ p90 hợp lệ train (6), `passthrough_24h` ≤ p90 hợp lệ train (0,951). Thiếu một trong ba thì họ vẫn bật.
 
-Đối chiếu với model v2.0 đã đóng gói (27 cột, không T4c, không g3 trong mức): tiền tránh được 25,4% của 12.539.478.000 VND, recall@1% 56,6%. Bản telco+PAD v2.1: 24,13% và 57,74%.
+Chọn trong tám biến thể: tiền ≥ 99% bản tốt nhất, rồi Medium người nhà + vay bạn thấp nhất, rồi recall@1%, rồi sd tiền. Bản tốt nhất về tiền là advanced, 3.265.784.072 VND. `basic_payee` và `standard_payee` rơi khỏi cửa vì investment ≥ Medium tụt còn khoảng 24%. Artifact là seed 45, seed gần trung bình của `advanced_ctx_payee`, không phải seed recall cao nhất.
 
-## Cột
+`tests/test_model_v21.py` chấm lại artifact và khớp bảng đóng gói, sai số 0.
 
-**basic, 17 cột.** Sổ: `amount`, `amount_to_balance`, `a_w`, `new_payee`, `add_method`, `hour`, `seconds_since_login`, `new_payees_24h`, `has_tx_signals`. Tra cứu tên và danh sách tổ chức: `payee_name_matches_holder`, `merchant_verified`, `has_payee_signals`. Sản phẩm 7 ngày: `product_savings_7d`, `product_loan_7d`, `product_cash_advance_7d`. Thay đổi tài khoản: `limit_raise_1d`, `phone_change_7d`.
+## Năm seed, mean ± sd
 
-**standard, 24 cột.** Basic cộng SDK: `in_call`, `call_seconds_since_open`, `call_ended_in_session`, `acct_input` (`typed`, `typed_chunked`, `pasted`, `chosen`), `app_switches`, cộng `pasted` và `has_device_signals`.
+Tiền kèm phần trăm so với trần của chính biến thể đó. Trần là tiền nếu mọi phiên lừa được đưa lên ít nhất Medium.
 
-**advanced, 33 cột.** Standard cộng `payee_account_age_days`, `distinct_senders_7d`, `passthrough_24h`, `device_holder_count`, bốn cờ `*_missing`, và `simo_listed`.
+| biến thể | tiền | % trần | recall@1% | MH | Medium nhà | Medium vay | cúp máy | ≥Med police | investment | own_name | relative |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| basic | 3.263.432.264 ± 1.645.943 | 92,0% | 42,21% ± 1,05 | 0,12% | 12,88% ± 0,24 | 22,34% | 0,27% | 87,6% | 57,2% ± 1,5 | 95,5% | 92,2% ± 2,0 |
+| basic_payee | 2.999.080.988 ± 1.702.260 | 84,9% | 42,21% ± 1,05 | 0,10% | 3,64% ± 0,31 | 22,08% | 0,00% | 84,7% | 24,3% ± 0,2 | 90,9% | 72,5% ± 1,4 |
+| standard | 3.265.783.760 ± 0 | 92,1% | 47,08% ± 0,80 | 0,21% ± 0,02 | 55,60% ± 8,39 | 22,34% | 0,27% | 87,6% | 59,3% | 95,5% | 94,1% |
+| standard_payee | 2.948.254.532 ± 105.468.126 | 83,5% | 47,08% ± 0,80 | 0,13% ± 0,01 | 15,11% ± 3,79 | 22,08% | 0,00% | 82,8% ± 2,5 | 26,4% ± 6,7 | 88,2% ± 4,1 | 64,7% ± 9,1 |
+| advanced | 3.265.784.072 ± 376 | 92,1% | 70,29% ± 0,97 | 0,22% ± 0,07 | 49,08% ± 19,11 | 21,82% ± 0,61 | 0,27% | 88,0% ± 0,4 | 59,3% | 95,5% | 94,1% |
+| advanced_payee | 3.249.964.184 ± 1.144.304 | 92,0% | 70,29% ± 0,97 | 0,14% ± 0,02 | 18,70% ± 3,05 | 21,56% ± 0,61 | 0,00% | 88,0% ± 0,4 | 57,4% ± 1,4 | 95,5% | 94,1% |
+| advanced_ctx | 3.265.783.904 ± 322 | 92,1% | 61,18% ± 3,09 | 0,16% ± 0,05 | 17,17% ± 5,55 | 22,23% ± 0,14 | 0,27% | 87,7% ± 0,3 | 59,3% | 95,5% | 94,1% |
+| advanced_ctx_payee | 3.250.113.680 ± 275.743 | 92,0% | 61,18% ± 3,09 | 0,13% ± 0,01 | 13,10% ± 0,62 | 21,97% ± 0,14 | 0,00% | 87,7% ± 0,3 | 57,6% ± 0,7 | 95,5% | 94,1% |
 
-**advanced+telco+PAD, 45 cột.** Advanced cộng telco (`on_call`, `recent_call_minutes_ago`, `counterparty_is_new`, `counterparty_number_age_days`, `counterparty_report_count`, `has_telco_signals`), PAD (`accessibility_new`, `remote_access_app`, `screen_sharing`, `overlay`), và hai tín hiệu sim không có trên SDK (`in_call_audio_mode`, `new_device`).
+## Artifact seed 45
 
-Họ bất thường g3 không cộng vào mức. Mức vẫn dùng bốn họ quan sát được: cuộc gọi, cách nhập, người nhận, huy động.
-
-### Đối chiếu với 27 cột của booster v2.0
-
-| cột v2.0 | profile v2.1 | ghi chú |
-|---|---|---|
-| amount, amount_to_balance, new_payee, hour, new_payees_24h, has_tx_signals | basic trở đi | giữ |
-| a_w | basic trở đi | quên, đã đưa lại. Công thức sổ 24 giờ vẫn trộn SIMO như v2.0 |
-| add_method | basic trở đi | quên, đã đưa lại |
-| seconds_since_login | basic trở đi | quên, đã đưa lại |
-| payee_name_matches_holder, merchant_verified, has_payee_signals | basic trở đi | tra cứu tên và danh sách tổ chức, không phải PAD |
-| pasted, has_device_signals | standard trở đi | quên, đã đưa lại. `pasted` là cờ `paste_account`, không trùng `acct_input` |
-| simo_listed | advanced trở đi | giữ |
-| on_call, recent_call_minutes_ago, counterparty_is_new, counterparty_number_age_days, counterparty_report_count, has_telco_signals | chỉ telco+PAD | demo không có |
-| accessibility_new, remote_access_app, screen_sharing, overlay | chỉ telco+PAD | PAD |
-| in_call_audio_mode, new_device | chỉ telco+PAD | demo không có. SDK gửi `in_call`, không gửi audio mode hay tuổi thiết bị |
-
-Cột mới, không có trong booster v2.0: ba đếm sản phẩm 7 ngày, `limit_raise_1d`, `phone_change_7d`, năm cột SDK, bốn cột T4c và bốn cờ thiếu.
-
-## Bảng
-
-Mẫu số tiền là 12.539.478.000 VND. Recall scenario là tỷ lệ phiên lừa có mức banner, Medium hoặc High.
-
-| profile | tiền tránh được | % thiệt hại | recall@1% | MH hợp lệ | Medium vay | cúp máy | τ_hi |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| basic | 3.279.809.280 [2.331.598.934–4.501.487.192] | 26,16% | 50,00% | 0,43% | 60,52% | 0,27% | 0,3333 |
-| standard | 2.336.924.400 [1.518.210.240–3.374.875.679] | 18,64% | 30,10% | 0,18% | 6,23% | 0,27% | 1,0000 |
-| advanced | 3.309.467.140 [2.343.082.982–4.501.274.485] | 26,39% | 53,81% | 0,42% | 2,60% | 0,27% | 0,2362 |
-| advanced+telco+PAD | 3.026.031.040 [2.115.261.846–4.152.980.763] | 24,13% | 57,74% | 0,42% | 0,52% | 0,27% | 0,1226 |
-
-τ_hi = 1 của standard nghĩa là không nâng thêm: khối xác suất kế tiếp sẽ đẩy Medium+High hợp lệ quá 0,45%.
-
-Tiền tránh được theo mức, VND. Banner không tính.
-
-| profile | medium | high |
-|---|---:|---:|
-| basic | 793.775.280 | 2.486.034.000 |
-| standard | 282.498.900 | 2.054.425.500 |
-| advanced | 811.217.640 | 2.498.249.500 |
-| advanced+telco+PAD | 761.162.940 | 2.264.868.100 |
-
-Tiền tránh được theo scenario, triệu VND:
-
-| scenario | basic | standard | advanced | telco+PAD |
-|---|---:|---:|---:|---:|
-| police | 1.744,5 | 1.349,5 | 1.727,1 | 1.645,6 |
-| tax_authority | 286,8 | 191,4 | 282,5 | 268,4 |
-| bank_staff | 287,8 | 197,2 | 306,7 | 296,5 |
-| relative | 78,6 | 62,7 | 81,1 | 83,0 |
-| deposit | 13,3 | 4,6 | 7,8 | 7,7 |
-| investment | 391,8 | 90,4 | 428,3 | 355,6 |
-| romance | 14,1 | 4,8 | 13,4 | 10,0 |
-| own_name_safe_account | 462,9 | 436,3 | 462,5 | 359,2 |
-
-Recall theo scenario, test:
-
-| scenario | basic | standard | advanced | telco+PAD |
-|---|---:|---:|---:|---:|
-| police | 97,1% | 73,7% | 96,4% | 83,2% |
-| tax_authority | 94,6% | 55,4% | 87,5% | 85,7% |
-| bank_staff | 94,7% | 61,8% | 94,7% | 81,6% |
-| relative | 90,2% | 74,5% | 90,2% | 90,2% |
-| deposit | 81,8% | 36,4% | 45,5% | 43,6% |
-| investment | 91,4% | 74,5% | 73,0% | 59,3% |
-| romance | 95,2% | 61,9% | 85,7% | 66,7% |
-| own_name_safe_account | 100,0% | 63,6% | 95,5% | 81,8% |
-
-Hiệu số profile trái trừ profile phải. CI 95% paired bootstrap, cùng mẫu, 200 lần, seed 42.
-
-| cặp | tiền (VND) | recall@1% |
-|---|---:|---:|
-| basic − standard | 942.884.880 [659.033.348–1.391.647.356] | +19,90 điểm [16,27–23,89] |
-| basic − advanced | −29.657.860 [−134.864.939–71.043.282] | −3,81 điểm [−7,52–0,00] |
-| basic − telco+PAD | 253.778.240 [57.604.532–473.007.231] | −7,74 điểm [−11,77–−3,54] |
-| standard − advanced | −972.542.740 [−1.396.837.791–−666.909.928] | −23,71 điểm [−27,65–−19,20] |
-| standard − telco+PAD | −689.106.640 [−1.144.122.414–−387.845.234] | −27,64 điểm [−31,68–−23,56] |
-| advanced − telco+PAD | 283.436.100 [105.470.284–509.091.211] | −3,93 điểm [−9,37–0,85] |
-
-`tests/test_model_v21.py` nạp ba artifact đã đóng gói, chấm lại test và khớp các số này, sai số 0.
-
-## Giả định
-
-Trong `fides-sim/config.yaml`, mục `decision`, ghi **GIẢ ĐỊNH**:
-
-- c_FP doanh nghiệp nhỏ ×3. c_FP(A) = hệ số × (50.000 + 0,002·A). η = 1.
-- Medium giữ tiền 30 phút. High giữ 24 giờ.
-- Cúp máy ở high bắt đầu countdown 10 phút. Cuộc gọi mới tính lại countdown. Proceed sau countdown thì nhả. Cancel bất cứ lúc nào. `guardian_confirm` nhả sớm.
-- `short_wait` khi người thân hướng dẫn và khách không có giám hộ: 2 phút.
-- `p_stop` vẫn là bảng phản ứng cũ, nguồn GIẢ ĐỊNH. Banner không tính vào tiền tránh được.
+Tiền 3.250.266.440 VND, 92,0% trần 3.531.704.180. Recall@1% 60,81%. MH hợp lệ 0,12%. Medium người nhà 12,50%. Medium vay bạn 22,08%. Cúp máy người nhà 0%. ≥ Medium: police 87,6%, investment 58,1%, own_name 95,5%, relative 94,1%. τ_hi = 0,8125. 101 vòng.
 
 ## Giới hạn
 
-deposit, romance và own_name trên test vẫn ít phiên. Khoảng tin cậy của tiền rộng hơn 1 tỷ VND. Standard có recall@1% 30,1% và τ_hi = 1. Bản telco+PAD không được đưa vào demo. `a_w` trên basic vẫn dùng công thức v2.0, nhánh SIMO nằm trong cùng một số.
+Vay bạn Medium ~22%. 86/385 phiên vay bạn có đúng hai họ, toàn bộ là entry+payee (50) hoặc call+payee (36). 81 phiên còn Medium vì thiếu passthrough, 4 vì tuổi dưới 365 và thiếu passthrough, 1 bị tắt vì đủ bình thường. Luật ≥2 họ đặt các phiên còn lại ở Medium trước khi τ_hi chạy.
+
+Bản sửa “ngân hàng khác chỉ cần tuổi và senders” không đạt cửa. Năm seed: tiền 2.930.056.516 ± 6.990.602 (90,8% trần, 89,7% bản tốt nhất), recall@1% 61,18% ± 3,09, Medium vay bạn 6,03% ± 1,64. ≥Medium so với advanced_ctx_payee: police +0,0 điểm, investment −10,1 điểm, own_name +0,0 điểm, relative −1,2 điểm. Giữ artifact seed 45.
