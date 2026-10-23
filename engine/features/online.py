@@ -56,18 +56,23 @@ def _split(member: str, count: int) -> list[str]:
 
 
 class OnlineStore:
-    def __init__(self, url: str | None = None):
+    def __init__(self, url: str | None = None, flush: bool = True):
         target = url or os.environ.get("REDIS_URL", "redis://localhost:6379/15")
         if target.rstrip("/").endswith("/0"):
             raise RuntimeError("không xoá Redis db 0")
         self.redis = redis.Redis.from_url(target, decode_responses=True)
         self.redis.ping()
-        self.redis.flushdb()
+        if flush:
+            self.redis.flushdb()
         self.pipe = self.redis.pipeline(transaction=False)
         self.seq = 0
         self.first: dict[tuple[str, str], tuple[int, int, int]] = {}
+        self.cust_first: set[tuple[str, str]] = set()
+        self.main: dict[str, tuple[int, int, str]] = {}
         self.signaled: set[str] = set()
         self.session_account: dict[str, str] = {}
+        self.customer_of: dict[str, str] = {}
+        self.limit_of: dict[str, int] = {}
         self.get_times: list[float] = []
 
     def flush(self) -> None:
@@ -84,6 +89,8 @@ class OnlineStore:
         kind = event["type"]
         if kind == "account":
             self._account(event)
+        elif kind == "session":
+            self._session(event)
         elif kind == "device_link":
             self._link(event)
         elif kind == "simo_listing":
@@ -115,8 +122,35 @@ class OnlineStore:
                 "merchant": int(event["merchant"]),
                 "b01": int(event["b01"]),
                 "customer": event["customer"],
+                "segment": event.get("segment", "thường"),
+                "guardian": int(event.get("has_guardian", 0)),
+                "limit": int(event.get("limit", 0)),
             },
         )
+        self.customer_of[event["account"]] = event["customer"]
+        self.limit_of[event["account"]] = int(event.get("limit", 0))
+
+    def _session(self, event: dict) -> None:
+        self.session_account[event["session"]] = event["account"]
+        self.pipe.hset(
+            f"f:sess:{event['session']}",
+            mapping={
+                "start": int(event["start"]),
+                "end": int(event["end"]),
+                "account": event["account"],
+                "customer": event.get("customer", ""),
+            },
+        )
+        self.pipe.zadd(f"f:by:{event['account']}", {event["session"]: int(event["end"]) + 1})
+        if event.get("first_input"):
+            self.pipe.set(f"f:infirst:{event['session']}", event["first_input"])
+
+    def session_at(self, sender: str, ts: int) -> str | None:
+        self.flush()
+        found = self.redis.zrangebyscore(f"f:by:{sender}", int(ts), int(ts))
+        if not found:
+            return None
+        return str(found[-1])
 
     def _link(self, event: dict) -> None:
         seq = self._next()
@@ -133,9 +167,10 @@ class OnlineStore:
         session = event["session"] or "-"
         member = f"{event['ts']}|{seq}|{payee}|{event['amount']}|{event['balance']}|{int(event['xfer'])}|{session}|{event['tx_type']}"
         self.pipe.zadd(f"f:out:{event['account']}", {member: event["ts"]})
+        known = bool(event.get("known_payee", event["payee"] is not None))
         if event["xfer"]:
             self.pipe.zadd(f"f:xf:{event['account']}", {f"{event['ts']}|{seq}|{event['amount']}": event["ts"]})
-        if event["payee"]:
+        if event["payee"] and known:
             self.pipe.zadd(
                 f"f:in:{event['payee']}",
                 {f"{event['ts']}|{seq}|{event['account']}|{event['amount']}": event["ts"]},
@@ -146,8 +181,20 @@ class OnlineStore:
                 self.pipe.hset(f"f:fst:{event['account']}", event["payee"], f"{seq}|{event['ts']}|{int(event['xfer'])}")
                 if event["xfer"]:
                     self.pipe.zadd(f"f:fresh:{event['account']}", {event["payee"]: event["ts"]})
+        if event["payee"]:
+            customer = self.customer_of.get(event["account"], "")
+            pair = (customer, event["payee"])
+            if customer and pair not in self.cust_first:
+                self.cust_first.add(pair)
+                stamp = int(event["ts"])
+                self.pipe.hset(f"f:fstc:{customer}", event["payee"], stamp)
+        if event["xfer"] and event["payee"]:
+            limit = self.limit_of.get(event["account"], 0)
+            if event["session"] and limit > 0 and int(event["amount"]) >= 0.85 * limit:
+                self.pipe.incr(f"f:large:{event['session']}")
+            self._main(event)
         owner = self.session_account.get(event["session"])
-        if event["xfer"] and event["payee"] and owner == event["account"]:
+        if event["xfer"] and event["payee"] and known and owner == event["account"]:
             self.pipe.hset(
                 f"f:dec:{event['session']}",
                 mapping={
@@ -167,6 +214,18 @@ class OnlineStore:
                     "session": event["session"],
                 }
             )
+
+    def _main(self, event: dict) -> None:
+        session = event["session"]
+        if not session:
+            return
+        amount = int(event["amount"])
+        stamp = int(event["ts"])
+        current = self.main.get(session)
+        if current is not None and (amount < current[0] or (amount == current[0] and stamp < current[1])):
+            return
+        self.main[session] = (amount, stamp, event["payee"])
+        self.pipe.hset(f"f:main:{session}", mapping={"amount": amount, "ts": stamp, "payee": event["payee"]})
 
     def _product(self, event: dict) -> None:
         kind = event["product_type"]
@@ -192,7 +251,8 @@ class OnlineStore:
         elif name == "paste_account":
             self.pipe.set(f"f:paste:{session}", "1")
         elif name.startswith("acct_input_"):
-            self.pipe.set(f"f:input:{session}", name.removeprefix("acct_input_"))
+            value = name.removeprefix("acct_input_")
+            self.pipe.set(f"f:input:{session}", value)
 
     def _signal(self, event: dict) -> None:
         session = event["session"]
@@ -262,6 +322,7 @@ class OnlineStore:
         row["call_ended_in_session"] = _tri(signal.get("ended")) if signal else None
         row["acct_input"] = acct_input if acct_input in ACCT_INPUT else None
         row["mobilized"] = 1 if mobilized else 0
+        row.update(self._families(sender, session_id, sender_meta, signal, mobilized))
         if decision is None:
             _t4c_missing(row)
             return row
@@ -280,6 +341,55 @@ class OnlineStore:
         row["add_method"] = method if method is not None else None
         self._payee_fields(row, sender, decision["payee"], as_of, sender_meta)
         return row
+
+    def _families(self, sender: str, session_id: str, sender_meta: dict, signal: dict, mobilized) -> dict:
+        pipe = self.redis.pipeline(transaction=False)
+        pipe.hgetall(f"f:sess:{session_id}")
+        pipe.get(f"f:infirst:{session_id}")
+        pipe.get(f"f:large:{session_id}")
+        pipe.hgetall(f"f:main:{session_id}")
+        bounds, first_input, large, main = pipe.execute()
+        call = bool(signal) and (signal.get("in_call") == "1" or signal.get("ended") == "1")
+        entry = first_input == "pasted"
+        start = int(bounds.get("start") or 0) if bounds else 0
+        end = int(bounds.get("end") or 0) if bounds else 0
+        account = (bounds or {}).get("account") or sender
+        raised = 0
+        if start and end:
+            raised = int(self.redis.zcount(f"f:chg:limit_raise:{account}", start - 30 * 60 * 1_000_000, end))
+        payee_on = False
+        if main and main.get("payee") and start:
+            customer = (bounds or {}).get("customer") or (sender_meta or {}).get("customer", "")
+            seen = self.redis.hget(f"f:fstc:{customer}", main["payee"]) if customer else None
+            payee_on = seen is None or int(seen) >= start
+        funding = bool(mobilized) or int(large or 0) >= 2 or raised > 0
+        return {
+            "call_family": int(call),
+            "entry_family": int(entry),
+            "payee_family": int(payee_on),
+            "funding_family": int(funding),
+            "segment": (sender_meta or {}).get("segment", "thường"),
+            "has_guardian": int((sender_meta or {}).get("guardian", "0") or 0),
+        }
+
+    def trim(self, as_of_us: int) -> None:
+        """Bỏ điểm cũ hơn cửa sổ dài nhất, 7 ngày, trên các sorted set trượt."""
+        self.flush()
+        cutoff = as_of_us - 7 * DAY_US
+        prefixes = ("f:out:", "f:in:", "f:xf:", "f:prod:", "f:chg:", "f:fresh:")
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor, match="f:*", count=1000)
+            pipe = self.redis.pipeline(transaction=False)
+            queued = 0
+            for key in keys:
+                if key.startswith(prefixes):
+                    pipe.zremrangebyscore(key, "-inf", cutoff)
+                    queued += 1
+            if queued:
+                pipe.execute()
+            if cursor == 0:
+                break
 
     def _window_amount(self, sender: str, as_of: int) -> int:
         members = self.redis.zrangebyscore(f"f:out:{sender}", f"({as_of - DAY_US}", f"({as_of}")

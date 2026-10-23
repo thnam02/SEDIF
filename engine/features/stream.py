@@ -47,12 +47,13 @@ def _flag(value) -> str:
 class IdCache:
     def __init__(self, observed: Path):
         accounts = pd.read_parquet(observed / "accounts.parquet", columns=["account_id"])
-        transactions = pd.read_parquet(observed / "transactions.parquet", columns=["from_account"])
+        transactions = pd.read_parquet(observed / "transactions.parquet", columns=["from_account", "to_account"])
         self.known = {item for item in _text(accounts["account_id"]) if item}
         self._hash = {item: account_hash(item) for item in self.known}
-        for item in _text(transactions["from_account"]):
-            if item and item not in self._hash:
-                self._hash[item] = account_hash(item)
+        for column in ("from_account", "to_account"):
+            for item in _text(transactions[column]):
+                if item and item not in self._hash:
+                    self._hash[item] = account_hash(item)
 
     def get(self, raw: str) -> str | None:
         if not raw:
@@ -63,17 +64,23 @@ class IdCache:
 def account_events(observed: Path, cache: IdCache):
     frame = pd.read_parquet(
         observed / "accounts.parquet",
-        columns=["account_id", "customer_id", "bank_id", "holder_name_ascii", "opened_at", "merchant_verified"],
+        columns=["account_id", "customer_id", "bank_id", "holder_name_ascii", "opened_at", "merchant_verified", "limit_per_txn"],
     )
+    customers = pd.read_parquet(observed / "customers.parquet", columns=["customer_id", "segment", "has_guardian"])
+    customers["customer_id"] = customers["customer_id"].astype(str)
+    segment = dict(zip(customers["customer_id"], customers["segment"].astype(str)))
+    guardian = dict(zip(customers["customer_id"], customers["has_guardian"].fillna(False).astype(bool)))
     opened = to_us(frame["opened_at"])
     account = _text(frame["account_id"])
     customer = _text(frame["customer_id"])
     holder = _text(frame["holder_name_ascii"])
     bank = _text(frame["bank_id"])
     merchant = frame["merchant_verified"].fillna(False).to_numpy(dtype=bool)
+    limit = frame["limit_per_txn"].fillna(0).to_numpy(dtype=np.int64)
     for index, raw in enumerate(account):
         if not raw:
             continue
+        who = str(customer[index])
         yield {
             "type": "account",
             "account": cache.get(raw),
@@ -81,7 +88,42 @@ def account_events(observed: Path, cache: IdCache):
             "holder": str(holder[index]),
             "merchant": int(bool(merchant[index])),
             "b01": int(bank[index] == "B01"),
+            "customer": who,
+            "segment": segment.get(who, "thường"),
+            "has_guardian": int(bool(guardian.get(who, False))),
+            "limit": int(limit[index]),
+        }
+
+
+def session_bootstrap(observed: Path, cache: IdCache):
+    frame = pd.read_parquet(observed / "sessions.parquet", columns=["session_id", "account_id", "customer_id", "start_ts", "end_ts"])
+    events = pd.read_parquet(observed / "session_events.parquet", columns=["session_id", "event_type"])
+    events["session_id"] = events["session_id"].astype(str)
+    kind = events["event_type"].astype(str)
+    first_input = (
+        events.loc[kind.str.startswith("acct_input_")]
+        .groupby("session_id", sort=False)["event_type"]
+        .first()
+        .astype(str)
+        .str.replace("acct_input_", "", regex=False)
+    )
+    session = _text(frame["session_id"])
+    account = _text(frame["account_id"])
+    customer = _text(frame["customer_id"])
+    start = to_us(frame["start_ts"])
+    end = to_us(frame["end_ts"])
+    for index, raw in enumerate(session):
+        hashed = cache.get(str(account[index]))
+        if not raw or not hashed:
+            continue
+        yield {
+            "type": "session",
+            "session": str(raw),
+            "account": hashed,
+            "start": int(start[index]),
+            "end": int(end[index]),
             "customer": str(customer[index]),
+            "first_input": None if str(raw) not in first_input.index else str(first_input.loc[str(raw)]),
         }
 
 
@@ -177,13 +219,14 @@ def _transactions(observed: Path, cache: IdCache, until_us: int):
         if not sender:
             continue
         raw_dest = str(dest[index])
-        payee = cache.get(raw_dest) if raw_dest in cache.known else None
+        payee = cache.get(raw_dest) if raw_dest else None
         tx_type = str(kind[index])
         yield stamp, 4, index, {
             "type": "txn",
             "ts": stamp,
             "account": sender,
             "payee": payee,
+            "known_payee": raw_dest in cache.known,
             "amount": int(amount[index]),
             "balance": int(balance[index]),
             "session": str(session[index]),

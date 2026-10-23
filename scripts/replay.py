@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from engine.features.online import COLUMNS, FAMILY_COLUMNS, OnlineStore
-from engine.features.stream import IdCache, account_events, timed_events, to_us
+from engine.features.stream import IdCache, account_events, session_bootstrap, timed_events, to_us
 
 OBSERVED = ROOT / "fides-sim" / "out" / "observed"
 SIM_END = "2026-09-29T00:00:00+07:00"
@@ -60,6 +60,8 @@ def run(observed: Path, test_ids: set[str] | None, until: str, redis_url: str | 
     seen = 0
     for event in account_events(observed, cache):
         store.update(event)
+    for event in session_bootstrap(observed, cache):
+        store.update(event)
     store.flush()
     for _stamp, _rank, _index, event in timed_events(observed, cache, until_us):
         while cursor < len(pending) and pending[cursor][0] <= event["ts"]:
@@ -89,6 +91,7 @@ def run(observed: Path, test_ids: set[str] | None, until: str, redis_url: str | 
         "update_s": update_seconds,
         "redis_bytes": store.memory_bytes(),
         "get_p95_s": float(np.percentile(times, 95)) if len(times) else 0.0,
+        "store": store,
     }
     return results, stats
 
