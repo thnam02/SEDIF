@@ -5,7 +5,7 @@ appId: com.fides.saobank
 - repeat:
     times: 7
     commands:
-      - tapOn: "BVC bank"
+      - tapOn: "BVC BANK"
 - tapOn: "Người thân gọi đến"
 - tapOn: "Chuyển tiền"
 - tapOn: "CHU DAU TU NGUYEN HUE"

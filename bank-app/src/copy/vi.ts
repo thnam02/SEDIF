@@ -1,5 +1,5 @@
 export const copy = {
-  logo: "BVC bank",
+  logo: "BVC BANK",
   choose: "Chọn tài khoản demo",
   home: "Trang chủ",
   hello: "Xin chào",
