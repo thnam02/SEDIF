@@ -5,14 +5,13 @@ appId: com.fides.saobank
 - tapOn: "Chuyển tiền"
 - scrollUntilVisible:
     element:
-      id: "new-account-go"
+      id: "paste-account"
     direction: DOWN
 - tapOn:
-    id: "new-account"
-- inputText: "ZVAY000000000001"
-- hideKeyboard
+    id: "paste-account"
 - tapOn:
     id: "new-account-go"
+- tapOn: "5.000.000"
 - tapOn: "Nội dung chuyển khoản"
 - inputText: "vay bạn"
 - hideKeyboard

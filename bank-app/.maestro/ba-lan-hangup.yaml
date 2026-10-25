@@ -45,3 +45,4 @@ appId: com.fides.saobank
     text: "Xác nhận giao dịch"
     index: 1
 - assertVisible: "Hãy cúp máy trước khi tiếp tục"
+- assertVisible: "Có giao dịch rút sổ, giải ngân hoặc ứng tiền mặt."

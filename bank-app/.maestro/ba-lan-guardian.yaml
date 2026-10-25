@@ -1,0 +1,43 @@
+appId: com.fides.saobank
+---
+- launchApp
+- tapOn: "Bà Lan, 68 tuổi"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "SAO BANK"
+- tapOn: "Số lạ gọi đến"
+- tapOn: "Chuyển tiền"
+- scrollUntilVisible:
+    element:
+      id: "new-account-go"
+    direction: DOWN
+- tapOn:
+    id: "new-account"
+- inputText: "ZMED000000000001"
+- hideKeyboard
+- tapOn:
+    id: "new-account-go"
+- tapOn:
+    id: "amount"
+- eraseText: 12
+- inputText: "20000000"
+- hideKeyboard
+- tapOn: "Xác nhận giao dịch"
+- tapOn:
+    text: "Xác nhận giao dịch"
+    index: 1
+- assertVisible: "Tạm dừng để kiểm tra"
+- scrollUntilVisible:
+    element: "Người thân trong gia đình"
+    direction: DOWN
+- tapOn: "Người thân trong gia đình"
+- assertVisible: "Đang chờ người thân xác nhận"
+- launchApp
+- tapOn: "Nguyễn Thu Hà, người giám hộ"
+- extendedWaitUntil:
+    visible: "HUYNH THI MAN"
+    timeout: 10000
+- tapOn: "HUYNH THI MAN"
+- tapOn: "Tôi xác nhận, cho chuyển"
+- assertVisible: "Đã cho chuyển"
