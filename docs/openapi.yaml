@@ -262,7 +262,7 @@ paths:
           description: Cận trên, không tính mốc này.
         - name: level
           in: query
-          schema: {type: string, enum: [none, banner, medium, high]}
+          schema: {type: string, enum: [none, info, banner, medium, high]}
       responses:
         "200":
           description: Các quyết định đã lưu
@@ -409,9 +409,14 @@ paths:
       summary: Tạo lệnh chuyển
       description: >
         App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256
-        rồi gọi POST /decide. none và banner cho đi. Người nhận simo_listed được ít nhất banner.
+        rồi gọi POST /decide. none, info và banner cho đi.
+        Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển
+        cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng:
+        lúc đó chỉ là ghi chú info.
         medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy.
         Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai.
+        /decide hết 300 ms hoặc lỗi thì chuyển bình thường và ghi log engine_unavailable.
+        Từ 50 triệu tới người nhận mới thì vẫn hiện banner. Thiếu device thì engine dùng profile basic.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -938,7 +943,7 @@ components:
           type: string
         text:
           type: string
-          description: Câu hiện cho khách. Không chứa chữ lừa đảo.
+          description: Câu hiện cho khách. simo_listed dùng câu cảnh báo tài khoản đã bị báo cáo.
     DecideResponse:
       type: object
       required:
@@ -959,7 +964,7 @@ components:
           type: string
         level:
           type: string
-          enum: [none, banner, medium, high]
+          enum: [none, info, banner, medium, high]
         actions:
           type: array
           items:
@@ -1028,7 +1033,7 @@ components:
           type: string
         level:
           type: string
-          enum: [none, banner, medium, high]
+          enum: [none, info, banner, medium, high]
         funds_status:
           type: string
           enum: [held, released, cancelled]
@@ -1053,7 +1058,7 @@ components:
           type: string
         level:
           type: string
-          enum: [none, banner, medium, high]
+          enum: [none, info, banner, medium, high]
         funds_status:
           type: string
           enum: [held, released, cancelled]
@@ -1149,7 +1154,7 @@ components:
       properties:
         level:
           type: string
-          enum: [none, banner, medium, high]
+          enum: [none, info, banner, medium, high]
         actions:
           type: array
           items:
@@ -1199,7 +1204,7 @@ components:
           $ref: "#/components/schemas/TransferStatus"
         level:
           type: string
-          enum: [none, banner, medium, high]
+          enum: [none, info, banner, medium, high]
         funds_status:
           type: string
           enum: [held, released, cancelled]
@@ -1283,7 +1288,7 @@ components:
           type: string
         level:
           type: string
-          enum: [none, banner, medium, high]
+          enum: [none, info, banner, medium, high]
         funds_status:
           type: string
           enum: [held, released, cancelled]

@@ -29,6 +29,7 @@ from engine.decide import (
     iso,
     missing_signals,
     parse_ts,
+    profile_missing,
     reasons_for,
     to_us,
 )
@@ -219,6 +220,11 @@ def decide(body: dict) -> tuple[int, dict]:
     row = STORE.get(body["sender_hash"], body["payee_hash"], to_us(decided), str(session_id), pending)
     if pending and row.get("new_payee"):
         row["payee_family"] = 1
+    if profile == "basic":
+        for name in profile_missing(profile):
+            row[name] = None
+        for name in ("payee_account_age_days", "distinct_senders_7d", "passthrough_24h", "device_holder_count"):
+            row[f"{name}_missing"] = 1
     with SCORE_LOCK:
         probability = MODEL.score(row)
     families = gated_families(row)
@@ -239,16 +245,13 @@ def decide(body: dict) -> tuple[int, dict]:
         "group_scores": {name: float(families[name]) for name in ("call", "entry", "payee", "mobilization")},
         "families_hit": names,
         "reasons": reasons,
-        "missing_signals": missing_signals(row, MODEL.columns),
+        "missing_signals": profile_missing(profile) if profile == "basic" else missing_signals(row, MODEL.columns),
         "profile": profile,
         "model_version": MODEL.version,
         "hold_until": iso(hold),
         "countdown_until": None,
         "funds_status": funds,
     }
-    for item in reasons:
-        if "lừa đảo" in item["text"].lower():
-            return 500, {"detail": "lý do không được chứa cụm cấm"}
     stored = {
         "decision_id": body["decision_id"],
         "ts": decided,
@@ -393,6 +396,13 @@ class Handler(BaseHTTPRequestHandler):
                 _bad(self, 404, "không có review")
                 return
             _json(self, 200, result)
+            return
+        if path == "/demo/reset":
+            if not _authorized(self):
+                return
+            if STORE is not None:
+                STORE.forget_runtime()
+            _json(self, 200, {"status": "ok"})
             return
         if path not in {"/events", "/decide", "/respond"}:
             self.send_response(404)

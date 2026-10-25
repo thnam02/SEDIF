@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
-LEVELS = ["none", "banner", "medium", "high"]
+LEVELS = ["none", "info", "banner", "medium", "high"]
 HOLD_MEDIUM = timedelta(minutes=30)
 HOLD_HIGH = timedelta(hours=24)
 COUNTDOWN = timedelta(minutes=10)
@@ -22,7 +22,36 @@ REASONS = (
     ("entry", "acct_pasted", "Số tài khoản được dán vào ô chuyển tiền."),
     ("payee", "new_payee", "Chưa từng chuyển tới người nhận này."),
     ("funding", "mobilization", "Có giao dịch rút sổ, giải ngân hoặc ứng tiền mặt."),
-    ("simo", "simo_listed", "Người nhận có trong danh sách cần chú ý."),
+    (
+        "simo",
+        "simo_listed",
+        "Tài khoản nhận đã bị báo cáo có dấu hiệu liên quan đến lừa đảo. Cơ quan công an và ngân hàng không bao giờ yêu cầu chuyển tiền vào tài khoản 'tạm giữ' hay 'xác minh'. Nếu ai đó đang hướng dẫn bạn chuyển khoản, hãy dừng lại.",
+    ),
+    (
+        "simo_info",
+        "simo_info",
+        "Bạn đã chuyển cho người nhận này từ trước khi tài khoản được đưa vào danh sách cần chú ý.",
+    ),
+)
+
+BASIC_MISSING = (
+    "payee_account_age_days",
+    "distinct_senders_7d",
+    "passthrough_24h",
+    "device_holder_count",
+    "in_call_audio_mode",
+    "accessibility_new",
+    "remote_access_app",
+    "screen_sharing",
+    "overlay",
+    "new_device",
+    "has_device_signals",
+    "on_call",
+    "recent_call_minutes_ago",
+    "counterparty_is_new",
+    "counterparty_number_age_days",
+    "counterparty_report_count",
+    "has_telco_signals",
 )
 
 
@@ -83,6 +112,15 @@ def eligible(row: dict, families: dict[str, int]) -> bool:
     return bool(senders_hit or passed_hit)
 
 
+def simo_repeat(row: dict, families: dict[str, int]) -> bool:
+    """≥3 lần trước khi liệt kê, lần đầu cách lúc liệt kê ≥60 ngày, không họ thao túng."""
+    if int(row.get("simo_listed") or 0) != 1 or sum(families.values()) > 0:
+        return False
+    if int(row.get("payee_transfers_before_listing") or 0) < 3:
+        return False
+    return float(row.get("payee_first_days_before_listing") or 0) >= 60
+
+
 def assign_level(probability: float, amount: float, families: dict[str, int], segment: str, row: dict) -> str:
     scale = 3.0 if segment == "doanh nghiệp nhỏ" else 1.0
     count = sum(families.values())
@@ -97,8 +135,11 @@ def assign_level(probability: float, amount: float, families: dict[str, int], se
         level = "banner"
     if probability >= TAU_HI and eligible(row, families) and count <= 1 and level in {"none", "banner"}:
         level = "medium"
-    if level == "none" and int(row.get("simo_listed") or 0) == 1:
-        return "banner"
+    if int(row.get("simo_listed") or 0) == 1 and count == 0:
+        if simo_repeat(row, families):
+            return "info"
+        if level == "none":
+            return "banner"
     return level
 
 
@@ -115,7 +156,9 @@ def reasons_for(row: dict, families: dict[str, int]) -> list[dict[str, str]]:
         picked.append({"code": "new_payee", "text": REASONS[3][2]})
     if families["mobilization"]:
         picked.append({"code": "mobilization", "text": REASONS[4][2]})
-    if int(row.get("simo_listed") or 0) == 1:
+    if simo_repeat(row, families):
+        picked.append({"code": "simo_info", "text": REASONS[6][2]})
+    elif int(row.get("simo_listed") or 0) == 1:
         simo = {"code": "simo_listed", "text": REASONS[5][2]}
         if len(picked) >= 3:
             picked = picked[:2]
@@ -125,6 +168,12 @@ def reasons_for(row: dict, families: dict[str, int]) -> list[dict[str, str]]:
 
 def missing_signals(row: dict, columns: list[str]) -> list[str]:
     return [name for name in columns if row.get(name) is None and not name.endswith("_missing")]
+
+
+def profile_missing(profile: str) -> list[str]:
+    if profile == "basic":
+        return list(BASIC_MISSING)
+    return []
 
 
 def hold_for(level: str, decided: datetime) -> tuple[str, datetime | None]:

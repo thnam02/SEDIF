@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import urllib.error
@@ -18,7 +19,14 @@ from pydantic import BaseModel
 
 from clock import DemoClock
 from engine.common.hashing import account_hash, require_key
+from engine.decide import REASONS
+from engine.policy import actions_for
 from load import CUT, OBSERVED, PERSONAS, load
+
+log = logging.getLogger("bank")
+DECIDE_TIMEOUT_S = 0.3
+NEW_PAYEE_BANNER = 50_000_000
+RESET_AT = datetime.fromisoformat("2026-09-20T09:00:00+07:00")
 
 CLOCK = DemoClock(speed=float(os.environ.get("DEMO_CLOCK_SPEED", "60")))
 SKIP: set[str] = set()
@@ -38,7 +46,11 @@ def connect():
     return psycopg.connect(database_url(), row_factory=psycopg.rows.dict_row)
 
 
-def engine_post(path: str, body: dict) -> dict:
+class EngineUnavailable(Exception):
+    pass
+
+
+def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
     url = os.environ.get("ENGINE_URL", "http://127.0.0.1:8091").rstrip("/") + path
     request = urllib.request.Request(
         url,
@@ -46,11 +58,15 @@ def engine_post(path: str, body: dict) -> dict:
         headers={"Content-Type": "application/json", "X-API-Key": os.environ.get("FIDES_API_KEY", "")},
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode()
+        if exc.code >= 500:
+            raise EngineUnavailable(detail) from exc
         raise HTTPException(exc.code, detail) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise EngineUnavailable(str(exc)) from exc
 
 
 def _us(stamp: datetime) -> int:
@@ -60,51 +76,90 @@ def _us(stamp: datetime) -> int:
 def touch_session(account: str, device: dict | None, now: datetime) -> str:
     session = f"demo-{account}"
     hashed = account_hash(account)
-    if account not in SESSIONS:
-        mode = (device or {}).get("acct_input") or "typed"
-        with connect() as conn:
-            customer = conn.execute("SELECT customer_id FROM bank.accounts WHERE id = %s", (account,)).fetchone()
-        engine_post(
-            "/events",
-            {
-                "type": "session",
-                "session": session,
-                "account": hashed,
-                "start": _us(now),
-                "end": _us(datetime.fromisoformat("2026-09-29T00:00:00+07:00")),
-                "customer": (customer or {}).get("customer_id") or "",
-                "first_input": mode,
-            },
-        )
-        SESSIONS.add(account)
-    if device:
-        engine_post(
-            "/events",
-            {
-                "type": "device_signal",
-                "ts": _us(now),
-                "session": session,
-                "in_call": "1" if device.get("in_call") else "0",
-                "ended": "1" if device.get("call_ended_in_session") else "0",
-            },
-        )
-        if device.get("acct_input"):
+    try:
+        if account not in SESSIONS:
+            mode = (device or {}).get("acct_input") or "typed"
+            with connect() as conn:
+                customer = conn.execute("SELECT customer_id FROM bank.accounts WHERE id = %s", (account,)).fetchone()
             engine_post(
                 "/events",
-                {"type": "session_event", "ts": _us(now), "session": session, "event_type": f"acct_input_{device['acct_input']}"},
+                {
+                    "type": "session",
+                    "session": session,
+                    "account": hashed,
+                    "start": _us(now),
+                    "end": _us(datetime.fromisoformat("2026-09-29T00:00:00+07:00")),
+                    "customer": (customer or {}).get("customer_id") or "",
+                    "first_input": mode,
+                },
+                timeout=DECIDE_TIMEOUT_S,
             )
+            SESSIONS.add(account)
+        if device:
+            engine_post(
+                "/events",
+                {
+                    "type": "device_signal",
+                    "ts": _us(now),
+                    "session": session,
+                    "in_call": "1" if device.get("in_call") else "0",
+                    "ended": "1" if device.get("call_ended_in_session") else "0",
+                },
+                timeout=DECIDE_TIMEOUT_S,
+            )
+            if device.get("acct_input"):
+                engine_post(
+                    "/events",
+                    {"type": "session_event", "ts": _us(now), "session": session, "event_type": f"acct_input_{device['acct_input']}"},
+                    timeout=DECIDE_TIMEOUT_S,
+                )
+    except EngineUnavailable:
+        log.warning("engine_unavailable")
     return session
 
 
 def post_ledger(event: dict) -> None:
-    engine_post("/events", event)
+    try:
+        engine_post("/events", event)
+    except EngineUnavailable:
+        log.warning("engine_unavailable")
+
+
+def _payee_is_new(conn, sender: str, payee: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM bank.transfers t
+        JOIN bank.accounts sender ON sender.id = t.from_account
+        WHERE sender.customer_id = (SELECT customer_id FROM bank.accounts WHERE id = %s)
+          AND t.to_account = %s
+          AND t.status <> 'cancelled'
+        LIMIT 1
+        """,
+        (sender, payee),
+    ).fetchone()
+    return row is None
+
+
+def _fallback(conn, sender: str, payee: str, amount: int) -> dict:
+    log.warning("engine_unavailable")
+    level = "banner" if amount >= NEW_PAYEE_BANNER and _payee_is_new(conn, sender, payee) else "none"
+    reasons = [{"code": "new_payee", "text": REASONS[3][2]}] if level == "banner" else []
+    return {
+        "level": level,
+        "funds_status": "released",
+        "hold_until": None,
+        "countdown_until": None,
+        "actions": actions_for(level, "thường", False),
+        "reasons": reasons,
+    }
 
 
 def status_of(level: str, funds: str, hung_up: bool) -> str:
     if funds == "cancelled":
         return "cancelled"
     if funds == "released":
-        return "done" if level in {"none", "banner"} else "released"
+        return "done" if level in {"none", "info", "banner"} else "released"
     if level == "high" and not hung_up:
         return "blocked_pending_hangup"
     if level == "medium":
@@ -312,6 +367,39 @@ def resume() -> dict:
     return CLOCK.state()
 
 
+class ClockSeek(BaseModel):
+    ts: str
+
+
+class ClockAdvance(BaseModel):
+    seconds: float
+
+
+@app.post("/clock/seek")
+def seek(body: ClockSeek) -> dict:
+    CLOCK.seek(datetime.fromisoformat(body.ts))
+    return CLOCK.state()
+
+
+@app.post("/clock/advance")
+def advance(body: ClockAdvance) -> dict:
+    CLOCK.advance(body.seconds)
+    return CLOCK.state()
+
+
+@app.post("/demo/reset")
+def demo_reset() -> dict:
+    global SKIP, FEED_CURSOR
+    CLOCK.pause()
+    SESSIONS.clear()
+    SKIP = set()
+    FEED_CURSOR = 0
+    with connect() as conn:
+        load(conn)
+    CLOCK.seek(RESET_AT)
+    return {"status": "ok", **CLOCK.state()}
+
+
 @app.post("/demo/persona")
 def persona(body: PersonaIn) -> dict:
     global SKIP
@@ -405,21 +493,24 @@ def transfer(
         balance = conn.execute("SELECT balance, segment, has_guardian FROM bank.accounts WHERE id = %s", (body.from_account,)).fetchone()
         transfer_id = _next_id("X")
         decision_id = f"dec-{transfer_id}"
-        decided = engine_post(
-            "/decide",
-            {
-                "decision_id": decision_id,
-                "profile": "advanced",
-                "sender_hash": account_hash(body.from_account),
-                "payee_hash": account_hash(body.to_account),
-                "amount": body.amount,
-                "balance": int(balance["balance"]) + body.amount,
-                "ts": now.isoformat(),
-                "session_id": session,
-                "score_request": True,
-                "device": body.device,
-            },
-        )
+        request = {
+            "decision_id": decision_id,
+            "profile": "advanced",
+            "sender_hash": account_hash(body.from_account),
+            "payee_hash": account_hash(body.to_account),
+            "amount": body.amount,
+            "balance": int(balance["balance"]) + body.amount,
+            "ts": now.isoformat(),
+            "session_id": session,
+            "score_request": True,
+        }
+        if body.device is not None:
+            request["device"] = body.device
+        try:
+            decided = engine_post("/decide", request, timeout=DECIDE_TIMEOUT_S)
+        except EngineUnavailable:
+            decided = _fallback(conn, body.from_account, body.to_account, body.amount)
+            decision_id = None
         level = decided["level"]
         funds = decided["funds_status"]
         hung = False

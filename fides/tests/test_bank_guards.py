@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 import sys
 import threading
 import time
@@ -96,8 +97,9 @@ def stack():
             time.sleep(0.4)
     else:
         raise AssertionError("bank-core không lên")
-    yield
-    engine.shutdown()
+    holder = {"engine": engine}
+    yield holder
+    holder["engine"].shutdown()
 
 
 def test_limit_and_balance_are_rejected(stack):
@@ -190,7 +192,7 @@ def test_z_new_call_resets_countdown(stack):
 
 def test_guardian_confirm_releases(stack):
     sender = "A0072556"
-    payee = "ZGUARD1"
+    payee = "Z" + uuid.uuid4().hex[:12]
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         conn.execute("UPDATE bank.accounts SET has_guardian = true WHERE id = %s", (sender,))
         conn.execute(
@@ -208,7 +210,7 @@ def test_guardian_confirm_releases(stack):
     created = _ok(
         "POST",
         f"{BANK}/transfer",
-        {"from_account": sender, "to_account": payee, "amount": 30_000_000, "purpose_text": "nhà"},
+        {"from_account": sender, "to_account": payee, "amount": 30_000_000, "purpose_text": "nhà", "device": {"acct_input": "typed"}},
     )
     assert created["decision"]["level"] == "medium", created
     queued = _ok("GET", f"{BANK}/guardian/requests")
@@ -218,3 +220,61 @@ def test_guardian_confirm_releases(stack):
     assert confirmed["funds_status"] == "released"
     after = int(_ok("GET", f"{BANK}/accounts/{payee}")["balance"])
     assert after == before + 30_000_000
+
+
+def test_basic_profile_without_device(stack):
+    account = "A0078375"
+    _ok("POST", f"{BANK}/limit", {"account_id": account, "limit_per_txn": 1_000_000_000, "limit_per_day": 1_000_000_000})
+    created = _ok("POST", f"{BANK}/transfer", {"from_account": account, "to_account": "A0002119", "amount": 1_000})
+    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=psycopg.rows.dict_row) as conn:
+        row = conn.execute("SELECT profile, payload FROM decisions WHERE decision_id = %s", (f"dec-{created['transfer_id']}",)).fetchone()
+    assert row["profile"] == "basic"
+    assert row["payload"]["profile"] == "basic"
+    sys.path.insert(0, str(ROOT))
+    from features.store import unread_signals
+
+    assert row["payload"]["missing_signals"] == unread_signals("basic", "network")
+
+
+def test_z_engine_down_transfers_then_recovers(stack):
+    account = "A0097589"
+    payee = "ZFALLBACK1"
+    _ok("POST", f"{BANK}/limit", {"account_id": account, "limit_per_txn": 1_000_000_000, "limit_per_day": 1_000_000_000})
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute("UPDATE bank.accounts SET balance = balance + 80000000 WHERE id = %s", (account,))
+        conn.execute(
+            """
+            INSERT INTO bank.accounts
+            (id, customer_id, holder_name, segment, balance, status, has_guardian, account_type, bank_id, limit_per_txn, limit_per_day)
+            VALUES (%s,'CDEMO','Nguoi moi','thường',0,'open',false,'personal','B02',1000000000,1000000000)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (payee,),
+        )
+        conn.commit()
+    stack["engine"].shutdown()
+    stack["engine"].server_close()
+    small = _ok("POST", f"{BANK}/transfer", {"from_account": account, "to_account": "A0002119", "amount": 1_000})
+    assert small["status"] == "done" and small["decision"]["level"] == "none" and small["funds_status"] == "released"
+    warned = _ok("POST", f"{BANK}/transfer", {"from_account": account, "to_account": payee, "amount": 50_000_000})
+    assert warned["decision"]["level"] == "banner" and warned["status"] == "done", warned
+    assert warned["decision"]["reasons"][0]["code"] == "new_payee"
+    restarted = ThreadingHTTPServer(("127.0.0.1", 8094), Handler)
+    threading.Thread(target=restarted.serve_forever, daemon=True).start()
+    stack["engine"] = restarted
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"{ENGINE}/health", timeout=1) as response:
+                if response.status == 200:
+                    break
+        except Exception:
+            time.sleep(0.1)
+    restored = _ok(
+        "POST",
+        f"{BANK}/transfer",
+        {"from_account": account, "to_account": "A0002119", "amount": 1_000, "device": {"acct_input": "typed"}},
+    )
+    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=psycopg.rows.dict_row) as conn:
+        row = conn.execute("SELECT profile FROM decisions WHERE decision_id = %s", (f"dec-{restored['transfer_id']}",)).fetchone()
+    assert row["profile"] == "advanced"

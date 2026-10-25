@@ -32,7 +32,7 @@ from eval.policy_ablation import FLAGS, attach_t4c, load_part, money_parts
 from eval.split import FRAUD_TYPES, SIM, _label_groups, build_split, group_folds
 from features import compute_features
 from features.service import cost_tau, session_families
-from features.store import DAY_NS, FeatureStore, using_store, _ns
+from features.store import DAY_NS, TRANSFER_TYPES, FeatureStore, using_store, _ns
 from train.baseline import recall_at
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -489,6 +489,11 @@ def _context(frames: dict[str, pd.DataFrame]) -> dict:
     population = population.merge(customers, on="customer_id", how="left")
     population["has_guardian"] = population["has_guardian"].fillna(False).astype(bool)
     population["amount"] = pd.to_numeric(population["amount"], errors="coerce")
+    history = _prior_transfers(population[["session_id", "customer_id"]])
+    population = population.merge(history, on="session_id", how="left")
+    population["payee_transfers_before_listing"] = pd.to_numeric(population["payee_transfers_before_listing"], errors="coerce").fillna(0)
+    population["payee_first_days_before_listing"] = pd.to_numeric(population["payee_first_days_before_listing"], errors="coerce").fillna(0)
+    population["payee_false_listed"] = population["payee_false_listed"].fillna(False).astype(bool)
     return {
         "population": population,
         "test_ids": set(frames["test"]["session_id"].astype(str)),
@@ -499,6 +504,74 @@ def _context(frames: dict[str, pd.DataFrame]) -> dict:
         "fp_table": {"doanh nghiệp nhỏ": 3.0},
         "train_ids": set(frames["train"]["session_id"].astype(str)),
     }
+
+
+def _prior_transfers(sessions: pd.DataFrame) -> pd.DataFrame:
+    """Số lần khách đã chuyển tới người nhận trước khi người nhận bị liệt kê."""
+    observed = SIM / "out" / "observed"
+    truth = SIM / "out" / "truth"
+    accounts = pd.read_parquet(observed / "accounts.parquet", columns=["account_id", "customer_id"])
+    accounts["account_id"] = accounts["account_id"].astype(str)
+    accounts["customer_id"] = accounts["customer_id"].astype(str)
+    known = set(accounts["account_id"])
+    owner = dict(zip(accounts["account_id"], accounts["customer_id"]))
+    simo = pd.read_parquet(observed / "simo_list.parquet", columns=["account_id", "listed_at"])
+    simo["account_id"] = simo["account_id"].astype(str)
+    simo["listed_at"] = pd.to_datetime(simo["listed_at"])
+    listed_at = simo.groupby("account_id", sort=False)["listed_at"].min()
+    truth_accounts = pd.read_parquet(truth / "accounts_truth.parquet", columns=["account_id", "simo_listing_correct"])
+    truth_accounts["account_id"] = truth_accounts["account_id"].astype(str)
+    false_ids = set(truth_accounts.loc[~truth_accounts["simo_listing_correct"].astype(bool), "account_id"])
+    tx = pd.read_parquet(observed / "transactions.parquet", columns=["ts", "from_account", "to_account", "tx_type", "session_id"])
+    tx["from_account"] = tx["from_account"].astype(str)
+    tx["to_account"] = tx["to_account"].astype(str)
+    tx["session_id"] = tx["session_id"].astype(str)
+    tx["ts"] = pd.to_datetime(tx["ts"])
+    xfer = tx["tx_type"].astype(str).isin(TRANSFER_TYPES) & tx["to_account"].isin(known)
+    last = tx.loc[xfer].sort_values("ts", kind="mergesort").groupby("session_id", sort=False).tail(1)
+    wanted = sessions.copy()
+    wanted["session_id"] = wanted["session_id"].astype(str)
+    wanted["customer_id"] = wanted["customer_id"].astype(str)
+    last = wanted.merge(last[["session_id", "to_account"]], on="session_id", how="left")
+    hist = tx.loc[xfer, ["from_account", "to_account", "ts"]].copy()
+    hist["customer_id"] = hist["from_account"].map(owner)
+    hist["listed_at"] = hist["to_account"].map(listed_at)
+    hist = hist.loc[hist["customer_id"].notna() & hist["listed_at"].notna() & (hist["ts"] < hist["listed_at"])]
+    grouped = hist.groupby(["customer_id", "to_account"], sort=False)["ts"]
+    counts = grouped.size()
+    first = grouped.min()
+    listed_of = listed_at.to_dict()
+    keys = list(zip(last["customer_id"], last["to_account"]))
+    prior = np.zeros(len(keys), dtype=int)
+    days = np.zeros(len(keys), dtype=float)
+    for index, key in enumerate(keys):
+        if key not in counts.index:
+            continue
+        prior[index] = int(counts[key])
+        listed = listed_of.get(key[1])
+        if listed is None or pd.isna(listed):
+            continue
+        days[index] = (listed - first[key]).total_seconds() / 86400
+    return pd.DataFrame(
+        {
+            "session_id": last["session_id"].to_numpy(),
+            "payee_transfers_before_listing": prior,
+            "payee_first_days_before_listing": days,
+            "payee_false_listed": last["to_account"].isin(false_ids).to_numpy(),
+        }
+    ).drop_duplicates("session_id")
+
+
+def _lowered_fraud(population: pd.DataFrame, on_test: np.ndarray, fraud: np.ndarray, old_level: np.ndarray, new_level: np.ndarray) -> list[dict]:
+    """Phiên lừa bị hạ từ banner/medium/high xuống info."""
+    rank = {"none": 0, "info": 1, "banner": 2, "medium": 3, "high": 4}
+    old_rank = np.array([rank.get(str(item), 0) for item in old_level])
+    lowered = on_test & fraud & (new_level == "info") & (old_rank > rank["info"])
+    rows = population.iloc[np.flatnonzero(lowered)]
+    found = []
+    for _, row in rows.iterrows():
+        found.append({"scenario": str(row["scam_type"]), "amount": int(row["amount"])})
+    return found
 
 
 def _quantile(values: pd.Series, q: float) -> float:
@@ -692,9 +765,18 @@ def _metrics(
         tau_hi = _choose_tau(probability, amount, families, scale, bundle["legit"], eligible, friend_test)
     pop_level = _assign_levels(probability, amount, families, scale, tau_hi, eligible)
     listed = pd.to_numeric(population["simo_listed"], errors="coerce").fillna(0).to_numpy() >= 1
-    banner_added = (pop_level == "none") & listed
+    prior = pd.to_numeric(population["payee_transfers_before_listing"], errors="coerce").fillna(0).to_numpy()
+    first_days = pd.to_numeric(population["payee_first_days_before_listing"], errors="coerce").fillna(0).to_numpy()
+    false_payee = population["payee_false_listed"].fillna(False).to_numpy(dtype=bool)
+    repeat = listed & (families == 0) & (prior >= 3) & (first_days >= 60)
+    old_level = pop_level.copy()
+    old_level[(pop_level == "none") & listed] = "banner"
     pop_level = pop_level.copy()
-    pop_level[banner_added] = "banner"
+    pop_level[repeat] = "info"
+    pop_level[listed & (families == 0) & ~repeat & (pop_level == "none")] = "banner"
+    fraud_pop = population["is_fraud"].to_numpy(dtype=bool)
+    simo_banner = on_test & listed & (families == 0) & (pop_level == "banner")
+    banner_added = simo_banner
     level = pop_level
     scored = population.copy()
     scored["families_n"] = families
@@ -750,7 +832,10 @@ def _metrics(
         "rate": float(rate),
         "recall_at_1": float(recall_at(label, raw)),
         "legit_mh": mh,
-        "banner_added": int(banner_added[on_test].sum()),
+        "banner_added": int(banner_added.sum()),
+        "simo_banner_false_rate": float(false_payee[simo_banner].mean()) if simo_banner.any() else 0.0,
+        "fraud_banner_to_info": int((on_test & fraud_pop & (old_level == "banner") & (pop_level == "info")).sum()),
+        "fraud_lowered": _lowered_fraud(population, on_test, fraud_pop, old_level, pop_level),
         "medium_loan": float(np.mean(level[friend] == "medium")) if friend.any() else float("nan"),
         "medium_guided": float(np.mean(level[guided] == "medium")) if guided.any() else float("nan"),
         "guided_hangup": float(np.mean(answered["action"].to_numpy()[guided] == "hangup_required")) if guided.any() else float("nan"),

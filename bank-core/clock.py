@@ -34,5 +34,18 @@ class DemoClock:
             self.paused = False
         return self.now()
 
+    def seek(self, stamp: datetime) -> datetime:
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=ICT)
+        self._sim = stamp.astimezone(ICT)
+        self._real = time.monotonic()
+        self.paused = True
+        return self._sim
+
+    def advance(self, seconds: float) -> datetime:
+        self._sim = self.now() + timedelta(seconds=seconds)
+        self._real = time.monotonic()
+        return self._sim
+
     def state(self) -> dict:
         return {"ts": self.now().isoformat(timespec="microseconds"), "paused": self.paused, "speed": self.speed}

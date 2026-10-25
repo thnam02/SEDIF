@@ -35,6 +35,8 @@ def raise_level(level: str, answer) -> str:
 def actions_for(level: str, segment: str, has_guardian: bool) -> list[str]:
     if level == "none":
         return ["allow"]
+    if level == "info":
+        return ["info"]
     if level == "banner":
         return ["g1_banner"]
     if level == "medium" and segment == "cao tuổi" and has_guardian:

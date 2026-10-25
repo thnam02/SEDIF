@@ -74,6 +74,7 @@ class OnlineStore:
         self.session_account: dict[str, str] = {}
         self.customer_of: dict[str, str] = {}
         self.limit_of: dict[str, int] = {}
+        self.listed_at: dict[str, int] = {}
         self.get_times: list[float] = []
 
     def flush(self) -> None:
@@ -184,7 +185,22 @@ class OnlineStore:
         self.pipe.zadd(f"f:al:{event['account']}", {str(seq): event["ts"]})
         self.pipe.zadd(f"f:dl:{event['device']}", {str(seq): event["ts"]})
 
+    def _listing_ts(self, payee: str) -> int | None:
+        if payee in self.listed_at:
+            return self.listed_at[payee]
+        if not self.hydrate:
+            return None
+        found = self.redis.zrange(f"f:simo:{payee}", 0, 0, withscores=True)
+        if not found:
+            return None
+        self.listed_at[payee] = int(found[0][1])
+        return self.listed_at[payee]
+
     def _simo(self, event: dict) -> None:
+        stamp = int(event["ts"])
+        previous = self.listed_at.get(event["account"])
+        if previous is None or stamp < previous:
+            self.listed_at[event["account"]] = stamp
         self.pipe.zadd(f"f:simo:{event['account']}", {str(self._next()): event["ts"]})
 
     def _txn(self, event: dict) -> None:
@@ -219,6 +235,12 @@ class OnlineStore:
                     self.cust_first.add(pair)
                     stamp = int(event["ts"])
                     self.pipe.hset(f"f:fstc:{customer}", event["payee"], stamp)
+            if event["xfer"] and known:
+                owner = customer or event["account"]
+                listed = self._listing_ts(event["payee"])
+                if listed is None or int(event["ts"]) < listed:
+                    self.pipe.hincrby(f"f:prelist:{owner}", event["payee"], 1)
+                    self.pipe.hsetnx(f"f:prefirst:{owner}", event["payee"], int(event["ts"]))
         if event["xfer"] and event["payee"]:
             limit = self.limit_of.get(event["account"], 0)
             if event["session"] and limit > 0 and int(event["amount"]) >= 0.85 * limit:
@@ -301,6 +323,41 @@ class OnlineStore:
             f"f:sig:{session}",
             mapping={"present": "1", "in_call": event["in_call"], "ended": event["ended"]},
         )
+
+    def forget_runtime(self) -> None:
+        """Xoá cache trong tiến trình sau khi nạp lại RDB. Không xoá Redis."""
+        try:
+            self.redis.ping()
+        except Exception:
+            self.redis.connection_pool.disconnect()
+            self.redis.ping()
+        self.pipe = self.redis.pipeline(transaction=False)
+        self.seq = int(self.redis.get("f:seq") or 0)
+        self.first.clear()
+        self.cust_first.clear()
+        self.main.clear()
+        self.signaled.clear()
+        self.session_account.clear()
+        self.customer_of.clear()
+        self.limit_of.clear()
+        self.listed_at.clear()
+        for pattern in (
+            "f:sig:demo-*",
+            "f:sess:demo-*",
+            "f:infirst:demo-*",
+            "f:mob:demo-*",
+            "f:input:demo-*",
+            "f:paste:demo-*",
+            "f:login:demo-*",
+            "f:dec:demo-*",
+        ):
+            for key in self.redis.scan_iter(pattern, count=500):
+                self.redis.delete(key)
+        for key in self.redis.scan_iter("f:by:*", count=500):
+            members = self.redis.zrange(key, 0, -1)
+            demo = [item for item in members if str(item).startswith("demo-")]
+            if demo:
+                self.redis.zrem(key, *demo)
 
     def memory_bytes(self) -> int:
         self.flush()
@@ -543,6 +600,21 @@ class OnlineStore:
         meta, listed = pipe.execute()
         row["has_payee_signals"] = 1
         row["simo_listed"] = int(int(listed) > 0)
+        customer = str(sender_meta.get("customer") or "") if sender_meta else ""
+        owner = customer or sender
+        if payee:
+            fetched = client.pipeline(transaction=False)
+            fetched.hget(f"f:prelist:{owner}", payee)
+            fetched.hget(f"f:prefirst:{owner}", payee)
+            prior, first = fetched.execute()
+        else:
+            prior, first = None, None
+        row["payee_transfers_before_listing"] = int(prior or 0)
+        listed_ts = self._listing_ts(payee) if payee else None
+        if first and listed_ts is not None and int(listed_ts) > int(first):
+            row["payee_first_days_before_listing"] = (int(listed_ts) - int(first)) / DAY_US
+        else:
+            row["payee_first_days_before_listing"] = 0.0
         opened = int(meta.get("opened", "0") or 0) if meta else 0
         visible = 0 < opened < as_of
         sender_name = str(sender_meta.get("holder", "")) if sender_meta else ""
