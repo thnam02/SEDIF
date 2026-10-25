@@ -1,11 +1,11 @@
 appId: com.fides.saobank
 ---
 - launchApp
-- tapOn: "Chị Hương, chủ cửa hàng"
+- tapOn: "Hoàng Văn Tâm"
 - repeat:
     times: 7
     commands:
-      - tapOn: "SAO BANK"
+      - tapOn: "BVC BANK"
 - tapOn: "Người thân gọi đến"
 - tapOn: "Chuyển tiền"
 - tapOn: "CHU DAU TU NGUYEN HUE"

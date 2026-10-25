@@ -98,9 +98,12 @@ export function useTransfer() {
 }
 
 export function useRespond() {
+  const accountId = useBank((state) => state.accountId) ?? ""
+  const client = useQueryClient()
   return useMutation({
     mutationFn: (input: { id: string; body: components["schemas"]["TransferRespondRequest"] }) =>
       unwrap(bank.POST("/transfer/{id}/respond", { params: { path: { id: input.id } }, body: input.body })),
+    onSuccess: () => refreshAccount(client, accountId),
   })
 }
 
@@ -108,6 +111,10 @@ export function useConfirmGuardian() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => unwrap(bank.POST("/guardian/requests/{id}/confirm", { params: { path: { id } } })),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["guardian-requests"] }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["guardian-requests"] })
+      const accountId = useBank.getState().accountId
+      if (accountId) refreshAccount(client, accountId)
+    },
   })
 }

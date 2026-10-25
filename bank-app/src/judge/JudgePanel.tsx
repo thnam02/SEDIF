@@ -12,33 +12,32 @@ export function JudgePanel() {
   const taps = useRef(0)
   const [open, setOpen] = useState(false)
   useEffect(() => { FidesSession.start() }, [])
-  if (!DEMO) {
-    return (
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <ShieldCheck size={25} color={colors.deep} />
-        <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
-      </View>
-    )
-  }
   return (
-    <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={copy.logo}
-        testID="sao-logo"
-        onPress={() => {
-          taps.current += 1
-          if (taps.current >= 7) {
-            taps.current = 0
-            setOpen(true)
-          }
-        }}
-        style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-      >
-        <ShieldCheck size={25} color={colors.deep} />
-        <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
-      </Pressable>
-      <CallSimulator open={open} onClose={() => setOpen(false)} />
-    </>
+    <View style={{ gap: 12 }}>
+      {DEMO ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copy.logo}
+          testID="sao-logo"
+          onPress={() => {
+            taps.current += 1
+            if (taps.current >= 7) {
+              taps.current = 0
+              setOpen(true)
+            }
+          }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+        >
+          <ShieldCheck size={25} color={colors.deep} />
+          <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
+        </Pressable>
+      ) : (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <ShieldCheck size={25} color={colors.deep} />
+          <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
+        </View>
+      )}
+      {DEMO ? <CallSimulator open={open} onClose={() => setOpen(false)} /> : null}
+    </View>
   )
 }

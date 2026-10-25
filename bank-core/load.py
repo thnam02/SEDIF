@@ -1,4 +1,4 @@
-"""Nạp tài khoản, số dư tới 20/9, người thụ hưởng và giám hộ của persona cùng tài khoản liên quan."""
+"""Nạp tài khoản, số dư và lịch sử tới 20/9, người thụ hưởng và giám hộ của persona cùng tài khoản liên quan."""
 
 from __future__ import annotations
 
@@ -132,10 +132,11 @@ def load(conn) -> int:
     accounts = pd.read_parquet(OBSERVED / "accounts.parquet")
     accounts["account_id"] = accounts["account_id"].astype(str)
     accounts = accounts.loc[accounts["account_id"].isin(ids)].copy()
-    customers = pd.read_parquet(OBSERVED / "customers.parquet", columns=["customer_id", "segment", "has_guardian"])
+    customers = pd.read_parquet(OBSERVED / "customers.parquet", columns=["customer_id", "full_name", "segment", "has_guardian"])
     customers["customer_id"] = customers["customer_id"].astype(str)
     segment = dict(zip(customers["customer_id"], customers["segment"].astype(str)))
     guardian = dict(zip(customers["customer_id"], customers["has_guardian"].fillna(False).astype(bool)))
+    legal_name = dict(zip(customers["customer_id"], customers["full_name"].astype(str)))
     tx = pd.read_parquet(
         OBSERVED / "transactions.parquet",
         columns=["tx_id", "ts", "from_account", "to_account", "amount", "tx_type", "purpose_text"],
@@ -154,7 +155,7 @@ def load(conn) -> int:
             (
                 record.account_id,
                 who or None,
-                str(record.holder_name_ascii or record.account_id),
+                legal_name.get(who) or str(record.holder_name_ascii or record.account_id),
                 segment.get(who, "thường"),
                 balance,
                 str(record.status) if str(record.status) in {"open", "frozen", "closed"} else "open",
@@ -178,7 +179,7 @@ def load(conn) -> int:
     payees["from_account"] = payees["from_account"].astype(str)
     payees["to_account"] = payees["to_account"].astype(str)
     payees = payees.loc[payees["from_account"].isin(ids) & (pd.to_datetime(payees["added_at"]) < CUT)]
-    names = dict(zip(accounts["account_id"], accounts["holder_name_ascii"].astype(str)))
+    names = {row[0]: row[2] for row in rows}
     paid = history.loc[history["tx_type"].astype(str).isin(["transfer", "rent", "school_fee", "large_oneoff", "own_transfer", "own_transfer_drain", "passthrough_out"])]
     times = paid.groupby(["from_account", "to_account"]).size()
     beneficiaries = []
@@ -203,6 +204,30 @@ def load(conn) -> int:
                 beneficiaries,
             )
     payload = json.loads(PERSONAS.read_text(encoding="utf-8"))
+    persona_ids = {item for person in payload["personas"] for item in person["account_ids"]}
+    visible = history.loc[history["from_account"].isin(persona_ids) | history["to_account"].isin(persona_ids)]
+    entries = []
+    for record in visible.itertuples(index=False):
+        purpose = None if pd.isna(record.purpose_text) else str(record.purpose_text)
+        stamp = pd.Timestamp(record.ts).to_pydatetime()
+        amount = _money(record.amount)
+        kind = str(record.tx_type)
+        tx_id = str(record.tx_id)
+        sender = str(record.from_account)
+        receiver = str(record.to_account) if pd.notna(record.to_account) else ""
+        if sender in persona_ids:
+            entries.append((sender, tx_id, stamp, "out", amount, kind, purpose, "done"))
+        if receiver in persona_ids and receiver != sender:
+            entries.append((receiver, tx_id, stamp, "in", amount, kind, purpose, "done"))
+    if entries:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO bank.entries (account_id, tx_id, ts, direction, amount, tx_type, purpose_text, status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                entries,
+            )
     for person in payload["personas"]:
         guard = person.get("guardian") or {}
         phone = guard.get("guardian_phone_number_id")

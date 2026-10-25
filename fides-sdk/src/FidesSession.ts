@@ -139,7 +139,7 @@ export const FidesSession = {
           frozenSeconds = Math.max(0, Math.floor((Date.now() - simulation.startedAt) / 1000))
         }
       }
-      simulation = { in_call: false, voip_suspected: voipSuspected, startedAt: simulation?.startedAt ?? null }
+      simulation = null
       return
     }
     frozenSeconds = null

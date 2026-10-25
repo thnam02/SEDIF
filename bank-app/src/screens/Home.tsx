@@ -4,7 +4,7 @@ import { useRouter } from "expo-router"
 import { ArrowRight, CreditCard, Eye, EyeOff, HandCoins, PiggyBank, ShieldCheck, UserRound } from "lucide-react-native"
 
 import { copy } from "../copy/vi"
-import { vnd, when } from "../format"
+import { statement, vnd, when } from "../format"
 import { personas } from "../personas"
 import { useHistory, useAccount } from "../api/queries"
 import { useBank } from "../store"
@@ -23,15 +23,14 @@ export function HomeScreen() {
   const [hidden, setHidden] = useState(false)
   const type = useType()
   const person = personas.find((item) => item.role === role)
-  const label = copy.personas[role as keyof typeof copy.personas]
-  const recent = (history.data?.entries ?? []).slice(-3).reverse()
+  const recent = statement(history.data?.entries ?? [], account.data?.balance ?? 0).slice(0, 3)
   return (
     <Screen>
       <JudgePanel />
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View>
           <Text style={{ color: "#64748B", fontSize: type.body }}>{copy.hello},</Text>
-          <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{label?.title.split(",")[0] ?? person?.full_name}</Text>
+          <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{person?.full_name}</Text>
         </View>
         <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
           <UserRound size={19} color={colors.deep} />
@@ -59,7 +58,12 @@ export function HomeScreen() {
           )
         })}
       </View>
-      <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.recent}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.recent}</Text>
+        <Pressable accessibilityRole="button" onPress={() => router.push("/(main)/history")}>
+          <Text style={{ color: colors.deep, fontWeight: "700", fontSize: type.small }}>{copy.seeAll}</Text>
+        </Pressable>
+      </View>
       {recent.map((item) => {
         const stamp = when(item.ts)
         const inbound = item.direction === "in"
@@ -72,6 +76,7 @@ export function HomeScreen() {
             <View>
               <Text style={{ color: inbound ? "#2E7D32" : colors.navy, fontWeight: "700", textAlign: "right" }}>{inbound ? "+" : "−"}{vnd(item.amount)}</Text>
               <Text style={{ color: "#94A3B8", fontSize: type.small, textAlign: "right" }}>{stamp.time} · {stamp.date}</Text>
+              <Text style={{ color: "#64748B", fontSize: type.small, textAlign: "right" }}>{copy.balanceAfter} {vnd(item.balanceAfter)}</Text>
             </View>
           </View>
         )

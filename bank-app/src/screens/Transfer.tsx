@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Pressable, Text, TextInput, View } from "react-native"
 import { useRouter } from "expo-router"
 import { Check, ChevronRight, Search, ShieldCheck } from "lucide-react-native"
@@ -6,7 +6,8 @@ import { FidesIntervention, FidesSession, useAccountInput } from "fides-sdk"
 
 import { useBeneficiaries, useRespond, useTransfer } from "../api/queries"
 import { copy } from "../copy/vi"
-import { vnd } from "../format"
+import { displayHolder } from "../names"
+import { digits, grouped, vnd } from "../format"
 import { DEMO, useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
 
@@ -20,38 +21,61 @@ export function RecipientScreen() {
   const type = useType()
   useEffect(() => { FidesSession.start() }, [])
   const rows = (saved.data?.beneficiaries ?? []).filter((item) => `${item.holder_name} ${item.account_id}`.toLowerCase().includes(query.trim().toLowerCase()))
-  function go(account: string, name: string, picked: boolean) {
-    if (picked) input.choose(account)
+  function go(account: string, name: string) {
+    input.choose(account)
     setPayee(account, name)
     router.push("/(main)/transfer/amount")
   }
   return (
     <Screen>
       <Header title={copy.recipient} />
+      <Button testID="new-account-open" outline label={copy.newRecipient} onPress={() => router.push("/(main)/transfer/new")} />
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: "#F8FAFC", paddingHorizontal: 12, paddingVertical: 12 }}>
         <Search size={17} color="#94A3B8" />
         <TextInput value={query} onChangeText={setQuery} placeholder={copy.search} style={{ flex: 1, color: colors.navy, fontSize: type.body }} />
       </View>
       {rows.length === 0 ? <Text style={{ color: "#64748B" }}>{copy.emptyPayee}</Text> : null}
       {rows.map((item) => (
-        <Pressable key={item.id} accessibilityRole="button" onPress={() => go(item.account_id, item.holder_name, true)} style={{ flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12 }}>
+        <Pressable key={item.id} accessibilityRole="button" onPress={() => go(item.account_id, displayHolder(item.holder_name))} style={{ flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12 }}>
           <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: colors.deep, fontWeight: "700" }}>{item.holder_name.slice(0, 1)}</Text>
+            <Text style={{ color: colors.deep, fontWeight: "700" }}>{displayHolder(item.holder_name).slice(0, 1)}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{item.holder_name}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>Sao Bank · {item.account_id}</Text>
+            <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{displayHolder(item.holder_name)}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>BVC bank · {item.account_id}</Text>
           </View>
           <ChevronRight size={18} color={colors.deep} />
         </Pressable>
       ))}
-      <TextInput testID="new-account" value={input.value} onChangeText={input.onChangeText} placeholder={copy.newRecipient} autoCapitalize="characters" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy }} />
+    </Screen>
+  )
+}
+
+export function NewAccountScreen() {
+  const router = useRouter()
+  const setPayee = useBank((state) => state.setPayee)
+  const input = useAccountInput()
+  const field = useRef<TextInput>(null)
+  const type = useType()
+  function submit() {
+    const account = input.value.trim()
+    if (!account) {
+      field.current?.focus()
+      return
+    }
+    setPayee(account, account)
+    router.push("/(main)/transfer/amount")
+  }
+  return (
+    <Screen>
+      <Header title={copy.newRecipient} />
+      <TextInput ref={field} testID="new-account" value={input.value} onChangeText={input.onChangeText} onSubmitEditing={submit} placeholder={copy.newRecipient} autoCapitalize="characters" autoFocus returnKeyType="go" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy, fontSize: type.body }} />
       {DEMO ? (
         <Pressable testID="paste-account" accessibilityRole="button" onPress={() => input.onChangeText("ZVAY000000000001")} style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}>
           <Text style={{ color: colors.deep, fontWeight: "700" }}>Dán số tài khoản</Text>
         </Pressable>
       ) : null}
-      <Button testID="new-account-go" outline label={copy.newRecipient} onPress={() => input.value && go(input.value, input.value, false)} />
+      <Button testID="new-account-go" label={copy.continueTransfer} onPress={submit} />
     </Screen>
   )
 }
@@ -68,14 +92,14 @@ export function AmountScreen() {
     <Screen>
       <Header title={copy.amount} />
       <Card>
-        <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · Sao Bank</Text>
-        <TextInput testID="amount" value={String(amount)} onChangeText={(value) => setAmount(Number(value.replace(/\D/g, "")) || 0)} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
+        <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · BVC bank</Text>
+        <TextInput testID="amount" value={grouped(amount)} onChangeText={(value) => setAmount(Number(digits(value)) || 0)} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.dong}</Text>
       </Card>
       <View style={{ flexDirection: "row", gap: 8 }}>
         {copy.chips.map((chip) => (
           <Pressable key={chip} onPress={() => setAmount(Number(chip))} style={{ borderRadius: 8, backgroundColor: colors.mint, paddingHorizontal: 8, paddingVertical: 8 }}>
-            <Text style={{ color: colors.deep, fontSize: type.small }}>{Number(chip).toLocaleString("vi-VN")}</Text>
+            <Text style={{ color: colors.deep, fontSize: type.small }}>{grouped(Number(chip))}</Text>
           </Pressable>
         ))}
       </View>
@@ -171,6 +195,11 @@ export function ResultScreen() {
             channel: "Chuyển khoản",
           }}
           onRespond={(body) => {
+            const leaves = !body.hung_up && !body.proceed && !body.cancel && !body.who_guides && !body.guardian_confirm
+            if (leaves) {
+              router.replace("/(main)/(tabs)")
+              return
+            }
             respond.mutate(
               { id: outcome.transferId, body: { who_guides: body.who_guides, guardian_confirm: body.guardian_confirm, hung_up: body.hung_up, proceed: body.proceed, cancel: body.cancel } },
               {
