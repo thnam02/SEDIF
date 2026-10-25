@@ -1,5 +1,5 @@
 export const copy = {
-  logo: "SAO BANK",
+  logo: "BVC bank",
   choose: "Chọn tài khoản demo",
   home: "Trang chủ",
   hello: "Xin chào",
@@ -61,7 +61,7 @@ export const copy = {
     chu_dn_nho: { title: "Hoàng Văn Tâm", hint: "Doanh nghiệp nhỏ · Hải Phòng", mark: "HT" },
     sinh_vien: { title: "Lê Kim Trân", hint: "Hà Nội", mark: "LT" },
   },
-  bankHint: "Tài khoản Sao Bank",
+  bankHint: "Tài khoản BVC bank",
   dong: "đồng",
   payee: "Người nhận",
   moneyLabel: "Số tiền",

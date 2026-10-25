@@ -5,7 +5,7 @@ appId: com.fides.saobank
 - repeat:
     times: 7
     commands:
-      - tapOn: "SAO BANK"
+      - tapOn: "BVC bank"
 - tapOn: "Số lạ gọi đến"
 - tapOn: "Tiết kiệm"
 - tapOn: "Tất toán trước hạn"

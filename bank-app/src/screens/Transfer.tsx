@@ -42,7 +42,7 @@ export function RecipientScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{displayHolder(item.holder_name)}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>Sao Bank · {item.account_id}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.logo} · {item.account_id}</Text>
           </View>
           <ChevronRight size={18} color={colors.deep} />
         </Pressable>
@@ -92,7 +92,7 @@ export function AmountScreen() {
     <Screen>
       <Header title={copy.amount} />
       <Card>
-        <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · Sao Bank</Text>
+        <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · {copy.logo}</Text>
         <TextInput testID="amount" value={grouped(amount)} onChangeText={(value) => setAmount(Number(digits(value)) || 0)} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.dong}</Text>
       </Card>
