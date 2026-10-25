@@ -256,6 +256,9 @@ function Hangup({ decision, onRespond, colors, largeText }: FidesProps & { color
       <Title colors={colors}>{c.hangup.title}</Title>
       <Body colors={colors}>{c.hangup.body}</Body>
       <Transaction decision={decision} colors={colors} />
+      {(decision.reasons ?? []).map((reason) => (
+        <Text key={reason.code} style={{ color: colors.colors.navy, fontSize: colors.type.body }}>{reason.text}</Text>
+      ))}
       <Actions
         colors={colors}
         largeText={largeText}
