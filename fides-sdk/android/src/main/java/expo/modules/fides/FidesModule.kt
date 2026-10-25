@@ -17,6 +17,10 @@ class FidesModule : Module() {
   private var callback: TelephonyCallback? = null
   private var lastInCall: Boolean? = null
   private var startedAtMs: Long? = null
+  private var seenStartedAt: Long? = null
+  private var sawCellular = false
+  private var sawVoip = false
+  private var reportedEnded = false
   private var simulated: Boolean? = null
   private var simulatedVoip: Boolean = false
 
@@ -26,6 +30,14 @@ class FidesModule : Module() {
 
     Function("getCallState") {
       currentState()
+    }
+
+    Function("beginSession") {
+      beginSession()
+    }
+
+    Function("reconcile") {
+      reconcile()
     }
 
     Function("setSimulatedCall") { active: Boolean, voip: Boolean ->
@@ -94,18 +106,80 @@ class FidesModule : Module() {
     }
   }
 
+  private fun noteLive(inCall: Boolean?, voip: Boolean) {
+    if (inCall == true) {
+      sawCellular = true
+      reportedEnded = false
+      if (seenStartedAt == null) {
+        seenStartedAt = System.currentTimeMillis()
+      }
+      if (startedAtMs == null) {
+        startedAtMs = seenStartedAt
+      }
+    }
+    if (voip) {
+      sawVoip = true
+    }
+  }
+
+  private fun beginSession() {
+    reportedEnded = false
+    sawCellular = false
+    sawVoip = false
+    seenStartedAt = null
+    val inCall = telephonyInCall()
+    val voip = voipSuspected()
+    noteLive(inCall, voip)
+    lastInCall = inCall
+  }
+
+  /** Đọc lại TelephonyManager và AudioManager khi app về foreground. Không xin quyền. */
+  private fun reconcile(): Map<String, Any?> {
+    if (simulated != null) {
+      return currentState()
+    }
+    val inCall = telephonyInCall()
+    val voip = voipSuspected()
+    val cellularGone = sawCellular && inCall == false
+    val voipGone = sawVoip && !voip && inCall != true
+    if ((cellularGone || voipGone) && !reportedEnded) {
+      reportedEnded = true
+      val started = seenStartedAt ?: startedAtMs
+      if (inCall != true) {
+        sawCellular = false
+        startedAtMs = null
+        seenStartedAt = null
+        lastInCall = false
+      }
+      if (!voip) {
+        sawVoip = false
+      }
+      val ended: Map<String, Any?> = mapOf(
+        "in_call" to (inCall == true),
+        "call_started_at_ms" to started,
+        "voip_suspected" to voip,
+        "call_direction" to null as Any?,
+        "phase" to "ended",
+      )
+      sendEvent("onCallStateChanged", ended)
+      return ended
+    }
+    noteLive(inCall, voip)
+    lastInCall = inCall
+    return currentState()
+  }
+
   private fun currentState(): Map<String, Any?> {
     val inCall = telephonyInCall()
-    if (inCall == true && startedAtMs == null) {
-      startedAtMs = System.currentTimeMillis()
-    }
+    val voip = voipSuspected()
+    noteLive(inCall, voip)
     if (inCall == false) {
       startedAtMs = null
     }
     return mapOf(
       "in_call" to inCall,
       "call_started_at_ms" to startedAtMs,
-      "voip_suspected" to voipSuspected(),
+      "voip_suspected" to voip,
     )
   }
 
@@ -119,8 +193,15 @@ class FidesModule : Module() {
         val inCall = state == TelephonyManager.CALL_STATE_OFFHOOK || state == TelephonyManager.CALL_STATE_RINGING
         val previous = lastInCall
         lastInCall = inCall
+        if (inCall) {
+          sawCellular = true
+          reportedEnded = false
+          if (seenStartedAt == null) {
+            seenStartedAt = System.currentTimeMillis()
+          }
+        }
         if (inCall && startedAtMs == null) {
-          startedAtMs = System.currentTimeMillis()
+          startedAtMs = seenStartedAt
         }
         val started = startedAtMs
         val phase = when {
@@ -130,6 +211,9 @@ class FidesModule : Module() {
         }
         if (!inCall) {
           startedAtMs = null
+        }
+        if (phase == "ended") {
+          reportedEnded = true
         }
         if (phase != null) {
           sendEvent(

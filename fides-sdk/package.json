@@ -9,7 +9,7 @@
     "./tailwind.preset": "./tailwind.preset.cjs"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/accountInput.test.ts src/ui/copy.vi.test.ts src/ui/theme.test.ts && jest --config jest.config.cjs",
+    "test": "node --experimental-strip-types --test src/accountInput.test.ts src/callState.test.ts src/ui/copy.vi.test.ts src/ui/theme.test.ts && jest --config jest.config.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0"
   },
