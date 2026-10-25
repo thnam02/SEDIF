@@ -603,6 +603,7 @@ export interface components {
             level: "none" | "info" | "banner" | "medium" | "high";
             actions: string[];
             reasons: components["schemas"]["Reason"][];
+            families_hit?: ("call" | "entry" | "payee" | "mobilization" | "long_term")[];
         };
         TransferResponse: {
             transfer_id: string;

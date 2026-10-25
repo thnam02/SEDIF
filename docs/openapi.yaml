@@ -1228,6 +1228,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Reason"
+        families_hit:
+          type: array
+          items:
+            type: string
+            enum: [call, entry, payee, mobilization, long_term]
     TransferResponse:
       type: object
       required: [transfer_id, status, funds_status, hold_until, decision]

@@ -610,7 +610,12 @@ def transfer(
         "status": status,
         "funds_status": funds,
         "hold_until": decided.get("hold_until"),
-        "decision": {"level": level, "actions": decided.get("actions") or [], "reasons": decided.get("reasons") or []},
+        "decision": {
+            "level": level,
+            "actions": decided.get("actions") or [],
+            "reasons": decided.get("reasons") or [],
+            "families_hit": decided.get("families_hit") or [],
+        },
     }
     if key:
         with connect() as conn:
