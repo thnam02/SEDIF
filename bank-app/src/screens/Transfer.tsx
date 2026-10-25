@@ -7,7 +7,7 @@ import { FidesIntervention, FidesSession, useAccountInput } from "fides-sdk"
 import { useBeneficiaries, useRespond, useTransfer } from "../api/queries"
 import { copy } from "../copy/vi"
 import { vnd } from "../format"
-import { useBank } from "../store"
+import { DEMO, useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
 
 export function RecipientScreen() {
@@ -46,6 +46,11 @@ export function RecipientScreen() {
         </Pressable>
       ))}
       <TextInput testID="new-account" value={input.value} onChangeText={input.onChangeText} placeholder={copy.newRecipient} autoCapitalize="characters" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy }} />
+      {DEMO ? (
+        <Pressable testID="paste-account" accessibilityRole="button" onPress={() => input.onChangeText("ZVAY000000000001")} style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>Dán số tài khoản</Text>
+        </Pressable>
+      ) : null}
       <Button testID="new-account-go" outline label={copy.newRecipient} onPress={() => input.value && go(input.value, input.value, false)} />
     </Screen>
   )
@@ -119,6 +124,7 @@ export function ConfirmScreen() {
                   level: result.decision.level,
                   actions: result.decision.actions,
                   reasons: result.decision.reasons,
+                  familiesHit: result.decision.families_hit ?? [],
                   funds_status: result.funds_status,
                   gate: "none",
                   hold_until: result.hold_until,

@@ -155,6 +155,7 @@ export function GuardianRequestScreen() {
   const respond = useRespond()
   const item = (requests.data?.requests ?? []).find((row) => row.id === id)
   const largeText = useBank((state) => state.largeText)
+  const [released, setReleased] = useState(false)
   if (!item) return <Screen><Header title={copy.loved} /></Screen>
   return (
     <Screen>
@@ -167,10 +168,11 @@ export function GuardianRequestScreen() {
           amount_text: item.amount == null ? undefined : vnd(item.amount),
         }}
         onDecide={(body) => {
-          if (body.guardian_confirm) confirm.mutate(item.id)
+          if (body.guardian_confirm) confirm.mutate(item.id, { onSuccess: () => setReleased(true) })
           else if (body.cancel && item.transfer_id) respond.mutate({ id: item.transfer_id, body: { cancel: true } })
         }}
       />
+      {released ? <Text style={{ color: "#2E7D32", fontSize: 22, fontWeight: "700", textAlign: "center" }}>{copy.released}</Text> : null}
     </Screen>
   )
 }

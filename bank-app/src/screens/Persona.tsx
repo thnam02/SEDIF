@@ -11,6 +11,7 @@ import { colors, Screen, useType } from "../ui/parts"
 export function PersonaScreen() {
   const router = useRouter()
   const choose = useBank((state) => state.choosePersona)
+  const setDesk = useBank((state) => state.setGuardianDesk)
   const type = useType()
   return (
     <Screen>
@@ -52,6 +53,35 @@ export function PersonaScreen() {
           </Pressable>
         )
       })}
+      <Pressable
+        accessibilityRole="button"
+        onPress={async () => {
+          const mother = personas.find((person) => person.has_guardian)
+          if (!mother) return
+          let accountId = mother.account_ids[0] ?? ""
+          try {
+            const rows = await Promise.all(mother.account_ids.map((id) => unwrap(bank.GET("/accounts/{id}", { params: { path: { id } } }))))
+            const personal = rows.filter((row) => row.account_type === "personal")
+            const best = [...(personal.length ? personal : rows)].sort((left, right) => right.balance - left.balance)[0]
+            if (best) accountId = best.id
+          } catch {
+            accountId = mother.account_ids[0] ?? ""
+          }
+          choose(mother.customer_id, accountId, mother.role)
+          setDesk(true)
+          router.replace("/(main)/(tabs)/profile")
+        }}
+        style={{ flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, borderWidth: 1, borderColor: "#F1F5F9", padding: 12 }}
+      >
+        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.aqua, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>NT</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{copy.guardianPersona}</Text>
+          <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.guardianHint}</Text>
+        </View>
+        <ChevronRight size={18} color={colors.deep} />
+      </Pressable>
     </Screen>
   )
 }

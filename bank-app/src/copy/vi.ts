@@ -70,7 +70,11 @@ export const copy = {
   emptyPending: "Chưa có yêu cầu chờ",
   simulator: "Giả lập cuộc gọi",
   stranger: "Số lạ gọi đến",
+  relativeCall: "Người thân gọi đến",
   strangerOff: "Tắt cuộc gọi giả lập",
+  guardianPersona: "Nguyễn Thu Hà, người giám hộ",
+  guardianHint: "Xác nhận giao dịch của mẹ",
+  released: "Đã cho chuyển",
   chips: ["500000", "1000000", "5000000"] as const,
   continueTransfer: "Tiếp tục",
 } as const

@@ -8,6 +8,7 @@ type Outcome = {
   level: components["schemas"]["BankDecision"]["level"]
   actions: string[]
   reasons: components["schemas"]["Reason"][]
+  familiesHit: string[]
   funds_status: "held" | "released" | "cancelled"
   gate: "none" | "guardian_confirm_requested" | "short_wait"
   hold_until: string | null
