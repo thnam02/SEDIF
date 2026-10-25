@@ -1,0 +1,1395 @@
+openapi: 3.1.0
+info:
+  title: FIDES
+  version: 2.1.0
+  summary: Engine chấm điểm và lõi ngân hàng giả.
+  description: >
+    App không gửi ts. Bank-core đóng dấu theo đồng hồ demo: bắt đầu
+    2026-09-20T00:00:00+07:00, chạy nhanh gấp 60, phủ 9 ngày cuối đến trước
+    2026-09-29. Engine chỉ nhận HMAC-SHA256, khoá lấy từ biến môi trường
+    FIDES_HMAC_KEY. Ví dụ giả công an và người nhà hướng dẫn minh họa hợp đồng,
+    không phải điểm của một phiên đã chấm.
+servers:
+  - url: http://localhost:8081
+    description: FIDES Engine
+  - url: http://localhost:8082
+    description: Bank core giả
+tags:
+  - name: FIDES Engine
+    description: Nhận sự kiện, chấm lệnh chuyển, lưu quyết định. Xác thực bằng API key.
+  - name: Bank core
+    description: Sổ tài khoản và lệnh tiền. Sản phẩm chỉ ghi sự kiện, không gọi /decide.
+paths:
+  /events:
+    post:
+      tags: [FIDES Engine]
+      operationId: ingestEvent
+      security:
+        - apiKey: []
+      summary: Ghi một sự kiện, idempotent theo event_id
+      description: >
+        Cùng event_id gửi lại trả bản đã lưu. ts là dấu của đồng hồ demo do bank-core ghi,
+        không phải đồng hồ app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Event"
+            examples:
+              gia_cong_an:
+                summary: Giao dịch trong cuộc gọi giả cơ quan nhà nước
+                value:
+                  event_id: evt-police-001
+                  type: txn
+                  ts: "2026-09-21T10:15:00+07:00"
+                  account_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  counterparty_hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                  amount: 50000000
+                  tx_type: transfer
+              nguoi_nha_huong_dan:
+                summary: Học phí tới người nhận đã từng chuyển
+                value:
+                  event_id: evt-guided-001
+                  type: txn
+                  ts: "2026-09-22T19:40:00+07:00"
+                  account_hash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+                  counterparty_hash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+                  amount: 8000000
+                  tx_type: school_fee
+      responses:
+        "200":
+          description: event_id đã tồn tại.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReceipt"
+              examples:
+                gia_cong_an:
+                  value: {event_id: evt-police-001, stored: false}
+                nguoi_nha_huong_dan:
+                  value: {event_id: evt-guided-001, stored: false}
+        "201":
+          description: Ghi mới.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReceipt"
+              examples:
+                gia_cong_an:
+                  value: {event_id: evt-police-001, stored: true}
+                nguoi_nha_huong_dan:
+                  value: {event_id: evt-guided-001, stored: true}
+  /decide:
+    post:
+      tags: [FIDES Engine]
+      operationId: decide
+      security:
+        - apiKey: []
+      summary: Chấm một lệnh chuyển
+      description: >
+        device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile
+        hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideRequest"
+            examples:
+              gia_cong_an:
+                summary: Dán số tài khoản khi đang nghe máy
+                value:
+                  decision_id: dec-police-001
+                  profile: advanced
+                  sender_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  payee_hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                  amount: 50000000
+                  ts: "2026-09-21T10:15:00+07:00"
+                  device:
+                    in_call: true
+                    call_seconds_since_open: 640
+                    call_ended_in_session: false
+                    call_direction: null
+                    acct_input: pasted
+                    app_switches: 7
+              nguoi_nha_huong_dan:
+                summary: Người nhận đã quen, tự gõ số
+                value:
+                  decision_id: dec-guided-001
+                  profile: advanced
+                  sender_hash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+                  payee_hash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+                  amount: 8000000
+                  ts: "2026-09-22T19:40:00+07:00"
+                  device:
+                    in_call: true
+                    call_seconds_since_open: 180
+                    call_ended_in_session: false
+                    call_direction: inbound
+                    acct_input: typed
+                    app_switches: 1
+      responses:
+        "200":
+          description: Quyết định
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecideResponse"
+              examples:
+                gia_cong_an:
+                  summary: High vì cuộc gọi, dán số và người nhận mới
+                  value:
+                    decision_id: dec-police-001
+                    level: high
+                    actions: [hangup_required, recovery_window]
+                    p_fraud: 0.84
+                    group_scores: {call: 1, entry: 1, payee: 1, mobilization: 0}
+                    families_hit: [call, entry, payee]
+                    reasons:
+                      - {code: in_call, text: "Cuộc gọi đang mở trong phiên này."}
+                      - {code: acct_pasted, text: "Số tài khoản được dán vào ô chuyển tiền."}
+                      - {code: new_payee, text: "Chưa từng chuyển tới người nhận này."}
+                    missing_signals: []
+                    profile: advanced
+                    model_version: model-v2.0
+                    hold_until: "2026-09-22T10:15:00+07:00"
+                    countdown_until: null
+                nguoi_nha_huong_dan:
+                  summary: Banner vì chỉ có cuộc gọi, người nhận đã từng nhận tiền
+                  value:
+                    decision_id: dec-guided-001
+                    level: banner
+                    actions: [g1_banner]
+                    p_fraud: 0.01
+                    group_scores: {call: 1, entry: 0, payee: 0, mobilization: 0}
+                    families_hit: [call]
+                    reasons:
+                      - {code: in_call, text: "Cuộc gọi đang mở trong phiên này."}
+                    missing_signals: []
+                    profile: advanced
+                    model_version: model-v2.0
+                    hold_until: null
+                    countdown_until: null
+  /respond:
+    post:
+      tags: [FIDES Engine]
+      operationId: respond
+      security:
+        - apiKey: []
+      summary: Cập nhật quyết định sau câu trả lời
+      description: >
+        Không bao giờ hạ level. authority hoặc bank nâng lên high.
+        relative khi khách có giám hộ đặt gate guardian_confirm_requested và giữ level.
+        relative khi không có giám hộ đặt gate short_wait và giữ level.
+        friend, seller, nobody, other giữ level.
+        hung_up khi level là high bắt đầu countdown 10 phút và không huỷ tiền.
+        Cuộc gọi mới reset countdown. proceed sau countdown thì funds_status released.
+        cancel bất cứ lúc nào thì cancelled. guardian_confirm nhả tiền sớm.
+        hold_until của medium là 30 phút, của high là 24 giờ. short_wait là 2 phút.
+        Các mốc này là GIẢ ĐỊNH trong fides-sim/config.yaml.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RespondRequest"
+            examples:
+              gia_cong_an:
+                summary: Khách cúp máy ở mức high
+                value:
+                  decision_id: dec-police-001
+                  who_guides: authority
+                  hung_up: true
+              nguoi_nha_huong_dan:
+                summary: Khách nói người nhà hướng dẫn, không có giám hộ
+                value:
+                  decision_id: dec-guided-001
+                  who_guides: relative
+      responses:
+        "200":
+          description: Mức không bị hạ, và mốc giữ tiền
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RespondResponse"
+              examples:
+                gia_cong_an:
+                  summary: Cúp máy lúc 21/9 10:20. Countdown 10 phút, tiền vẫn held 24 giờ
+                  value:
+                    decision_id: dec-police-001
+                    level: high
+                    funds_status: held
+                    gate: none
+                    hold_until: "2026-09-22T10:15:00+07:00"
+                    countdown_until: "2026-09-21T10:30:00+07:00"
+                nguoi_nha_huong_dan:
+                  summary: Banner không đổi, chờ ngắn 2 phút
+                  value:
+                    decision_id: dec-guided-001
+                    level: banner
+                    funds_status: released
+                    gate: short_wait
+                    hold_until: null
+                    countdown_until: null
+        "404":
+          description: Không có decision_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /decisions:
+    get:
+      tags: [FIDES Engine]
+      operationId: listDecisions
+      security:
+        - apiKey: []
+      summary: Danh sách quyết định
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: cursor
+          in: query
+          schema: {type: string}
+          description: Mốc trang trước, dạng ts|decision_id.
+        - name: from_ts
+          in: query
+          schema: {type: string, format: date-time}
+        - name: to_ts
+          in: query
+          schema: {type: string, format: date-time}
+          description: Cận trên, không tính mốc này.
+        - name: level
+          in: query
+          schema: {type: string, enum: [none, info, banner, medium, high]}
+      responses:
+        "200":
+          description: Các quyết định đã lưu
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [decisions, next_cursor]
+                properties:
+                  decisions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DecisionSummary"
+                  next_cursor:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+  /decisions/{id}:
+    get:
+      tags: [FIDES Engine]
+      operationId: getDecision
+      security:
+        - apiKey: []
+      summary: Một quyết định
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Quyết định
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecideResponse"
+        "404":
+          description: Không có quyết định
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{id}:
+    get:
+      tags: [Bank core]
+      operationId: getAccount
+      summary: Hồ sơ một tài khoản
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "404":
+          description: Không có tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{id}/history:
+    get:
+      tags: [Bank core]
+      operationId: getAccountHistory
+      summary: Giao dịch của tài khoản
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - name: before
+          in: query
+          required: false
+          description: Mốc cắt của sổ, không phải đồng hồ app.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Lịch sử
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, entries]
+                properties:
+                  account_id:
+                    type: string
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HistoryEntry"
+        "404":
+          description: Không có tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{id}/beneficiaries:
+    get:
+      tags: [Bank core]
+      operationId: listBeneficiaries
+      summary: Người thụ hưởng đã lưu của một tài khoản
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Danh sách
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, beneficiaries]
+                properties:
+                  account_id:
+                    type: string
+                  beneficiaries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Beneficiary"
+        "404":
+          description: Không có tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{id}/savings:
+    get:
+      tags: [Bank core]
+      operationId: listSavings
+      summary: Sổ tiết kiệm cùng khách hàng với tài khoản thanh toán
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Các sổ đang mở
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, books]
+                properties:
+                  account_id:
+                    type: string
+                  books:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SavingsBook"
+        "404":
+          description: Không có tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /beneficiaries/{id}:
+    get:
+      tags: [Bank core]
+      operationId: getBeneficiary
+      summary: Người thụ hưởng đã lưu
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Người thụ hưởng
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Beneficiary"
+              examples:
+                gia_cong_an:
+                  summary: Chưa từng chuyển
+                  value:
+                    id: BE-police-001
+                    account_id: A0099001
+                    holder_name: CONG AN TINH
+                    saved_at: "2026-09-21T10:14:20+07:00"
+                    times_paid: 0
+                nguoi_nha_huong_dan:
+                  summary: Đã chuyển vài lần
+                  value:
+                    id: BE-guided-001
+                    account_id: A0088001
+                    holder_name: TRUONG DAI HOC
+                    saved_at: "2026-08-02T09:00:00+07:00"
+                    times_paid: 4
+        "404":
+          description: Không có người thụ hưởng
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /transfer:
+    post:
+      tags: [Bank core]
+      operationId: createTransfer
+      summary: Tạo lệnh chuyển
+      description: >
+        App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256
+        rồi gọi POST /decide. none, info và banner cho đi.
+        Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển
+        cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng:
+        lúc đó chỉ là ghi chú info.
+        medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy.
+        Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai.
+        /decide hết 300 ms hoặc lỗi thì chuyển bình thường và ghi log engine_unavailable.
+        Từ 50 triệu tới người nhận mới thì vẫn hiện banner. Thiếu device thì engine dùng profile basic.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferRequest"
+            examples:
+              gia_cong_an:
+                value:
+                  from_account: A0010001
+                  to_account: A0099001
+                  amount: 50000000
+                  purpose_text: nộp phí
+                  device:
+                    in_call: true
+                    call_seconds_since_open: 640
+                    call_ended_in_session: false
+                    call_direction: null
+                    acct_input: pasted
+                    app_switches: 7
+              nguoi_nha_huong_dan:
+                value:
+                  from_account: A0010002
+                  to_account: A0088001
+                  amount: 8000000
+                  purpose_text: học phí
+                  device:
+                    in_call: true
+                    call_seconds_since_open: 180
+                    call_ended_in_session: false
+                    call_direction: inbound
+                    acct_input: typed
+                    app_switches: 1
+      responses:
+        "200":
+          description: Lệnh đã được chấm
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferResponse"
+              examples:
+                gia_cong_an:
+                  value:
+                    transfer_id: X-police-001
+                    status: blocked_pending_hangup
+                    funds_status: held
+                    hold_until: "2026-09-22T10:15:00+07:00"
+                    decision:
+                      level: high
+                      actions: [hangup_required, recovery_window]
+                      reasons:
+                        - {code: in_call, text: "Cuộc gọi đang mở trong phiên này."}
+                        - {code: acct_pasted, text: "Số tài khoản được dán vào ô chuyển tiền."}
+                        - {code: new_payee, text: "Chưa từng chuyển tới người nhận này."}
+                nguoi_nha_huong_dan:
+                  value:
+                    transfer_id: X-guided-001
+                    status: done
+                    funds_status: released
+                    hold_until: null
+                    decision:
+                      level: banner
+                      actions: [g1_banner]
+                      reasons:
+                        - {code: in_call, text: "Cuộc gọi đang mở trong phiên này."}
+  /transfer/{id}/respond:
+    post:
+      tags: [Bank core]
+      operationId: respondTransfer
+      summary: Trả lời trên một lệnh chuyển
+      description: >
+        Không nhận decision_id. Lệnh nằm ở path. Cùng luật với POST /respond của engine.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: transfer_id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferRespondRequest"
+            examples:
+              gia_cong_an:
+                summary: Cúp máy, bắt đầu countdown, chưa huỷ
+                value:
+                  who_guides: authority
+                  hung_up: true
+              nguoi_nha_huong_dan:
+                summary: Người nhà hướng dẫn
+                value:
+                  who_guides: relative
+      responses:
+        "200":
+          description: Lệnh sau khi trả lời
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferRespondResponse"
+              examples:
+                gia_cong_an:
+                  summary: Cúp máy lúc 21/9 10:20. Countdown hết 21/9 10:30
+                  value:
+                    transfer_id: X-police-001
+                    status: held
+                    level: high
+                    funds_status: held
+                    gate: none
+                    hold_until: "2026-09-22T10:15:00+07:00"
+                    countdown_until: "2026-09-21T10:30:00+07:00"
+                nguoi_nha_huong_dan:
+                  value:
+                    transfer_id: X-guided-001
+                    status: done
+                    level: banner
+                    funds_status: released
+                    gate: short_wait
+                    hold_until: null
+                    countdown_until: null
+        "404":
+          description: Không có lệnh
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /savings/liquidate:
+    post:
+      tags: [Bank core]
+      operationId: liquidateSavings
+      summary: Rút sổ tiết kiệm
+      description: Ghi event type product, product_type savings_liquidation. Không gọi /decide. Trả done.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
+      responses:
+        "200":
+          description: Đã ghi sự kiện
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductAck"
+  /loan:
+    post:
+      tags: [Bank core]
+      operationId: disburseLoan
+      summary: Giải ngân khoản vay
+      description: Ghi event type product, product_type quick_loan_disbursement. Không gọi /decide. Trả done.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
+      responses:
+        "200":
+          description: Đã ghi sự kiện
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductAck"
+  /card/cash-advance:
+    post:
+      tags: [Bank core]
+      operationId: cashAdvance
+      summary: Ứng tiền mặt từ thẻ
+      description: Ghi event type product, product_type credit_card_cash_advance. Không gọi /decide. Trả done.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
+      responses:
+        "200":
+          description: Đã ghi sự kiện
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductAck"
+  /limit:
+    post:
+      tags: [Bank core]
+      operationId: changeLimit
+      summary: Đổi hạn mức
+      description: Ghi event type account_change, change_type limit_raise. Không gọi /decide. Trả done.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LimitRequest"
+      responses:
+        "200":
+          description: Đã ghi sự kiện
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductAck"
+  /guardian:
+    post:
+      tags: [Bank core]
+      operationId: registerGuardian
+      summary: Đăng ký giám hộ
+      description: App không gửi ts. Bank-core đóng dấu đồng hồ demo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuardianRequest"
+      responses:
+        "200":
+          description: Đã ghi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianResponse"
+  /guardian/requests:
+    get:
+      tags: [Bank core]
+      operationId: listGuardianRequests
+      summary: Các yêu cầu đang chờ giám hộ xác nhận
+      responses:
+        "200":
+          description: Danh sách
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests]
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GuardianRequestItem"
+  /guardian/requests/{id}/confirm:
+    post:
+      tags: [Bank core]
+      operationId: confirmGuardianRequest
+      summary: Giám hộ xác nhận một yêu cầu
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Đã xác nhận. Tiền của lệnh Medium được released.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianConfirmResponse"
+        "404":
+          description: Không có yêu cầu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Khoá gọi FIDES Engine. Bank-core không dùng scheme này.
+  parameters:
+    AccountId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Mã tài khoản trong sổ ngân hàng giả.
+  schemas:
+    Hash:
+      type: string
+      pattern: "^[0-9a-f]{64}$"
+      description: HMAC-SHA256 hex. Khoá là biến môi trường FIDES_HMAC_KEY. Không gửi số tài khoản thô cho engine.
+    NullableBool:
+      anyOf:
+        - type: boolean
+        - type: "null"
+    NullableInt:
+      anyOf:
+        - type: integer
+        - type: "null"
+    Device:
+      type: object
+      description: Có thể bỏ cả khối. Từng trường đều nhận null. call_direction null là Android.
+      properties:
+        in_call:
+          $ref: "#/components/schemas/NullableBool"
+        call_seconds_since_open:
+          $ref: "#/components/schemas/NullableInt"
+        call_ended_in_session:
+          $ref: "#/components/schemas/NullableBool"
+        call_direction:
+          anyOf:
+            - type: string
+              enum: [inbound, outbound]
+            - type: "null"
+        acct_input:
+          anyOf:
+            - type: string
+              enum: [typed, typed_chunked, pasted, chosen]
+            - type: "null"
+          description: Đúng acct_input_share trong fides-sim/config.yaml.
+        app_switches:
+          $ref: "#/components/schemas/NullableInt"
+    TxType:
+      type: string
+      enum:
+        - salary_in
+        - business_in
+        - bill_payment
+        - rent
+        - card_payment
+        - cash_withdrawal
+        - transfer
+        - own_transfer
+        - school_fee
+        - large_oneoff
+        - own_transfer_drain
+        - passthrough_in
+        - passthrough_out
+        - savings_liquidation
+        - quick_loan_disbursement
+        - credit_card_cash_advance
+        - crypto_purchase
+      description: Đúng các giá trị tx_type trong observed/transactions.parquet.
+    ChangeType:
+      type: string
+      enum: [limit_raise, phone_change]
+      description: new_device nằm ở event device_change, không nằm ở đây.
+    ProductType:
+      type: string
+      enum:
+        - savings
+        - securities
+        - savings_liquidation
+        - quick_loan_disbursement
+        - credit_card_cash_advance
+      description: >
+        savings và securities là account_type trong sim. Ba tên còn lại là tx_type
+        của lệnh sản phẩm.
+    Event:
+      oneOf:
+        - $ref: "#/components/schemas/TxnEvent"
+        - $ref: "#/components/schemas/AccountChangeEvent"
+        - $ref: "#/components/schemas/DeviceChangeEvent"
+        - $ref: "#/components/schemas/ProductEvent"
+        - $ref: "#/components/schemas/ComplaintEvent"
+        - $ref: "#/components/schemas/SimoListingEvent"
+      discriminator:
+        propertyName: type
+        mapping:
+          txn: "#/components/schemas/TxnEvent"
+          account_change: "#/components/schemas/AccountChangeEvent"
+          device_change: "#/components/schemas/DeviceChangeEvent"
+          product: "#/components/schemas/ProductEvent"
+          complaint: "#/components/schemas/ComplaintEvent"
+          simo_listing: "#/components/schemas/SimoListingEvent"
+    EventBase:
+      type: object
+      required: [event_id, type, ts, account_hash]
+      properties:
+        event_id:
+          type: string
+        type:
+          type: string
+        ts:
+          type: string
+          format: date-time
+          description: Dấu đồng hồ demo do bank-core ghi.
+        account_hash:
+          $ref: "#/components/schemas/Hash"
+    TxnEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          required: [tx_type]
+          properties:
+            type:
+              const: txn
+            tx_type:
+              $ref: "#/components/schemas/TxType"
+            counterparty_hash:
+              $ref: "#/components/schemas/Hash"
+            amount:
+              type: integer
+              minimum: 0
+    AccountChangeEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          required: [change_type]
+          properties:
+            type:
+              const: account_change
+            change_type:
+              $ref: "#/components/schemas/ChangeType"
+            old_value:
+              type: string
+            new_value:
+              type: string
+    DeviceChangeEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          required: [change_type]
+          properties:
+            type:
+              const: device_change
+            change_type:
+              const: new_device
+    ProductEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          required: [product_type]
+          properties:
+            type:
+              const: product
+            product_type:
+              $ref: "#/components/schemas/ProductType"
+            amount:
+              type: integer
+              minimum: 0
+    ComplaintEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          properties:
+            type:
+              const: complaint
+            session_ref:
+              type: string
+              description: Sổ sim chỉ có complaint_id, customer, account, session và complaint_ts. Không có loại khiếu nại.
+    SimoListingEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventBase"
+        - type: object
+          required: [listed_at, source]
+          properties:
+            type:
+              const: simo_listing
+            listed_at:
+              type: string
+              format: date-time
+            source:
+              type: string
+              description: Nguồn liệt kê trong observed/simo_list.parquet, ví dụ victim, bank, victim_report, police.
+    EventReceipt:
+      type: object
+      required: [event_id, stored]
+      properties:
+        event_id:
+          type: string
+        stored:
+          type: boolean
+    DecideRequest:
+      type: object
+      required: [decision_id, profile, sender_hash, payee_hash, amount, ts]
+      properties:
+        decision_id:
+          type: string
+        profile:
+          type: string
+          enum: [basic, standard, advanced]
+        sender_hash:
+          $ref: "#/components/schemas/Hash"
+        payee_hash:
+          $ref: "#/components/schemas/Hash"
+        amount:
+          type: integer
+          minimum: 0
+        ts:
+          type: string
+          format: date-time
+          description: Bank-core điền. App không có trường này.
+        device:
+          oneOf:
+            - $ref: "#/components/schemas/Device"
+            - type: "null"
+    GroupScores:
+      type: object
+      additionalProperties: false
+      required: [call, entry, payee, mobilization]
+      description: Điểm từ 0 đến 1 của bốn nhóm kịch bản. long_term chỉ xuất hiện trong families_hit.
+      properties:
+        call:
+          type: number
+          minimum: 0
+          maximum: 1
+        entry:
+          type: number
+          minimum: 0
+          maximum: 1
+        payee:
+          type: number
+          minimum: 0
+          maximum: 1
+        mobilization:
+          type: number
+          minimum: 0
+          maximum: 1
+    Reason:
+      type: object
+      required: [code, text]
+      properties:
+        code:
+          type: string
+        text:
+          type: string
+          description: Câu hiện cho khách. simo_listed dùng câu cảnh báo tài khoản đã bị báo cáo.
+    DecideResponse:
+      type: object
+      required:
+        - decision_id
+        - level
+        - actions
+        - p_fraud
+        - group_scores
+        - families_hit
+        - reasons
+        - missing_signals
+        - profile
+        - model_version
+        - hold_until
+        - countdown_until
+      properties:
+        decision_id:
+          type: string
+        level:
+          type: string
+          enum: [none, info, banner, medium, high]
+        actions:
+          type: array
+          items:
+            type: string
+        p_fraud:
+          type: number
+          minimum: 0
+          maximum: 1
+        group_scores:
+          $ref: "#/components/schemas/GroupScores"
+        families_hit:
+          type: array
+          items:
+            type: string
+            enum: [call, entry, payee, mobilization, long_term]
+        reasons:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/Reason"
+        missing_signals:
+          type: array
+          items:
+            type: string
+        profile:
+          type: string
+          enum: [basic, standard, advanced]
+        model_version:
+          type: string
+        hold_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: Medium cộng 30 phút. High cộng 24 giờ. none và banner là null.
+        countdown_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: Hung_up ở high cộng 10 phút. Cuộc gọi mới tính lại. Proceed trước mốc này không nhả tiền.
+    WhoGuides:
+      type: string
+      enum: [authority, bank, relative, friend, seller, nobody, other]
+    RespondRequest:
+      type: object
+      required: [decision_id]
+      properties:
+        decision_id:
+          type: string
+        who_guides:
+          $ref: "#/components/schemas/WhoGuides"
+        guardian_confirm:
+          type: boolean
+        hung_up:
+          type: boolean
+        proceed:
+          type: boolean
+        cancel:
+          type: boolean
+    RespondResponse:
+      type: object
+      required: [decision_id, level, funds_status, gate, hold_until, countdown_until]
+      properties:
+        decision_id:
+          type: string
+        level:
+          type: string
+          enum: [none, info, banner, medium, high]
+        funds_status:
+          type: string
+          enum: [held, released, cancelled]
+        gate:
+          type: string
+          enum: [none, guardian_confirm_requested, short_wait]
+        hold_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        countdown_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    DecisionSummary:
+      type: object
+      required: [decision_id, level, funds_status, hold_until, countdown_until]
+      properties:
+        decision_id:
+          type: string
+        level:
+          type: string
+          enum: [none, info, banner, medium, high]
+        funds_status:
+          type: string
+          enum: [held, released, cancelled]
+        hold_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        countdown_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    Account:
+      type: object
+      required: [id, customer_id, holder_name, segment, balance, status, has_guardian, account_type]
+      properties:
+        id:
+          type: string
+        customer_id:
+          type: string
+        holder_name:
+          type: string
+        segment:
+          type: string
+          enum: [thường, cao tuổi, doanh nghiệp nhỏ]
+        balance:
+          type: integer
+        status:
+          type: string
+          enum: [open, frozen, closed]
+        has_guardian:
+          type: boolean
+        account_type:
+          type: string
+          enum: [personal, savings, business, securities, ewallet]
+        limit_per_txn:
+          type: integer
+          minimum: 0
+        limit_per_day:
+          type: integer
+          minimum: 0
+    HistoryEntry:
+      type: object
+      required: [tx_id, ts, direction, amount, tx_type, status]
+      properties:
+        tx_id:
+          type: string
+        ts:
+          type: string
+          format: date-time
+        direction:
+          type: string
+          enum: [in, out]
+        amount:
+          type: integer
+        tx_type:
+          $ref: "#/components/schemas/TxType"
+        purpose_text:
+          type: string
+        status:
+          $ref: "#/components/schemas/TransferStatus"
+    Beneficiary:
+      type: object
+      required: [id, account_id, holder_name, saved_at, times_paid]
+      properties:
+        id:
+          type: string
+        account_id:
+          type: string
+        holder_name:
+          type: string
+        saved_at:
+          type: string
+          format: date-time
+        times_paid:
+          type: integer
+          minimum: 0
+    TransferStatus:
+      type: string
+      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled]
+    TransferRequest:
+      type: object
+      required: [from_account, to_account, amount]
+      properties:
+        from_account:
+          type: string
+        to_account:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+        purpose_text:
+          type: string
+        device:
+          oneOf:
+            - $ref: "#/components/schemas/Device"
+            - type: "null"
+    BankDecision:
+      type: object
+      required: [level, actions, reasons]
+      properties:
+        level:
+          type: string
+          enum: [none, info, banner, medium, high]
+        actions:
+          type: array
+          items:
+            type: string
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reason"
+        families_hit:
+          type: array
+          items:
+            type: string
+            enum: [call, entry, payee, mobilization, long_term]
+    TransferResponse:
+      type: object
+      required: [transfer_id, status, funds_status, hold_until, decision]
+      properties:
+        transfer_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/TransferStatus"
+        funds_status:
+          type: string
+          enum: [held, released, cancelled]
+        hold_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        decision:
+          $ref: "#/components/schemas/BankDecision"
+    TransferRespondRequest:
+      type: object
+      properties:
+        who_guides:
+          $ref: "#/components/schemas/WhoGuides"
+        guardian_confirm:
+          type: boolean
+        hung_up:
+          type: boolean
+        proceed:
+          type: boolean
+        cancel:
+          type: boolean
+    TransferRespondResponse:
+      type: object
+      required: [transfer_id, status, level, funds_status, gate, hold_until, countdown_until]
+      properties:
+        transfer_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/TransferStatus"
+        level:
+          type: string
+          enum: [none, info, banner, medium, high]
+        funds_status:
+          type: string
+          enum: [held, released, cancelled]
+        gate:
+          type: string
+          enum: [none, guardian_confirm_requested, short_wait]
+        hold_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        countdown_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    ProductRequest:
+      type: object
+      required: [account_id, amount]
+      properties:
+        account_id:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+        device:
+          oneOf:
+            - $ref: "#/components/schemas/Device"
+            - type: "null"
+    ProductAck:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          const: done
+    LimitRequest:
+      type: object
+      required: [account_id, limit_per_txn, limit_per_day]
+      properties:
+        account_id:
+          type: string
+        limit_per_txn:
+          type: integer
+          minimum: 0
+        limit_per_day:
+          type: integer
+          minimum: 0
+        device:
+          oneOf:
+            - $ref: "#/components/schemas/Device"
+            - type: "null"
+    GuardianRequest:
+      type: object
+      required: [account_id, guardian_phone_hash, relation]
+      properties:
+        account_id:
+          type: string
+        guardian_phone_hash:
+          $ref: "#/components/schemas/Hash"
+        relation:
+          type: string
+    GuardianResponse:
+      type: object
+      required: [account_id, status]
+      properties:
+        account_id:
+          type: string
+        status:
+          const: registered
+    GuardianRequestItem:
+      type: object
+      required: [id, account_id, level, funds_status]
+      properties:
+        id:
+          type: string
+        account_id:
+          type: string
+        transfer_id:
+          type: string
+        level:
+          type: string
+          enum: [none, info, banner, medium, high]
+        funds_status:
+          type: string
+          enum: [held, released, cancelled]
+        amount:
+          type: integer
+          minimum: 0
+        to_account:
+          type: string
+        sender_name:
+          type: string
+    SavingsBook:
+      type: object
+      required: [id, holder_name, balance]
+      properties:
+        id:
+          type: string
+        holder_name:
+          type: string
+        balance:
+          type: integer
+    GuardianConfirmResponse:
+      type: object
+      required: [id, funds_status]
+      properties:
+        id:
+          type: string
+        funds_status:
+          const: released
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string

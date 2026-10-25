@@ -1,0 +1,141 @@
+{
+  "seed": 42,
+  "sim_window": {
+    "start": "2026-07-01",
+    "end_exclusive": "2026-09-29"
+  },
+  "test_window": {
+    "start": "2026-08-30",
+    "end_exclusive": "2026-09-29"
+  },
+  "mule_recent_window": {
+    "start": "2026-09-22",
+    "end_exclusive": "2026-09-29"
+  },
+  "demo_clock": {
+    "start": "2026-09-20T00:00:00+07:00",
+    "end_exclusive": "2026-09-29T00:00:00+07:00",
+    "speed": 60,
+    "note": "Đồng hồ demo bắt đầu 20/9/2026 và chạy nhanh gấp 60, phủ 9 ngày cuối đến trước 29/9/2026."
+  },
+  "rules": {
+    "cao_tuoi_co_giam_ho": "segment cao tuổi, has_guardian, không giữ tài khoản mule, số giao dịch gần trung vị",
+    "nhan_vien_van_phong": "segment thường, tuổi 31-50, ít nhất 3 lần salary_in, số giao dịch gần trung vị",
+    "chu_dn_nho": "segment doanh nghiệp nhỏ, tuổi 30–55 trong năm 2026, không giữ tài khoản mule, số giao dịch gần trung vị",
+    "sinh_vien": "segment thường, tuổi không quá 25 trong năm 2026, nhiều giao dịch nhất",
+    "mule": "ba tài khoản khác ring, active_to còn tới 22/9/2026, nhiều giao dịch đi nhất từ 22/9 đến trước 29/9/2026"
+  },
+  "personas": [
+    {
+      "customer_id": "C000623",
+      "full_name": "Huỳnh Thị Mận",
+      "gender": "nữ",
+      "birth_year": 1946,
+      "age_group": "66-85",
+      "segment": "cao tuổi",
+      "city": "Cần Thơ",
+      "has_guardian": true,
+      "account_ids": [
+        "A0000623",
+        "A0050272",
+        "A0072556",
+        "A0077690"
+      ],
+      "tx_count": 54,
+      "role": "cao_tuoi_co_giam_ho",
+      "guardian": {
+        "guardian_customer_id": null,
+        "guardian_phone_number_id": "P063382",
+        "relation": "vợ_chồng"
+      },
+      "salary_in_count": 3
+    },
+    {
+      "customer_id": "C002119",
+      "full_name": "Trương Gia Thịnh",
+      "gender": "nam",
+      "birth_year": 1991,
+      "age_group": "31-50",
+      "segment": "thường",
+      "city": "TP Hồ Chí Minh",
+      "has_guardian": false,
+      "account_ids": [
+        "A0002119"
+      ],
+      "tx_count": 107,
+      "role": "nhan_vien_van_phong",
+      "salary_in_count": 3
+    },
+    {
+      "customer_id": "C002845",
+      "full_name": "Hoàng Văn Tâm",
+      "gender": "nam",
+      "birth_year": 1993,
+      "age_group": "31-50",
+      "segment": "doanh nghiệp nhỏ",
+      "city": "Hải Phòng",
+      "has_guardian": false,
+      "account_ids": [
+        "A0002845",
+        "A0051289",
+        "A0072782",
+        "A0078375",
+        "A0097589"
+      ],
+      "tx_count": 167,
+      "role": "chu_dn_nho",
+      "salary_in_count": 0
+    },
+    {
+      "customer_id": "C031239",
+      "full_name": "Lê Kim Trân",
+      "gender": "nữ",
+      "birth_year": 2008,
+      "age_group": "18-30",
+      "segment": "thường",
+      "city": "Hà Nội",
+      "has_guardian": false,
+      "account_ids": [
+        "A0031239"
+      ],
+      "tx_count": 327,
+      "role": "sinh_vien",
+      "salary_in_count": 3
+    }
+  ],
+  "mules": [
+    {
+      "account_id": "A0119955",
+      "ring_id": "R0015",
+      "layer": "l2",
+      "customer_id": null,
+      "bank_id": "B01",
+      "active_from": "2026-09-10T00:00:00+07:00",
+      "active_to": "2026-09-29T00:00:00+07:00",
+      "tx_count_recent": 192,
+      "last_tx_ts": "2026-09-26T23:43:59+07:00"
+    },
+    {
+      "account_id": "A0119927",
+      "ring_id": "R0009",
+      "layer": "l2",
+      "customer_id": null,
+      "bank_id": "B03",
+      "active_from": "2026-09-14T00:00:00+07:00",
+      "active_to": "2026-09-29T00:00:00+07:00",
+      "tx_count_recent": 144,
+      "last_tx_ts": "2026-09-27T06:39:02+07:00"
+    },
+    {
+      "account_id": "A0119942",
+      "ring_id": "R0013",
+      "layer": "cashout",
+      "customer_id": null,
+      "bank_id": "B05",
+      "active_from": "2026-09-11T00:00:00+07:00",
+      "active_to": "2026-09-29T00:00:00+07:00",
+      "tx_count_recent": 136,
+      "last_tx_ts": "2026-09-28T11:18:46+07:00"
+    }
+  ]
+}

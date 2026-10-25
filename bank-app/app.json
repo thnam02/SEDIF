@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Sao Bank",
+    "slug": "sao-bank",
+    "scheme": "saobank",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.hainamtran.saobank",
+      "infoPlist": {
+        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true }
+      }
+    },
+    "android": { "package": "com.fides.saobank" },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

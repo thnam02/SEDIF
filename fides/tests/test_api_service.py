@@ -18,9 +18,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("FIDES_AUDIT", str(ROOT / "out" / "audit" / "test_decisions.jsonl"))
+os.environ.setdefault("FIDES_HMAC_KEY", "test-hmac")
 
-from api.service import LEVELS, apply_respond, raise_level
-from api.service import RespondIn
+REPO = ROOT.parent
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from engine.policy import LEVELS, Respond, apply_respond, raise_level
 from features.store import _DEVICE_SIGNALS, _TELCO_SIGNALS
 
 pytestmark = pytest.mark.filterwarnings("ignore")
@@ -89,9 +93,9 @@ def test_who_guides_never_lowers_level() -> None:
         "decided_at": time.time(),
         "actions": ["hangup_required", "recovery_window"],
     }
-    apply_respond(record, RespondIn(decision_id="x", who_guides_answer="không"), time.time())
+    apply_respond(record, Respond(decision_id="x", who_guides_answer="không"), time.time())
     assert record["level"] == "high"
-    apply_respond(record, RespondIn(decision_id="x", who_guides_answer="có"), time.time())
+    apply_respond(record, Respond(decision_id="x", who_guides_answer="có"), time.time())
     assert record["level"] == "high"
 
 
@@ -106,16 +110,16 @@ def test_guardian_gate_and_cancel() -> None:
         "decided_at": now,
         "actions": ["pause_and_verify", "guardian_confirm"],
     }
-    apply_respond(record, RespondIn(decision_id="x", guardian_confirm=False), now)
+    apply_respond(record, Respond(decision_id="x", guardian_confirm=False), now)
     assert record["status"] == "waiting_guardian"
-    apply_respond(record, RespondIn(decision_id="x", guardian_confirm=True), now)
+    apply_respond(record, Respond(decision_id="x", guardian_confirm=True), now)
     assert record["status"] == "released"
-    apply_respond(record, RespondIn(decision_id="x", cancel=True), now)
+    apply_respond(record, Respond(decision_id="x", cancel=True), now)
     assert record["status"] == "cancelled"
     late = dict(record)
     late["decided_at"] = now - 48 * 3600
     late["status"] = "released"
-    apply_respond(late, RespondIn(decision_id="x", cancel=True), now)
+    apply_respond(late, Respond(decision_id="x", cancel=True), now)
     assert late["status"] != "cancelled"
 
 

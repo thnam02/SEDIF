@@ -1,0 +1,20 @@
+appId: com.fides.saobank
+---
+- launchApp
+- tapOn: "Chị Hương, chủ cửa hàng"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "SAO BANK"
+- tapOn: "Người thân gọi đến"
+- tapOn: "Chuyển tiền"
+- tapOn: "CHU DAU TU NGUYEN HUE"
+- tapOn: "Nội dung chuyển khoản"
+- inputText: "học phí"
+- hideKeyboard
+- tapOn: "Xác nhận giao dịch"
+- tapOn:
+    text: "Xác nhận giao dịch"
+    index: 1
+- assertNotVisible: "Hãy cúp máy trước khi tiếp tục"
+- assertVisible: "Chuyển tiền thành công|Hãy cẩn thận|Tạm dừng để kiểm tra|Xác nhận chuyển tiền"

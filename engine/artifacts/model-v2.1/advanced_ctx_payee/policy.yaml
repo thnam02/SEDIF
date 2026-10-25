@@ -1,0 +1,12 @@
+model_version: model-v2.1
+profile: advanced_ctx_payee
+seed: 45
+tau_hi: 0.8125
+mh_cap: 0.0045
+money_fraction: 0.995
+scenario_drop_max: 0.01
+rule: largest tau_hi with saved money at least 99.5% of the maximum under the 0.45% legit MH cap, and ≥Medium recall of every scenario within 1 percentage point of that maximum
+rejected_tau_hi: 0.8181818181818182
+rejected_reason: investment and deposit ≥Medium each fall about 7 points
+payee_gate: true
+payee_normal: strict

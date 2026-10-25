@@ -1,0 +1,115 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fides
+      POSTGRES_PASSWORD: fides
+      POSTGRES_DB: fides
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fides -d fides"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:8.8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+    environment:
+      SERVICE_NAME: engine
+      DATABASE_URL: postgresql://fides:fides@postgres:5432/fides
+      REDIS_URL: redis://redis:6379/15
+      FIDES_HMAC_KEY: fides-demo-hmac
+      FIDES_API_KEY: fides-demo-key
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  bank-core:
+    build:
+      context: .
+      dockerfile: bank-core/Dockerfile
+    environment:
+      SERVICE_NAME: bank-core
+      DATABASE_URL: postgresql://fides:fides@postgres:5432/fides
+      REDIS_URL: redis://redis:6379/15
+      ENGINE_URL: http://engine:8080
+      SIMO_URL: http://simo-mock:8080
+      FIDES_HMAC_KEY: fides-demo-hmac
+      FIDES_API_KEY: fides-demo-key
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./fides-sim/out:/app/fides-sim/out
+    depends_on:
+      engine:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 120s
+
+  simo-mock:
+    build:
+      context: .
+      dockerfile: simo-mock/Dockerfile
+    environment:
+      SERVICE_NAME: simo-mock
+      ENGINE_URL: http://engine:8080
+      FIDES_HMAC_KEY: fides-demo-hmac
+      FIDES_API_KEY: fides-demo-key
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./fides-sim/out:/app/fides-sim/out
+    depends_on:
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 120s
