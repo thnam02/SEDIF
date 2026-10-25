@@ -1,8 +1,28 @@
+import Constants from "expo-constants"
+import { Platform } from "react-native"
 import createClient from "openapi-fetch"
 
 import type { paths } from "./openapi"
 
-export const BANK_URL = process.env.EXPO_PUBLIC_BANK_URL ?? "http://127.0.0.1:8092"
+const CONFIGURED = process.env.EXPO_PUBLIC_BANK_URL ?? "http://127.0.0.1:8082"
+
+/** 10.0.2.2 chỉ tới được từ giả lập Android. iPhone dùng máy đang chạy Metro, giữ nguyên cổng. */
+export function resolveBankUrl(configured: string, platform: string, packagerHost: string | null | undefined): string {
+  let url: URL
+  try {
+    url = new URL(configured)
+  } catch {
+    return configured
+  }
+  const local = url.hostname === "10.0.2.2" || url.hostname === "127.0.0.1" || url.hostname === "localhost"
+  if (!local || platform === "android") return configured
+  const host = packagerHost?.split(":")[0]
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "10.0.2.2") return configured
+  url.hostname = host
+  return url.toString().replace(/\/$/, "")
+}
+
+export const BANK_URL = resolveBankUrl(CONFIGURED, Platform.OS, Constants.expoConfig?.hostUri)
 
 export const bank = createClient<paths>({ baseUrl: BANK_URL })
 

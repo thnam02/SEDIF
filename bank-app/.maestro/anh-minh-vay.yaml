@@ -1,12 +1,10 @@
 appId: com.fides.saobank
 ---
 - launchApp
-- tapOn: "Anh Minh, nhân viên văn phòng"
+- tapOn: "Trương Gia Thịnh"
 - tapOn: "Chuyển tiền"
-- scrollUntilVisible:
-    element:
-      id: "paste-account"
-    direction: DOWN
+- tapOn:
+    id: "new-account-open"
 - tapOn:
     id: "paste-account"
 - tapOn:

@@ -49,15 +49,15 @@ export const copyVi = {
   },
   guardian: {
     pending: "Đang chờ người thân xác nhận",
-    person: "Con gái – Nguyễn Thu Hà",
+    person: "Người giám hộ",
     sent: "Đã gửi yêu cầu lúc 09:12",
     body: "Tiền của bạn đang được giữ an toàn. Khi người thân xác nhận, giao dịch sẽ tiếp tục.",
     approve: "Không, hãy giữ lại",
     reject: "Tôi xác nhận, cho chuyển",
-    call: "Gọi cho mẹ ngay",
-    guardianTitle: "Xác nhận giao dịch của mẹ",
+    call: "Gọi cho người thân ngay",
+    guardianTitle: "Xác nhận giao dịch",
     guardianBody:
-      "Mẹ bạn (Bà Lan) đang chuyển 120.000.000 đ đến tài khoản mới LE THI C. Bà có thể đang được ai đó hướng dẫn qua điện thoại.",
+      "Huỳnh Thị Mận đang chuyển 120.000.000 đ đến tài khoản mới LE THI C. Có thể đang được ai đó hướng dẫn qua điện thoại.",
   },
   wait: {
     title: "Chờ một chút",

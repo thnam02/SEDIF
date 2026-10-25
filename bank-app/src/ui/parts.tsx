@@ -1,9 +1,9 @@
-import type { ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useRouter } from "expo-router"
-import { ArrowLeft } from "lucide-react-native"
+import { ArrowLeft, Phone } from "lucide-react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { fidesTheme } from "fides-sdk"
+import { FidesSession, fidesTheme } from "fides-sdk"
 
 import { copy } from "../copy/vi"
 import { useBank } from "../store"
@@ -16,11 +16,37 @@ export function useType() {
   return { title: 24 * scale, body: 14 * scale, small: 12 * scale }
 }
 
+function LiveCall() {
+  const [label, setLabel] = useState<string | null>(null)
+  useEffect(() => {
+    FidesSession.start()
+    const read = () => {
+      const state = FidesSession.callState()
+      if (state.in_call !== true) {
+        setLabel(null)
+        return
+      }
+      setLabel(state.call_direction === "inbound" ? copy.callIn : state.call_direction === "outbound" ? copy.callOut : copy.liveCall)
+    }
+    read()
+    const timer = setInterval(read, 1000)
+    return () => clearInterval(timer)
+  }, [])
+  if (!label) return null
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: "#FEF3C7", paddingHorizontal: 12, paddingVertical: 10 }}>
+      <Phone size={16} color={colors.warn} />
+      <Text style={{ color: colors.navy, fontWeight: "700" }}>{label}</Text>
+    </View>
+  )
+}
+
 export function Screen({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets()
   return (
     <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
+        <LiveCall />
         {children}
       </ScrollView>
     </View>

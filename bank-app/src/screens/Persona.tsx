@@ -13,6 +13,8 @@ export function PersonaScreen() {
   const choose = useBank((state) => state.choosePersona)
   const setDesk = useBank((state) => state.setGuardianDesk)
   const type = useType()
+  const guarded = personas.find((item) => item.has_guardian)
+  const guardedHint = `${(guarded?.guardian?.relation ?? "người giám hộ").replaceAll("_", " ")} · ${guarded?.full_name ?? ""}`
   return (
     <Screen>
       <View className="flex-row items-center gap-2" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -46,7 +48,7 @@ export function PersonaScreen() {
               <Text style={{ color: colors.deep, fontWeight: "700" }}>{label?.mark ?? person.full_name.slice(0, 2)}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{label?.title ?? person.full_name}</Text>
+              <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{person.full_name}</Text>
               <Text style={{ color: "#64748B", fontSize: type.small }}>{label?.hint ?? copy.bankHint}</Text>
             </View>
             <ChevronRight size={18} color={colors.deep} />
@@ -56,7 +58,7 @@ export function PersonaScreen() {
       <Pressable
         accessibilityRole="button"
         onPress={async () => {
-          const mother = personas.find((person) => person.has_guardian)
+          const mother = guarded
           if (!mother) return
           let accountId = mother.account_ids[0] ?? ""
           try {
@@ -74,11 +76,11 @@ export function PersonaScreen() {
         style={{ flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, borderWidth: 1, borderColor: "#F1F5F9", padding: 12 }}
       >
         <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.aqua, alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ color: colors.deep, fontWeight: "700" }}>NT</Text>
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>GH</Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{copy.guardianPersona}</Text>
-          <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.guardianHint}</Text>
+          <Text style={{ color: "#64748B", fontSize: type.small }}>{guardedHint}</Text>
         </View>
         <ChevronRight size={18} color={colors.deep} />
       </Pressable>

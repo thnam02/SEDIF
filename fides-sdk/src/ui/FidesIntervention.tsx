@@ -75,10 +75,10 @@ function Clock({ until, colors }: { until: string | null | undefined; colors: Re
 
 type ButtonSpec = { key: string; label: string; onPress: () => void; fill: string; labelColor: string; border?: string }
 
-function Actions({ items, colors, largeText = false }: { items: ButtonSpec[]; colors: ResolvedTheme; largeText?: boolean }) {
+function Actions({ items, colors, largeText = false, stack = false }: { items: ButtonSpec[]; colors: ResolvedTheme; largeText?: boolean; stack?: boolean }) {
   const shown = capPrimary(items, largeText)
   return (
-    <View className="flex-row gap-3" style={{ flexDirection: "row", gap: 12 }}>
+    <View className="flex-row gap-3" style={{ flexDirection: stack ? "column" : "row", gap: 12 }}>
       {shown.map((item) => (
         <Pressable
           key={item.key}
@@ -87,17 +87,18 @@ function Actions({ items, colors, largeText = false }: { items: ButtonSpec[]; co
           className="min-h-11 flex-1 items-center justify-center rounded-xl px-4"
           style={{
             minHeight: 44,
-            flex: 1,
+            flex: stack ? undefined : 1,
             alignItems: "center",
             justifyContent: "center",
             borderRadius: colors.radius.button,
             paddingHorizontal: 16,
+            paddingVertical: 12,
             backgroundColor: item.fill,
             borderWidth: item.border ? 1 : 0,
             borderColor: item.border,
           }}
         >
-          <Text style={{ color: item.labelColor, fontSize: colors.type.small, fontWeight: "600" }}>{item.label}</Text>
+          <Text style={{ color: item.labelColor, fontSize: colors.type.small, fontWeight: "600", textAlign: "center" }}>{item.label}</Text>
         </Pressable>
       ))}
     </View>
@@ -262,8 +263,9 @@ function Hangup({ decision, onRespond, colors, largeText }: FidesProps & { color
       <Actions
         colors={colors}
         largeText={largeText}
+        stack
         items={[
-          { key: "call", label: c.hangup.call, onPress: () => respond(onRespond, decision.decision_id), fill: colors.colors.danger, labelColor: colors.colors.white },
+          { key: "call", label: c.hangup.call, onPress: () => respond(onRespond, decision.decision_id, { hung_up: true }), fill: colors.colors.danger, labelColor: colors.colors.white },
           { key: "close", label: c.close, onPress: () => respond(onRespond, decision.decision_id), fill: colors.colors.white, labelColor: colors.colors.deep, border: colors.colors.deep },
         ]}
       />
@@ -271,11 +273,16 @@ function Hangup({ decision, onRespond, colors, largeText }: FidesProps & { color
   )
 }
 
-function Countdown({ decision, colors }: FidesProps & { colors: ResolvedTheme }) {
+function Countdown({ decision, onRespond, colors, largeText }: FidesProps & { colors: ResolvedTheme }) {
   return (
     <Frame testID="fides-countdown">
       <Title colors={colors}>{c.countdown.body}</Title>
       <Clock until={decision.countdown_until} colors={colors} />
+      <Actions
+        colors={colors}
+        largeText={largeText}
+        items={[{ key: "close", label: c.close, onPress: () => respond(onRespond, decision.decision_id), fill: colors.colors.white, labelColor: colors.colors.deep, border: colors.colors.deep }]}
+      />
     </Frame>
   )
 }

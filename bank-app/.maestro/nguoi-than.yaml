@@ -1,7 +1,7 @@
 appId: com.fides.saobank
 ---
 - launchApp
-- tapOn: "Chị Hương, chủ cửa hàng"
+- tapOn: "Hoàng Văn Tâm"
 - repeat:
     times: 7
     commands:

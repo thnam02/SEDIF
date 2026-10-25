@@ -1,7 +1,7 @@
 appId: com.fides.saobank
 ---
 - launchApp
-- tapOn: "Bà Lan, 68 tuổi"
+- tapOn: "Huỳnh Thị Mận"
 - repeat:
     times: 7
     commands:
@@ -25,10 +25,8 @@ appId: com.fides.saobank
 - tapOn: "Trang chủ"
 - tapOn: "Trang chủ"
 - tapOn: "Chuyển tiền"
-- scrollUntilVisible:
-    element:
-      id: "new-account-go"
-    direction: DOWN
+- tapOn:
+    id: "new-account-open"
 - tapOn:
     id: "new-account"
 - inputText: "ZLAN120000000001"

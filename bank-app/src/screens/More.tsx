@@ -1,75 +1,119 @@
 import { useState } from "react"
-import { Pressable, Text, View } from "react-native"
+import { Pressable, Text, TextInput, View } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { FidesGuardianRequest } from "fides-sdk"
 
-import { useConfirmGuardian, useGuardianRequests, useHistory, useRespond } from "../api/queries"
+import { useAccount, useConfirmGuardian, useGuardianRequests, useHistory, useRespond } from "../api/queries"
 import { copy } from "../copy/vi"
-import { vnd, weekdayIndex } from "../format"
+import { displayHolder } from "../names"
+import { fullDate, statement, vnd, weekStart, when } from "../format"
 import { personas } from "../personas"
 import { useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
 
+function txLabel(kind: string): string {
+  return copy.txType[kind] ?? kind
+}
+
 export function StatsScreen() {
+  const router = useRouter()
   const accountId = useBank((state) => state.accountId)
   const history = useHistory(accountId)
-  const bins = Array.from({ length: 7 }, () => ({ in: 0, out: 0 }))
-  for (const item of history.data?.entries ?? []) {
-    const bin = bins[weekdayIndex(item.ts)]
-    if (!bin) continue
-    if (item.direction === "in") bin.in += item.amount
-    else bin.out += item.amount
+  const type = useType()
+  const entries = history.data?.entries ?? []
+  const weeks = new Map<string, number>()
+  let incoming = 0
+  let outgoing = 0
+  for (const item of entries) {
+    const key = weekStart(item.ts)
+    weeks.set(key, (weeks.get(key) ?? 0) + 1)
+    if (item.direction === "in") incoming += item.amount
+    else outgoing += item.amount
   }
-  const peak = Math.max(1, ...bins.flatMap((bin) => [bin.in, bin.out]))
-  const incoming = bins.reduce((sum, bin) => sum + bin.in, 0)
-  const outgoing = bins.reduce((sum, bin) => sum + bin.out, 0)
+  const bars = [...weeks.entries()]
+  const peak = Math.max(1, ...bars.map(([, count]) => count))
   return (
     <Screen>
       <Header title={copy.stats} />
       <Card>
-        <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.incoming}</Text>
-        <Text style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }}>{vnd(incoming)}</Text>
+        <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.txCount.replace("{n}", String(entries.length))}</Text>
+        <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{copy.incoming} {vnd(incoming)}</Text>
         <Text style={{ color: "#64748B" }}>{copy.outgoing} {vnd(outgoing)}</Text>
       </Card>
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, height: 120 }}>
-        {bins.map((bin, index) => (
-          <View key={copy.week[index]} style={{ flex: 1, alignItems: "center", gap: 4 }}>
-            <View style={{ width: "70%", height: Math.max(4, (bin.out / peak) * 80), backgroundColor: colors.deep, borderRadius: 4 }} />
-            <Text style={{ color: colors.navy, fontSize: 10 }}>{copy.week[index]}</Text>
+      <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.byWeek}</Text>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, height: bars.length === 0 ? 0 : 140 }}>
+        {bars.map(([label, count]) => (
+          <View key={label} style={{ flex: 1, alignItems: "center", gap: 4 }}>
+            <Text style={{ color: colors.navy, fontSize: type.small, fontWeight: "700" }}>{count}</Text>
+            <View style={{ width: "70%", height: Math.max(4, (count / peak) * 80), backgroundColor: colors.deep, borderRadius: 4 }} />
+            <Text style={{ color: "#64748B", fontSize: 10 }}>{label}</Text>
           </View>
         ))}
       </View>
+      <Button label={copy.lookup} onPress={() => router.push("/(main)/history")} />
     </Screen>
   )
 }
 
 export function HistoryScreen() {
   const accountId = useBank((state) => state.accountId)
+  const account = useAccount(accountId)
   const history = useHistory(accountId)
   const [filter, setFilter] = useState<"all" | "in" | "out" | "held">("all")
-  const rows = (history.data?.entries ?? []).filter((item) => {
-    if (filter === "in") return item.direction === "in"
-    if (filter === "out") return item.direction === "out"
-    if (filter === "held") return item.status !== "done"
-    return true
-  })
+  const [query, setQuery] = useState("")
   const type = useType()
+  const needle = query.trim().toLowerCase()
+  const rows = statement(history.data?.entries ?? [], account.data?.balance ?? 0).filter((item) => {
+    if (filter === "in" && item.direction !== "in") return false
+    if (filter === "out" && item.direction !== "out") return false
+    if (filter === "held" && item.status === "done") return false
+    if (!needle) return true
+    const label = txLabel(item.tx_type)
+    return `${item.purpose_text ?? ""} ${label} ${item.amount}`.toLowerCase().includes(needle)
+  })
+  let day = ""
   return (
     <Screen>
-      <Header title={copy.history} />
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <Header title={copy.lookup} />
+      <Text style={{ color: "#64748B" }}>{copy.movement}</Text>
+      <TextInput
+        value={query}
+        onChangeText={setQuery}
+        placeholder={copy.searchTx}
+        placeholderTextColor="#94A3B8"
+        style={{ borderRadius: 12, backgroundColor: colors.mint, paddingHorizontal: 12, paddingVertical: 10, color: colors.navy, fontSize: type.body }}
+      />
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         {([["all", copy.all], ["in", copy.incoming], ["out", copy.outgoing], ["held", copy.held]] as const).map(([key, label]) => (
           <Pressable key={key} onPress={() => setFilter(key)} style={{ borderRadius: 12, backgroundColor: filter === key ? colors.deep : colors.mint, paddingHorizontal: 10, paddingVertical: 8 }}>
             <Text style={{ color: filter === key ? colors.white : colors.deep, fontSize: type.small }}>{label}</Text>
           </Pressable>
         ))}
       </View>
-      {rows.map((item) => (
-        <View key={item.tx_id} style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12 }}>
-          <Text style={{ color: colors.navy }}>{item.purpose_text || item.tx_type}</Text>
-          <Text style={{ color: item.status !== "done" ? colors.warn : colors.deep }}>{item.status !== "done" ? copy.held : vnd(item.amount)}</Text>
-        </View>
-      ))}
+      <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.txCount.replace("{n}", String(rows.length))}</Text>
+      {rows.length === 0 ? <Text style={{ color: "#64748B" }}>{copy.emptyTx}</Text> : null}
+      {rows.map((item) => {
+        const stamp = when(item.ts)
+        const showDay = fullDate(item.ts) !== day
+        day = fullDate(item.ts)
+        const inbound = item.direction === "in"
+        const title = item.purpose_text || txLabel(item.tx_type)
+        return (
+          <View key={`${item.tx_id}-${item.direction}`} style={{ gap: 8 }}>
+            {showDay ? <Text style={{ color: colors.deep, fontWeight: "700" }}>{day}</Text> : null}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12, gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.navy, fontWeight: "600", fontSize: type.body }}>{title}</Text>
+                <Text style={{ color: "#64748B", fontSize: type.small }}>{txLabel(item.tx_type)} · {stamp.time}</Text>
+              </View>
+              <View>
+                <Text style={{ color: item.status !== "done" ? colors.warn : inbound ? "#2E7D32" : colors.navy, fontWeight: "700", textAlign: "right" }}>{item.status !== "done" ? copy.held : `${inbound ? "+" : "−"}${vnd(item.amount)}`}</Text>
+                <Text style={{ color: "#64748B", fontSize: type.small, textAlign: "right" }}>{copy.balanceAfter} {vnd(item.balanceAfter)}</Text>
+              </View>
+            </View>
+          </View>
+        )
+      })}
     </Screen>
   )
 }
@@ -93,11 +137,11 @@ export function ProfileScreen() {
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.aqua, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: colors.deep, fontWeight: "700" }}>{desk ? "NT" : label?.mark}</Text>
+            <Text style={{ color: colors.deep, fontWeight: "700" }}>{desk ? "GH" : label?.mark}</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{desk ? copy.guardianName : person?.full_name}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>{desk ? copy.loved : label?.title}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{desk ? `${(person?.guardian?.relation ?? "người giám hộ").replaceAll("_", " ")} · ${person?.full_name ?? ""}` : label?.hint}</Text>
             {desk ? null : <Text style={{ color: "#64748B", fontSize: type.small }}>{accountId}</Text>}
           </View>
         </View>
@@ -113,7 +157,7 @@ export function ProfileScreen() {
       ) : null}
       {desk ? (
         pending.length === 0 ? <Text style={{ color: "#64748B" }}>{copy.emptyPending}</Text> : pending.map((item) => (
-          <Button key={item.id} outline label={`${item.sender_name ?? item.account_id}${item.amount ? ` · ${vnd(item.amount)}` : ""}`} onPress={() => router.push(`/(main)/guardian/requests/${item.id}`)} />
+          <Button key={item.id} outline label={`${displayHolder(item.sender_name) || item.account_id}${item.amount ? ` · ${vnd(item.amount)}` : ""}`} onPress={() => router.push(`/(main)/guardian/requests/${item.id}`)} />
         ))
       ) : (
         <>
@@ -137,7 +181,7 @@ export function GuardianScreen() {
       <Header title={copy.loved} />
       <Card>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.lovedBody}</Text>
-        <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{person?.guardian?.relation ?? person?.full_name}</Text>
+        <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{(person?.guardian?.relation ?? "người giám hộ").replaceAll("_", " ")}</Text>
         <Text style={{ color: "#64748B" }}>{copy.wait24}</Text>
       </Card>
       <Button label={copy.addLoved} />
@@ -163,7 +207,7 @@ export function GuardianRequestScreen() {
         largeText={largeText}
         request={{
           decision_id: item.transfer_id ? `dec-${item.transfer_id}` : item.id,
-          sender_name: item.sender_name ?? undefined,
+          sender_name: displayHolder(item.sender_name) || undefined,
           payee_name: item.to_account ?? undefined,
           amount_text: item.amount == null ? undefined : vnd(item.amount),
         }}

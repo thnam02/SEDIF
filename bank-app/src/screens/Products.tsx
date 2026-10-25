@@ -5,7 +5,8 @@ import { Check } from "lucide-react-native"
 
 import { useAccount, useLimit, useProduct, useSavings } from "../api/queries"
 import { copy } from "../copy/vi"
-import { vnd } from "../format"
+import { digits, grouped, vnd } from "../format"
+import { displayHolder } from "../names"
 import { useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
 
@@ -25,7 +26,7 @@ export function SavingsList() {
           <Card>
             <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.book.replace("{n}", String(index + 1).padStart(2, "0"))}</Text>
             <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{vnd(book.balance)}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>{book.holder_name} · {book.id}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{displayHolder(book.holder_name)} · {book.id}</Text>
           </Card>
         </Pressable>
       ))}
@@ -46,7 +47,7 @@ export function SavingsDetail({ id }: { id: string }) {
     <Screen>
       <Header title={copy.savings} />
       <Card>
-        <Text style={{ color: colors.navy, fontWeight: "700" }}>{book?.holder_name || copy.emptySavings}</Text>
+        <Text style={{ color: colors.navy, fontWeight: "700" }}>{book ? displayHolder(book.holder_name) : copy.emptySavings}</Text>
         <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{book ? vnd(book.balance) : ""}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{book?.id}</Text>
       </Card>
@@ -71,7 +72,7 @@ export function SavingsSettle() {
       <Header title={copy.settle} />
       <Card>
         <Text style={{ color: "#64748B" }}>{copy.moneyLabel}</Text>
-        <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
+        <TextInput value={grouped(Number(amount) || 0)} onChangeText={(value) => setAmount(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
       </Card>
       <Text style={{ color: colors.warn, textAlign: "center" }}>{copy.settleNote}</Text>
       <Button
@@ -109,7 +110,7 @@ export function LoanScreen() {
       <Header title={copy.loan} />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.body }}>{copy.moneyLabel}</Text>
-        <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
+        <TextInput value={grouped(Number(amount) || 0)} onChangeText={(value) => setAmount(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
         <Text style={{ color: "#64748B", fontSize: type.body }}>{copy.disburse}</Text>
       </Card>
       <Button label={copy.loan} onPress={() => loan.mutate(Number(amount) || 0, { onSuccess: () => router.push({ pathname: "/(main)/loans/success", params: { amount } }) })} />
@@ -140,17 +141,17 @@ export function LimitScreen() {
   const [perDay, setPerDay] = useState("")
   const limit = useLimit()
   const txn = perTxn || String(account.data?.limit_per_txn ?? "")
-  const day = perDay || String(account.data?.limit_per_day ?? "")
+  const dayLimit = perDay || String(account.data?.limit_per_day ?? "")
   return (
     <Screen>
       <Header title={copy.limits} />
       <Card>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.limitPer}</Text>
-        <TextInput testID="limit-txn" value={txn} onChangeText={setPerTxn} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
+        <TextInput testID="limit-txn" value={grouped(Number(txn) || 0)} onChangeText={(value) => setPerTxn(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
         <Text style={{ color: "#64748B" }}>{copy.limitDay}</Text>
-        <TextInput value={day} onChangeText={setPerDay} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
+        <TextInput value={grouped(Number(dayLimit) || 0)} onChangeText={(value) => setPerDay(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
       </Card>
-      <Button label={limit.isSuccess ? copy.updated : copy.update} onPress={() => limit.mutate({ limit_per_txn: Number(txn) || 0, limit_per_day: Number(day) || 0 })} />
+      <Button label={limit.isSuccess ? copy.updated : copy.update} onPress={() => limit.mutate({ limit_per_txn: Number(txn) || 0, limit_per_day: Number(dayLimit) || 0 })} />
     </Screen>
   )
 }
@@ -167,7 +168,7 @@ export function CardScreen() {
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.available}</Text>
         <Text style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }}>{vnd(account.data?.balance ?? 0)}</Text>
         <Text style={{ color: "#64748B" }}>{copy.fee}</Text>
-        <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
+        <TextInput value={grouped(Number(amount) || 0)} onChangeText={(value) => setAmount(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
       </Card>
       <Button label={copy.withdraw} onPress={() => cash.mutate(Number(amount) || 0)} />
     </Screen>

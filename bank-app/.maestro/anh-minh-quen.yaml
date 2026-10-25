@@ -1,7 +1,7 @@
 appId: com.fides.saobank
 ---
 - launchApp
-- tapOn: "Anh Minh, nhân viên văn phòng"
+- tapOn: "Trương Gia Thịnh"
 - tapOn: "Chuyển tiền"
 - tapOn: "CHU DAU TU NGUYEN HUE"
 - tapOn: "Xác nhận giao dịch"
