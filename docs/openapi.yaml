@@ -361,6 +361,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /accounts/{id}/beneficiaries:
+    get:
+      tags: [Bank core]
+      operationId: listBeneficiaries
+      summary: Người thụ hưởng đã lưu của một tài khoản
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Danh sách
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, beneficiaries]
+                properties:
+                  account_id:
+                    type: string
+                  beneficiaries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Beneficiary"
+        "404":
+          description: Không có tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /beneficiaries/{id}:
     get:
       tags: [Bank core]
@@ -1092,6 +1120,12 @@ components:
           enum: [open, frozen, closed]
         has_guardian:
           type: boolean
+        limit_per_txn:
+          type: integer
+          minimum: 0
+        limit_per_day:
+          type: integer
+          minimum: 0
     HistoryEntry:
       type: object
       required: [tx_id, ts, direction, amount, tx_type, status]

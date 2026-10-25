@@ -421,6 +421,8 @@ def get_account(account_id: str) -> dict:
         "balance": int(row["balance"]),
         "status": row["status"] if row["status"] in {"open", "frozen", "closed"} else "open",
         "has_guardian": bool(row["has_guardian"]),
+        "limit_per_txn": int(row["limit_per_txn"]),
+        "limit_per_day": int(row["limit_per_day"]),
     }
 
 
@@ -449,6 +451,34 @@ def history(account_id: str, before: str | None = None) -> dict:
                 "tx_type": row["tx_type"],
                 "purpose_text": row["purpose_text"],
                 "status": row["status"],
+            }
+            for row in rows
+        ],
+    }
+
+
+@app.get("/accounts/{account_id}/beneficiaries")
+def list_beneficiaries(account_id: str) -> dict:
+    with connect() as conn:
+        found = conn.execute("SELECT 1 FROM bank.accounts WHERE id = %s", (account_id,)).fetchone()
+        if found is None:
+            raise HTTPException(404, "không có tài khoản")
+        rows = conn.execute(
+            """
+            SELECT id, account_id, holder_name, saved_at, times_paid
+            FROM bank.beneficiaries WHERE owner_account = %s ORDER BY holder_name
+            """,
+            (account_id,),
+        ).fetchall()
+    return {
+        "account_id": account_id,
+        "beneficiaries": [
+            {
+                "id": row["id"],
+                "account_id": row["account_id"],
+                "holder_name": row["holder_name"],
+                "saved_at": row["saved_at"].isoformat(),
+                "times_paid": int(row["times_paid"]),
             }
             for row in rows
         ],

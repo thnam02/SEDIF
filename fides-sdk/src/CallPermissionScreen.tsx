@@ -1,7 +1,8 @@
 import { useEffect } from "react"
-import { AppState, PermissionsAndroid, Platform, Pressable, Text, View } from "react-native"
+import { AppState, PermissionsAndroid, Platform } from "react-native"
 
 import { FidesSession } from "./FidesSession"
+import { FidesPermissionScreen } from "./ui"
 
 export function CallPermissionScreen({ onContinue }: { onContinue: () => void }) {
   useEffect(() => {
@@ -25,16 +26,5 @@ export function CallPermissionScreen({ onContinue }: { onContinue: () => void })
     onContinue()
   }
 
-  return (
-    <View>
-      <Text>Khi chuyển tiền, FIDES nhìn cuộc gọi đang mở để cảnh báo kịp lúc.</Text>
-      <Text>Không đọc số máy, nhật ký cuộc gọi, SMS hay danh bạ. Từ chối quyền thì vẫn dùng được app.</Text>
-      <Pressable onPress={allow}>
-        <Text>Cho phép trạng thái cuộc gọi</Text>
-      </Pressable>
-      <Pressable onPress={onContinue}>
-        <Text>Tiếp tục không cấp quyền</Text>
-      </Pressable>
-    </View>
-  )
+  return <FidesPermissionScreen onAllow={allow} onLater={onContinue} />
 }

@@ -30,6 +30,8 @@ let listening = false
 
 function nativeModule(): { getCallState?: () => CallState; addListener?: (name: string, listener: (event: NativeCall) => void) => { remove: () => void } } | null {
   try {
+    // expo-modules-core vắng khi chạy test Node; nạp lúc runtime.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const core = require("expo-modules-core") as { requireOptionalNativeModule?: (name: string) => unknown }
     return (core.requireOptionalNativeModule?.("Fides") as ReturnType<typeof nativeModule>) ?? null
   } catch {

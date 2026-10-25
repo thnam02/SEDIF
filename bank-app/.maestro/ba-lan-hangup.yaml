@@ -1,0 +1,20 @@
+appId: com.fides.saobank
+---
+- launchApp
+- tapOn: "Bà Lan, 68 tuổi"
+- tapOn: "Số lạ gọi đến"
+- tapOn: "Tiết kiệm"
+- tapOn: "Tất toán trước hạn"
+- tapOn: "Tất toán trước hạn"
+- tapOn: "Về trang chủ"
+- tapOn: "Chuyển tiền"
+- tapOn: "Nhập số tài khoản mới"
+- inputText: "ZLAN120000000001"
+- tapOn: "Nhập số tài khoản mới"
+- tapOn:
+    id: "amount"
+- eraseText
+- inputText: "120000000"
+- tapOn: "Xác nhận giao dịch"
+- tapOn: "Xác nhận giao dịch"
+- assertVisible: "Hãy cúp máy trước khi tiếp tục"

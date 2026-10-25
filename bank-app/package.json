@@ -1,11 +1,40 @@
 {
   "name": "bank-app",
   "private": true,
-  "main": "App.tsx",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint app src --max-warnings 0",
+    "test": "node --experimental-strip-types --test src/copy/vi.test.ts"
+  },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.5",
+    "expo": "^54.0.38",
+    "expo-constants": "^58.0.13",
+    "expo-linear-gradient": "^58.0.3",
+    "expo-linking": "^58.0.14",
+    "expo-router": "^58.0.26",
+    "expo-secure-store": "^58.0.2",
+    "expo-status-bar": "^58.0.4",
     "fides-sdk": "file:../fides-sdk",
-    "expo": "*",
-    "react": "*",
-    "react-native": "*"
+    "lucide-react-native": "^1.61.0",
+    "nativewind": "^4.2.7",
+    "openapi-fetch": "^0.17.0",
+    "react": "^19.1.0",
+    "react-native": "^0.81.4",
+    "react-native-gesture-handler": "^3.4.0",
+    "react-native-reanimated": "^3.19.0",
+    "react-native-safe-area-context": "^5.10.1",
+    "react-native-screens": "^4.30.0",
+    "react-native-svg": "^15.16.0",
+    "tailwindcss": "^3.4.19",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.16",
+    "eslint": "^9.39.5",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.72.0"
   }
 }

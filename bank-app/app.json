@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Sao Bank",
+    "slug": "sao-bank",
+    "scheme": "saobank",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": { "package": "com.fides.saobank" },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}
