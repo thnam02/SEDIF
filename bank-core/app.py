@@ -227,6 +227,14 @@ def release_payee(conn, transfer: dict, now: datetime) -> None:
     conn.execute("UPDATE bank.transfers SET posted = true WHERE id = %s", (transfer["id"],))
 
 
+def sync_entry(conn, transfer_id: str, account: str, funds: str, status: str) -> None:
+    shown = "done" if funds == "released" else "cancelled" if funds == "cancelled" else status
+    conn.execute(
+        "UPDATE bank.entries SET status = %s WHERE tx_id = %s AND account_id = %s",
+        (shown, transfer_id, account),
+    )
+
+
 def apply_funds(conn, transfer: dict, previous: str, funds: str, now: datetime) -> None:
     if funds == "released" and previous != "released":
         release_payee(conn, transfer, now)
@@ -437,7 +445,7 @@ def history(account_id: str, before: str | None = None) -> dict:
         rows = conn.execute(
             """
             SELECT tx_id, ts, direction, amount, tx_type, purpose_text, status
-            FROM bank.entries WHERE account_id = %s AND ts < %s ORDER BY ts, id
+            FROM bank.entries WHERE account_id = %s AND ts <= %s ORDER BY ts, id
             """,
             (account_id, cutoff),
         ).fetchall()
@@ -659,6 +667,7 @@ def respond(transfer_id: str, body: RespondIn) -> dict:
             """,
             (level, funds, status, answered.get("hold_until"), answered.get("countdown_until"), answered.get("gate"), hung, transfer_id),
         )
+        sync_entry(conn, transfer_id, transfer["from_account"], funds, status)
         conn.commit()
     return {
         "transfer_id": transfer_id,
@@ -799,10 +808,12 @@ def confirm_guardian(request_id: str) -> dict:
         transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (row["transfer_id"],)).fetchone()
         answered = engine_post("/respond", {"decision_id": transfer["decision_id"], "guardian_confirm": True, "ts": now.isoformat()})
         apply_funds(conn, transfer, transfer["funds_status"], answered["funds_status"], now)
+        released_status = status_of(answered["level"], answered["funds_status"], transfer["hung_up"])
         conn.execute(
             "UPDATE bank.transfers SET funds_status=%s, status=%s, level=%s WHERE id=%s",
-            (answered["funds_status"], status_of(answered["level"], answered["funds_status"], transfer["hung_up"]), answered["level"], transfer["id"]),
+            (answered["funds_status"], released_status, answered["level"], transfer["id"]),
         )
+        sync_entry(conn, transfer["id"], transfer["from_account"], answered["funds_status"], released_status)
         conn.execute("UPDATE bank.guardian_requests SET status='confirmed', funds_status='released' WHERE id=%s", (request_id,))
         conn.commit()
     return {"id": request_id, "funds_status": "released"}
