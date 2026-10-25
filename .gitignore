@@ -8,5 +8,14 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 
+# Bí mật cục bộ. Không theo dõi .env hay file chứa FIDES_HMAC_KEY / FIDES_API_KEY.
+.env
+.env.*
+!.env.example
+
+# Cache máy local
+.expo/
+fides-sdk/android/build/
+
 # Nhật ký sinh khi chạy test. Gói mô hình và parquet đặc trưng trong fides/out/ vẫn được theo dõi.
 fides/out/audit/
