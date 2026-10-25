@@ -5,6 +5,8 @@ BANK=${BANK_URL:-http://127.0.0.1:8092}
 ENGINE=${ENGINE_URL:-http://127.0.0.1:8091}
 DATABASE_URL=${DATABASE_URL:-postgresql://hainamtran@localhost:5432/fides_w1}
 REDIS_URL=${REDIS_URL:-redis://localhost:6379/15}
+REDIS_PORT=${REDIS_PORT:-6379}
+REDIS_MODE=${REDIS_MODE:-host}
 API_KEY=${FIDES_API_KEY:-fides-demo-key}
 DB=${REDIS_URL##*/}
 
@@ -24,13 +26,18 @@ TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
 SQL
 
 # DEBUG RELOAD bị tắt. Tắt Redis không ghi đè file, rồi bật lại để nạp đúng RDB.
-redis-cli SHUTDOWN NOSAVE >/dev/null 2>&1 || true
-REDIS_SERVER=${REDIS_SERVER:-redis-server}
-REDIS_CONF=${REDIS_CONF:-/opt/homebrew/etc/redis.conf}
-"$REDIS_SERVER" "$REDIS_CONF" --daemonize yes
+# REDIS_MODE=docker chỉ khởi động lại service redis của compose, không đụng Redis trên máy.
+if [ "$REDIS_MODE" = "docker" ]; then
+  docker compose restart redis >/dev/null
+else
+  redis-cli -p "$REDIS_PORT" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+  REDIS_SERVER=${REDIS_SERVER:-redis-server}
+  REDIS_CONF=${REDIS_CONF:-/opt/homebrew/etc/redis.conf}
+  "$REDIS_SERVER" "$REDIS_CONF" --daemonize yes
+fi
 i=0
 while true; do
-  out=$(redis-cli -n "$DB" DBSIZE 2>&1 || true)
+  out=$(redis-cli -p "$REDIS_PORT" -n "$DB" DBSIZE 2>&1 || true)
   case "$out" in
     *ERR*|*LOADING*|*loading*)
       i=$((i + 1))
@@ -41,7 +48,28 @@ while true; do
       sleep 0.5
       ;;
     *)
-      break
+      case "$out" in
+        ''|*[!0-9]*)
+          i=$((i + 1))
+          if [ "$i" -gt 120 ]; then
+            echo "redis không lên: $out" >&2
+            exit 1
+          fi
+          sleep 0.5
+          ;;
+        *)
+          if [ "$out" -lt 1000000 ]; then
+            i=$((i + 1))
+            if [ "$i" -gt 120 ]; then
+              echo "redis chưa nạp đủ snapshot: $out" >&2
+              exit 1
+            fi
+            sleep 0.5
+          else
+            break
+          fi
+          ;;
+      esac
       ;;
   esac
 done

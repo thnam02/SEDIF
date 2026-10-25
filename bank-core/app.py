@@ -421,6 +421,7 @@ def get_account(account_id: str) -> dict:
         "balance": int(row["balance"]),
         "status": row["status"] if row["status"] in {"open", "frozen", "closed"} else "open",
         "has_guardian": bool(row["has_guardian"]),
+        "account_type": row["account_type"] if row["account_type"] in {"personal", "savings", "business", "securities", "ewallet"} else "personal",
         "limit_per_txn": int(row["limit_per_txn"]),
         "limit_per_day": int(row["limit_per_day"]),
     }
@@ -466,7 +467,7 @@ def list_beneficiaries(account_id: str) -> dict:
         rows = conn.execute(
             """
             SELECT id, account_id, holder_name, saved_at, times_paid
-            FROM bank.beneficiaries WHERE owner_account = %s ORDER BY holder_name
+            FROM bank.beneficiaries WHERE owner_account = %s ORDER BY times_paid DESC, holder_name
             """,
             (account_id,),
         ).fetchall()
@@ -482,6 +483,27 @@ def list_beneficiaries(account_id: str) -> dict:
             }
             for row in rows
         ],
+    }
+
+
+@app.get("/accounts/{account_id}/savings")
+def list_savings(account_id: str) -> dict:
+    with connect() as conn:
+        owner = conn.execute("SELECT customer_id FROM bank.accounts WHERE id = %s", (account_id,)).fetchone()
+        if owner is None:
+            raise HTTPException(404, "không có tài khoản")
+        rows = conn.execute(
+            """
+            SELECT id, holder_name, balance
+            FROM bank.accounts
+            WHERE customer_id = %s AND account_type = 'savings' AND status = 'open'
+            ORDER BY id
+            """,
+            (owner["customer_id"],),
+        ).fetchall()
+    return {
+        "account_id": account_id,
+        "books": [{"id": row["id"], "holder_name": row["holder_name"], "balance": int(row["balance"])} for row in rows],
     }
 
 
@@ -734,10 +756,29 @@ def guardian(body: GuardianIn) -> dict:
 @app.get("/guardian/requests")
 def guardian_requests() -> dict:
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM bank.guardian_requests WHERE status = 'open' ORDER BY id").fetchall()
+        rows = conn.execute(
+            """
+            SELECT r.id, r.account_id, r.transfer_id, r.level, r.funds_status,
+                   t.amount, t.to_account, a.holder_name AS sender_name
+            FROM bank.guardian_requests r
+            LEFT JOIN bank.transfers t ON t.id = r.transfer_id
+            LEFT JOIN bank.accounts a ON a.id = r.account_id
+            WHERE r.status = 'open'
+            ORDER BY r.id
+            """
+        ).fetchall()
     return {
         "requests": [
-            {"id": row["id"], "account_id": row["account_id"], "transfer_id": row["transfer_id"], "level": row["level"], "funds_status": row["funds_status"]}
+            {
+                "id": row["id"],
+                "account_id": row["account_id"],
+                "transfer_id": row["transfer_id"],
+                "level": row["level"],
+                "funds_status": row["funds_status"],
+                "amount": None if row["amount"] is None else int(row["amount"]),
+                "to_account": row["to_account"],
+                "sender_name": row["sender_name"],
+            }
             for row in rows
         ]
     }

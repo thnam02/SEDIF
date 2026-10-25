@@ -3,8 +3,9 @@ appId: com.fides.saobank
 - launchApp
 - tapOn: "Anh Minh, nhân viên văn phòng"
 - tapOn: "Chuyển tiền"
+- tapOn: "CHU DAU TU NGUYEN HUE"
+- tapOn: "Xác nhận giao dịch"
 - tapOn:
-    index: 0
-- tapOn: "Xác nhận giao dịch"
-- tapOn: "Xác nhận giao dịch"
+    text: "Xác nhận giao dịch"
+    index: 1
 - assertVisible: "Chuyển tiền thành công"

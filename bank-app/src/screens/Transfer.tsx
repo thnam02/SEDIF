@@ -45,8 +45,8 @@ export function RecipientScreen() {
           <ChevronRight size={18} color={colors.deep} />
         </Pressable>
       ))}
-      <TextInput value={input.value} onChangeText={input.onChangeText} placeholder={copy.newRecipient} autoCapitalize="characters" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy }} />
-      <Button outline label={copy.newRecipient} onPress={() => input.value && go(input.value, input.value, false)} />
+      <TextInput testID="new-account" value={input.value} onChangeText={input.onChangeText} placeholder={copy.newRecipient} autoCapitalize="characters" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy }} />
+      <Button testID="new-account-go" outline label={copy.newRecipient} onPress={() => input.value && go(input.value, input.value, false)} />
     </Screen>
   )
 }

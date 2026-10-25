@@ -3,9 +3,21 @@ appId: com.fides.saobank
 - launchApp
 - tapOn: "Anh Minh, nhân viên văn phòng"
 - tapOn: "Chuyển tiền"
-- tapOn: "Nhập số tài khoản mới"
+- scrollUntilVisible:
+    element:
+      id: "new-account-go"
+    direction: DOWN
+- tapOn:
+    id: "new-account"
 - inputText: "ZVAY000000000001"
-- tapOn: "Nhập số tài khoản mới"
+- hideKeyboard
+- tapOn:
+    id: "new-account-go"
+- tapOn: "Nội dung chuyển khoản"
+- inputText: "vay bạn"
+- hideKeyboard
 - tapOn: "Xác nhận giao dịch"
-- tapOn: "Xác nhận giao dịch"
+- tapOn:
+    text: "Xác nhận giao dịch"
+    index: 1
 - assertVisible: "Chuyển tiền thành công|Hãy cẩn thận|Tạm dừng để kiểm tra|Hãy cúp máy trước khi tiếp tục|Xác nhận chuyển tiền"

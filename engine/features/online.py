@@ -7,7 +7,7 @@ import time
 
 import redis
 
-from scripts.load_sim_events import PRODUCT_TX
+PRODUCT_TX = {"savings_liquidation", "quick_loan_disbursement", "credit_card_cash_advance"}
 
 DAY_US = 86_400 * 1_000_000
 DAY_NS = 86_400 * 1_000_000_000

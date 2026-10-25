@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { FidesGuardianRequest } from "fides-sdk"
 
-import { useAccount, useConfirmGuardian, useGuardianRequests, useHistory } from "../api/queries"
+import { useConfirmGuardian, useGuardianRequests, useHistory, useRespond } from "../api/queries"
 import { copy } from "../copy/vi"
 import { vnd, weekdayIndex } from "../format"
 import { personas } from "../personas"
@@ -78,18 +78,50 @@ export function ProfileScreen() {
   const router = useRouter()
   const role = useBank((state) => state.role)
   const accountId = useBank((state) => state.accountId)
-  const account = useAccount(accountId)
+  const large = useBank((state) => state.largeText)
+  const setLarge = useBank((state) => state.setLargeText)
+  const desk = useBank((state) => state.guardianDesk)
+  const setDesk = useBank((state) => state.setGuardianDesk)
+  const requests = useGuardianRequests()
   const person = personas.find((item) => item.role === role)
+  const label = copy.personas[role as keyof typeof copy.personas]
+  const type = useType()
+  const pending = requests.data?.requests ?? []
   return (
     <Screen>
-      <Header title={copy.profile} />
+      <Header title={desk ? copy.pending : copy.profile} />
       <Card>
-        <Text style={{ color: colors.navy, fontWeight: "700" }}>{person?.full_name}</Text>
-        <Text style={{ color: colors.deep, fontSize: 20 }}>{account.data?.segment}</Text>
-        <Text style={{ color: "#64748B" }}>{accountId}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.aqua, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ color: colors.deep, fontWeight: "700" }}>{desk ? "NT" : label?.mark}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{desk ? copy.guardianName : person?.full_name}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{desk ? copy.loved : label?.title}</Text>
+            {desk ? null : <Text style={{ color: "#64748B", fontSize: type.small }}>{accountId}</Text>}
+          </View>
+        </View>
       </Card>
-      <Button label={copy.history} onPress={() => router.push("/(main)/history")} />
-      <Button outline label={copy.signOut} onPress={() => router.replace("/(auth)/persona")} />
+      <Pressable accessibilityRole="switch" accessibilityState={{ checked: large }} onPress={() => setLarge(!large)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 16, backgroundColor: colors.mint, padding: 16 }}>
+        <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{copy.largeText}</Text>
+        <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: large ? colors.deep : "#CBD5E1", justifyContent: "center", paddingHorizontal: 3 }}>
+          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.white, alignSelf: large ? "flex-end" : "flex-start" }} />
+        </View>
+      </Pressable>
+      {person?.has_guardian ? (
+        <Button label={desk ? copy.profile : copy.viewAsGuardian} outline onPress={() => setDesk(!desk)} />
+      ) : null}
+      {desk ? (
+        pending.length === 0 ? <Text style={{ color: "#64748B" }}>{copy.emptyPending}</Text> : pending.map((item) => (
+          <Button key={item.id} outline label={`${item.sender_name ?? item.account_id}${item.amount ? ` · ${vnd(item.amount)}` : ""}`} onPress={() => router.push(`/(main)/guardian/requests/${item.id}`)} />
+        ))
+      ) : (
+        <>
+          <Button label={copy.loved} onPress={() => router.push("/(main)/guardian")} />
+          <Button label={copy.limits} onPress={() => router.push("/(main)/limit")} />
+          <Button outline label={copy.signOut} onPress={() => router.replace("/(auth)/persona")} />
+        </>
+      )}
     </Screen>
   )
 }
@@ -120,6 +152,7 @@ export function GuardianRequestScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const requests = useGuardianRequests()
   const confirm = useConfirmGuardian()
+  const respond = useRespond()
   const item = (requests.data?.requests ?? []).find((row) => row.id === id)
   const largeText = useBank((state) => state.largeText)
   if (!item) return <Screen><Header title={copy.loved} /></Screen>
@@ -127,9 +160,15 @@ export function GuardianRequestScreen() {
     <Screen>
       <FidesGuardianRequest
         largeText={largeText}
-        request={{ decision_id: item.id, sender_name: item.account_id }}
+        request={{
+          decision_id: item.transfer_id ? `dec-${item.transfer_id}` : item.id,
+          sender_name: item.sender_name ?? undefined,
+          payee_name: item.to_account ?? undefined,
+          amount_text: item.amount == null ? undefined : vnd(item.amount),
+        }}
         onDecide={(body) => {
           if (body.guardian_confirm) confirm.mutate(item.id)
+          else if (body.cancel && item.transfer_id) respond.mutate({ id: item.transfer_id, body: { cancel: true } })
         }}
       />
     </Screen>

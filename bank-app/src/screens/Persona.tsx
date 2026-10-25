@@ -2,6 +2,7 @@ import { Pressable, Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { ChevronRight, ShieldCheck } from "lucide-react-native"
 
+import { bank, unwrap } from "../api/client"
 import { copy } from "../copy/vi"
 import { personas } from "../personas"
 import { useBank } from "../store"
@@ -24,8 +25,17 @@ export function PersonaScreen() {
           <Pressable
             key={person.customer_id}
             accessibilityRole="button"
-            onPress={() => {
-              choose(person.customer_id, person.account_ids[0] ?? "", person.role)
+            onPress={async () => {
+              let accountId = person.account_ids[0] ?? ""
+              try {
+                const rows = await Promise.all(person.account_ids.map((id) => unwrap(bank.GET("/accounts/{id}", { params: { path: { id } } }))))
+                const personal = rows.filter((row) => row.account_type === "personal")
+                const best = [...(personal.length ? personal : rows)].sort((left, right) => right.balance - left.balance)[0]
+                if (best) accountId = best.id
+              } catch {
+                accountId = person.account_ids[0] ?? ""
+              }
+              choose(person.customer_id, accountId, person.role)
               router.replace("/(main)/(tabs)")
             }}
             className="flex-row items-center gap-3 rounded-2xl border p-3"
@@ -36,7 +46,7 @@ export function PersonaScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{label?.title ?? person.full_name}</Text>
-              <Text style={{ color: "#64748B", fontSize: type.small }}>{person.full_name} · {label?.hint ?? copy.bankHint}</Text>
+              <Text style={{ color: "#64748B", fontSize: type.small }}>{label?.hint ?? copy.bankHint}</Text>
             </View>
             <ChevronRight size={18} color={colors.deep} />
           </Pressable>

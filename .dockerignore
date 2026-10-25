@@ -1,0 +1,8 @@
+**/.venv
+**/node_modules
+.git
+bank-app
+design-ref
+fides/out
+**/*.pyc
+thiet-ke-man-hinh-fides.zip

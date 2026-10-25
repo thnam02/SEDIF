@@ -1,20 +1,44 @@
+import { useEffect, useRef, useState } from "react"
 import { Pressable, Text, View } from "react-native"
+import { ShieldCheck } from "lucide-react-native"
+import { FidesSession } from "fides-sdk"
 
 import { copy } from "../copy/vi"
-import { DEMO, useBank } from "../store"
+import { DEMO } from "../store"
 import { colors } from "../ui/parts"
 import { CallSimulator } from "./CallSimulator"
 
 export function JudgePanel() {
-  const large = useBank((state) => state.largeText)
-  const setLarge = useBank((state) => state.setLargeText)
-  if (!DEMO) return null
+  const taps = useRef(0)
+  const [open, setOpen] = useState(false)
+  useEffect(() => { FidesSession.start() }, [])
+  if (!DEMO) {
+    return (
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <ShieldCheck size={25} color={colors.deep} />
+        <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
+      </View>
+    )
+  }
   return (
-    <View className="flex-row gap-2" style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-      <CallSimulator />
-      <Pressable accessibilityRole="button" onPress={() => setLarge(!large)} style={{ borderRadius: 12, backgroundColor: large ? colors.warn : colors.mint, paddingHorizontal: 12, paddingVertical: 8 }}>
-        <Text style={{ color: large ? colors.white : colors.deep, fontWeight: "700" }}>{copy.largeText}</Text>
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={copy.logo}
+        testID="sao-logo"
+        onPress={() => {
+          taps.current += 1
+          if (taps.current >= 7) {
+            taps.current = 0
+            setOpen(true)
+          }
+        }}
+        style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+      >
+        <ShieldCheck size={25} color={colors.deep} />
+        <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
       </Pressable>
-    </View>
+      <CallSimulator open={open} onClose={() => setOpen(false)} />
+    </>
   )
 }

@@ -389,6 +389,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /accounts/{id}/savings:
+    get:
+      tags: [Bank core]
+      operationId: listSavings
+      summary: Sổ tiết kiệm cùng khách hàng với tài khoản thanh toán
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Các sổ đang mở
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, books]
+                properties:
+                  account_id:
+                    type: string
+                  books:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SavingsBook"
+        "404":
+          description: Không có tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /beneficiaries/{id}:
     get:
       tags: [Bank core]
@@ -1102,7 +1130,7 @@ components:
             - type: "null"
     Account:
       type: object
-      required: [id, customer_id, holder_name, segment, balance, status, has_guardian]
+      required: [id, customer_id, holder_name, segment, balance, status, has_guardian, account_type]
       properties:
         id:
           type: string
@@ -1120,6 +1148,9 @@ components:
           enum: [open, frozen, closed]
         has_guardian:
           type: boolean
+        account_type:
+          type: string
+          enum: [personal, savings, business, securities, ewallet]
         limit_per_txn:
           type: integer
           minimum: 0
@@ -1326,6 +1357,23 @@ components:
         funds_status:
           type: string
           enum: [held, released, cancelled]
+        amount:
+          type: integer
+          minimum: 0
+        to_account:
+          type: string
+        sender_name:
+          type: string
+    SavingsBook:
+      type: object
+      required: [id, holder_name, balance]
+      properties:
+        id:
+          type: string
+        holder_name:
+          type: string
+        balance:
+          type: integer
     GuardianConfirmResponse:
       type: object
       required: [id, funds_status]

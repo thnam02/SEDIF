@@ -102,6 +102,22 @@ def stack():
     holder["engine"].shutdown()
 
 
+def test_lists_saved_beneficiaries_and_savings(stack):
+    listed = _ok("GET", f"{BANK}/accounts/A0002119/beneficiaries")
+    assert listed["account_id"] == "A0002119"
+    assert listed["beneficiaries"]
+    assert listed["beneficiaries"][0]["times_paid"] >= listed["beneficiaries"][-1]["times_paid"]
+    for row in listed["beneficiaries"]:
+        assert {"id", "account_id", "holder_name", "saved_at", "times_paid"} <= set(row)
+    status, payload = _call("GET", f"{BANK}/accounts/ZMISSING/beneficiaries")
+    assert status == 404 and "không có tài khoản" in str(payload.get("detail"))
+    books = _ok("GET", f"{BANK}/accounts/A0000623/savings")
+    assert books["account_id"] == "A0000623"
+    assert any(book["id"] == "A0077690" and book["balance"] > 0 for book in books["books"])
+    account = _ok("GET", f"{BANK}/accounts/A0002119")
+    assert account["account_type"] == "personal"
+
+
 def test_limit_and_balance_are_rejected(stack):
     account = "A0031239"
     balance = int(_ok("GET", f"{BANK}/accounts/{account}")["balance"])

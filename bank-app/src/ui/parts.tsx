@@ -1,7 +1,8 @@
 import type { ReactNode } from "react"
-import { Pressable, Text, View } from "react-native"
+import { Pressable, ScrollView, Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { ArrowLeft } from "lucide-react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { fidesTheme } from "fides-sdk"
 
 import { copy } from "../copy/vi"
@@ -16,7 +17,14 @@ export function useType() {
 }
 
 export function Screen({ children }: { children: ReactNode }) {
-  return <View className="flex-col gap-5 px-5 py-6" style={{ gap: 20, paddingHorizontal: 20, paddingVertical: 24, backgroundColor: colors.white, flex: 1 }}>{children}</View>
+  const insets = useSafeAreaInsets()
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
+        {children}
+      </ScrollView>
+    </View>
+  )
 }
 
 export function Header({ title }: { title: string }) {
@@ -38,10 +46,11 @@ export function Card({ children }: { children: ReactNode }) {
   return <View className="flex-col gap-3 rounded-2xl bg-mint p-4" style={{ gap: 12, borderRadius: 16, backgroundColor: colors.mint, padding: 16 }}>{children}</View>
 }
 
-export function Button({ label, onPress, outline = false }: { label: string; onPress?: () => void; outline?: boolean }) {
+export function Button({ label, onPress, outline = false, testID }: { label: string; onPress?: () => void; outline?: boolean; testID?: string }) {
   const type = useType()
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       onPress={onPress}
       className="min-h-11 items-center justify-center rounded-xl px-4"

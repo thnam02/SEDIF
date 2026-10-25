@@ -149,6 +149,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/accounts/{id}/savings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sổ tiết kiệm cùng khách hàng với tài khoản thanh toán */
+        get: operations["listSavings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/beneficiaries/{id}": {
         parameters: {
             query?: never;
@@ -548,6 +565,8 @@ export interface components {
             /** @enum {string} */
             status: "open" | "frozen" | "closed";
             has_guardian: boolean;
+            /** @enum {string} */
+            account_type: "personal" | "savings" | "business" | "securities" | "ewallet";
             limit_per_txn?: number;
             limit_per_day?: number;
         };
@@ -646,6 +665,14 @@ export interface components {
             level: "none" | "info" | "banner" | "medium" | "high";
             /** @enum {string} */
             funds_status: "held" | "released" | "cancelled";
+            amount?: number;
+            to_account?: string;
+            sender_name?: string;
+        };
+        SavingsBook: {
+            id: string;
+            holder_name: string;
+            balance: number;
         };
         GuardianConfirmResponse: {
             id: string;
@@ -910,6 +937,41 @@ export interface operations {
                     "application/json": {
                         account_id: string;
                         beneficiaries: components["schemas"]["Beneficiary"][];
+                    };
+                };
+            };
+            /** @description Không có tài khoản */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSavings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Mã tài khoản trong sổ ngân hàng giả. */
+                id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Các sổ đang mở */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        account_id: string;
+                        books: components["schemas"]["SavingsBook"][];
                     };
                 };
             };

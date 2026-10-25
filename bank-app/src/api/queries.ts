@@ -24,6 +24,14 @@ export function useHistory(id: string | null) {
   })
 }
 
+export function useSavings(id: string | null) {
+  return useQuery({
+    queryKey: ["savings", id],
+    enabled: Boolean(id),
+    queryFn: () => unwrap(bank.GET("/accounts/{id}/savings", { params: { path: { id: id ?? "" } } })),
+  })
+}
+
 export function useBeneficiaries(id: string | null) {
   return useQuery({
     queryKey: ["beneficiaries", id],

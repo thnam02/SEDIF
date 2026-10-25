@@ -2,19 +2,46 @@ appId: com.fides.saobank
 ---
 - launchApp
 - tapOn: "Bà Lan, 68 tuổi"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "SAO BANK"
 - tapOn: "Số lạ gọi đến"
 - tapOn: "Tiết kiệm"
 - tapOn: "Tất toán trước hạn"
 - tapOn: "Tất toán trước hạn"
 - tapOn: "Về trang chủ"
+- tapOn: "Cá nhân"
+- tapOn: "Hạn mức chuyển tiền"
+- tapOn:
+    id: "limit-txn"
+- eraseText: 12
+- inputText: "200000000"
+- hideKeyboard
+- tapOn: "Cập nhật"
+- extendedWaitUntil:
+    visible: "Đã cập nhật"
+    timeout: 10000
+- tapOn: "Trang chủ"
+- tapOn: "Trang chủ"
 - tapOn: "Chuyển tiền"
-- tapOn: "Nhập số tài khoản mới"
+- scrollUntilVisible:
+    element:
+      id: "new-account-go"
+    direction: DOWN
+- tapOn:
+    id: "new-account"
 - inputText: "ZLAN120000000001"
-- tapOn: "Nhập số tài khoản mới"
+- hideKeyboard
+- tapOn:
+    id: "new-account-go"
 - tapOn:
     id: "amount"
-- eraseText
+- eraseText: 12
 - inputText: "120000000"
+- hideKeyboard
 - tapOn: "Xác nhận giao dịch"
-- tapOn: "Xác nhận giao dịch"
+- tapOn:
+    text: "Xác nhận giao dịch"
+    index: 1
 - assertVisible: "Hãy cúp máy trước khi tiếp tục"

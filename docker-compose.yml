@@ -15,7 +15,7 @@ services:
       start_period: 5s
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.8-alpine
     ports:
       - "6379:6379"
     healthcheck:
@@ -32,7 +32,7 @@ services:
     environment:
       SERVICE_NAME: engine
       DATABASE_URL: postgresql://fides:fides@postgres:5432/fides
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/15
       FIDES_HMAC_KEY: fides-demo-hmac
       FIDES_API_KEY: fides-demo-key
     ports:
@@ -60,7 +60,7 @@ services:
     environment:
       SERVICE_NAME: bank-core
       DATABASE_URL: postgresql://fides:fides@postgres:5432/fides
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/15
       ENGINE_URL: http://engine:8080
       SIMO_URL: http://simo-mock:8080
       FIDES_HMAC_KEY: fides-demo-hmac
