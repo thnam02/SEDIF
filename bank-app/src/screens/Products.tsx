@@ -68,7 +68,7 @@ export function SavingsSettle() {
   const [amount, setAmount] = useState("200000000")
   const liquidate = useProduct("/savings/liquidate")
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.settle} />
       <Card>
         <Text style={{ color: "#64748B" }}>{copy.moneyLabel}</Text>
@@ -106,7 +106,7 @@ export function LoanScreen() {
   const loan = useProduct("/loan")
   const type = useType()
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.loan} />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.body }}>{copy.moneyLabel}</Text>
@@ -143,7 +143,7 @@ export function LimitScreen() {
   const txn = perTxn || String(account.data?.limit_per_txn ?? "")
   const dayLimit = perDay || String(account.data?.limit_per_day ?? "")
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.limits} />
       <Card>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.limitPer}</Text>
@@ -162,7 +162,7 @@ export function CardScreen() {
   const [amount, setAmount] = useState("1000000")
   const cash = useProduct("/card/cash-advance")
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.cash} />
       <Card>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.available}</Text>

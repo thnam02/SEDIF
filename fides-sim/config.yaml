@@ -245,6 +245,9 @@ decision:
   cancel_anytime: true
   guardian_confirm_releases: true
   proceed_after_countdown_releases: true
+  # GIẢ ĐỊNH: mỗi tài khoản chỉ thấy lời nhắc cuộc gọi tối đa 3 lần trong 30 ngày.
+  call_notice_max: 3
+  call_notice_days: 30
 
 # GIẢ ĐỊNH: 5% tài khoản không phải mule, chưa có listing, bị liệt kê nhầm.
 # Không ước lượng từ dữ liệu.

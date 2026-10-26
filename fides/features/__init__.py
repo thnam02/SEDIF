@@ -14,6 +14,7 @@ from features.service import (
     session_families,
     severity,
 )
+from features.ledger import ledger_pair_features
 from features.store import FEATURE_COLUMNS, LONG_TERM, NETWORK_ONLY, PROFILES, FeatureStore, using_store
 
 
@@ -40,6 +41,7 @@ __all__ = [
     "decide_cost",
     "decide_levels",
     "fit_tau",
+    "ledger_pair_features",
     "session_families",
     "severity",
     "using_store",

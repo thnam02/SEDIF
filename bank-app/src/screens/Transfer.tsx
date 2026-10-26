@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react"
 import { Pressable, Text, TextInput, View } from "react-native"
 import { useRouter } from "expo-router"
 import { Check, ChevronRight, Search, ShieldCheck } from "lucide-react-native"
-import { FidesIntervention, FidesSession, useAccountInput } from "fides-sdk"
+import { FidesCallNotice, FidesIntervention, FidesSession, useAccountInput } from "fides-sdk"
 
+import { BANK_URL } from "../api/client"
 import { useBeneficiaries, useRespond, useTransfer } from "../api/queries"
 import { copy } from "../copy/vi"
 import { displayHolder } from "../names"
@@ -27,7 +28,7 @@ export function RecipientScreen() {
     router.push("/(main)/transfer/amount")
   }
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.recipient} />
       <Button testID="new-account-open" outline label={copy.newRecipient} onPress={() => router.push("/(main)/transfer/new")} />
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: "#F8FAFC", paddingHorizontal: 12, paddingVertical: 12 }}>
@@ -67,7 +68,7 @@ export function NewAccountScreen() {
     router.push("/(main)/transfer/amount")
   }
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.newRecipient} />
       <TextInput ref={field} testID="new-account" value={input.value} onChangeText={input.onChangeText} onSubmitEditing={submit} placeholder={copy.newRecipient} autoCapitalize="characters" autoFocus returnKeyType="go" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy, fontSize: type.body }} />
       {DEMO ? (
@@ -80,6 +81,40 @@ export function NewAccountScreen() {
   )
 }
 
+function AmountNotice() {
+  const accountId = useBank((state) => state.accountId)
+  const [inCall, setInCall] = useState(false)
+  const [used, setUsed] = useState(0)
+  const [max, setMax] = useState(3)
+  const asked = useRef(false)
+  useEffect(() => {
+    const read = () => setInCall(FidesSession.callState().in_call === true)
+    read()
+    const stop = FidesSession.onCallStateChanged(read)
+    const timer = setInterval(read, 1000)
+    return () => {
+      stop()
+      clearInterval(timer)
+    }
+  }, [])
+  useEffect(() => {
+    if (!inCall || !accountId || asked.current) return
+    asked.current = true
+    fetch(`${BANK_URL}/accounts/${accountId}/call-notice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo: DEMO }),
+    })
+      .then((response) => response.json())
+      .then((body: { used?: number; max?: number }) => {
+        if (typeof body.used === "number") setUsed(body.used)
+        if (typeof body.max === "number") setMax(body.max)
+      })
+      .catch(() => undefined)
+  }, [accountId, inCall])
+  return <FidesCallNotice inCall={inCall} used={used} max={max} demo={DEMO} />
+}
+
 export function AmountScreen() {
   const router = useRouter()
   const amount = useBank((state) => state.amount)
@@ -89,8 +124,9 @@ export function AmountScreen() {
   const name = useBank((state) => state.toName)
   const type = useType()
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.amount} />
+      <AmountNotice />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · BVC bank</Text>
         <TextInput testID="amount" value={grouped(amount)} onChangeText={(value) => setAmount(Number(digits(value)) || 0)} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
@@ -120,7 +156,7 @@ export function ConfirmScreen() {
   const transfer = useTransfer()
   const type = useType()
   return (
-    <Screen>
+    <Screen call>
       <Header title={copy.confirm} />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.payee}</Text>
@@ -175,10 +211,10 @@ export function ResultScreen() {
   const respond = useRespond()
   const type = useType()
   const largeText = useBank((state) => state.largeText)
-  if (!outcome) return <Screen><Header title={copy.success} /></Screen>
+  if (!outcome) return <Screen call><Header title={copy.success} /></Screen>
   if (outcome.status !== "done") {
     return (
-      <Screen>
+      <Screen call>
         <FidesIntervention
           largeText={largeText}
           decision={{
@@ -220,7 +256,7 @@ export function ResultScreen() {
     )
   }
   return (
-    <Screen>
+    <Screen call>
       <View style={{ alignItems: "center", gap: 20, paddingVertical: 40 }}>
         <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.aqua, alignItems: "center", justifyContent: "center" }}>
           <Check size={36} color={colors.deep} />

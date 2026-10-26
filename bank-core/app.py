@@ -9,7 +9,7 @@ import threading
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import pandas as pd
@@ -21,7 +21,8 @@ from clock import DemoClock
 from engine.common.hashing import account_hash, require_key
 from engine.decide import REASONS
 from engine.policy import actions_for
-from load import CUT, OBSERVED, PERSONAS, load
+from load import CUT, OBSERVED, PERSONAS, SCHEMA, load
+from notice import notice_allowed, notice_limits
 
 log = logging.getLogger("bank")
 DECIDE_TIMEOUT_S = 0.3
@@ -33,6 +34,9 @@ SKIP: set[str] = set()
 SESSIONS: set[str] = set()
 FEED: list[tuple[datetime, dict]] = []
 FEED_CURSOR = 0
+RESET_ID = ""
+LEDGER_MISMATCH = False
+_REPLAY_STARTED = False
 
 
 def database_url() -> str:
@@ -50,18 +54,60 @@ class EngineUnavailable(Exception):
     pass
 
 
+def reset_id() -> str:
+    return RESET_ID
+
+
+def remember_reset(conn, value: str) -> None:
+    global RESET_ID
+    RESET_ID = value
+    conn.execute(
+        """
+        INSERT INTO bank.demo_state (id, reset_id) VALUES (1, %s)
+        ON CONFLICT (id) DO UPDATE SET reset_id = EXCLUDED.reset_id
+        """,
+        (value,),
+    )
+
+
+def load_reset(conn) -> None:
+    global RESET_ID
+    conn.execute(SCHEMA)
+    row = conn.execute("SELECT reset_id FROM bank.demo_state WHERE id = 1").fetchone()
+    RESET_ID = str(row["reset_id"]) if row else ""
+
+
+def engine_reset_id() -> str | None:
+    url = os.environ.get("ENGINE_URL", "http://127.0.0.1:8091").rstrip("/") + "/health"
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            payload = json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return None
+    return str(payload.get("reset_id", ""))
+
+
 def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+    global LEDGER_MISMATCH
     url = os.environ.get("ENGINE_URL", "http://127.0.0.1:8091").rstrip("/") + path
     request = urllib.request.Request(
         url,
         data=json.dumps(body, default=str).encode(),
-        headers={"Content-Type": "application/json", "X-API-Key": os.environ.get("FIDES_API_KEY", "")},
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": os.environ.get("FIDES_API_KEY", ""),
+            "X-Reset-Id": RESET_ID,
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode()
+        if exc.code == 409 and "ledger_mismatch" in detail:
+            LEDGER_MISMATCH = True
+            log.warning("ledger_mismatch")
+            raise HTTPException(409, "ledger_mismatch") from exc
         if exc.code >= 500:
             raise EngineUnavailable(detail) from exc
         raise HTTPException(exc.code, detail) from exc
@@ -343,19 +389,38 @@ def _play() -> None:
             continue
 
 
-@app.on_event("startup")
-def startup() -> None:
+def boot() -> None:
+    """Không nạp lại sổ. BANK_RESEED=1 mới nạp, và sinh reset_id mới chỉ ở phía ngân hàng."""
+    global LEDGER_MISMATCH, _REPLAY_STARTED
     require_key()
     with connect() as conn:
-        load(conn)
-    if os.environ.get("DEMO_REPLAY", "1") == "1":
+        if os.environ.get("BANK_RESEED", "0") == "1":
+            SESSIONS.clear()
+            load(conn)
+            remember_reset(conn, str(uuid.uuid4()))
+            conn.commit()
+            LEDGER_MISMATCH = True
+        else:
+            load_reset(conn)
+            conn.commit()
+    if os.environ.get("DEMO_REPLAY", "1") == "1" and not _REPLAY_STARTED:
         threading.Thread(target=_build_feed, daemon=True).start()
         threading.Thread(target=_play, daemon=True).start()
+        _REPLAY_STARTED = True
+
+
+@app.on_event("startup")
+def startup() -> None:
+    boot()
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "bank-core"}
+    global LEDGER_MISMATCH
+    remote = engine_reset_id()
+    if remote is not None and remote != RESET_ID:
+        LEDGER_MISMATCH = True
+    return {"status": "ok", "service": "bank-core", "reset_id": RESET_ID, "ledger_mismatch": LEDGER_MISMATCH}
 
 
 @app.get("/clock")
@@ -395,17 +460,50 @@ def advance(body: ClockAdvance) -> dict:
     return CLOCK.state()
 
 
+class ResetIn(BaseModel):
+    reset_id: str
+
+
 @app.post("/demo/reset")
-def demo_reset() -> dict:
-    global SKIP, FEED_CURSOR
+def demo_reset(body: ResetIn) -> dict:
+    global SKIP, FEED_CURSOR, LEDGER_MISMATCH
     CLOCK.pause()
     SESSIONS.clear()
     SKIP = set()
     FEED_CURSOR = 0
     with connect() as conn:
         load(conn)
+        remember_reset(conn, body.reset_id)
+        conn.commit()
+    LEDGER_MISMATCH = False
     CLOCK.seek(RESET_AT)
-    return {"status": "ok", **CLOCK.state()}
+    return {"status": "ok", "reset_id": RESET_ID, **CLOCK.state()}
+
+
+class NoticeIn(BaseModel):
+    demo: bool = False
+
+
+@app.post("/accounts/{account_id}/call-notice")
+def call_notice(account_id: str, body: NoticeIn) -> dict:
+    limit, days = notice_limits()
+    now = CLOCK.now()
+    cutoff = now - timedelta(days=days)
+    with connect() as conn:
+        found = conn.execute("SELECT 1 FROM bank.accounts WHERE id = %s", (account_id,)).fetchone()
+        if found is None:
+            raise HTTPException(404, "không có tài khoản")
+        used = int(
+            conn.execute(
+                "SELECT count(*) AS n FROM bank.call_notices WHERE account_id = %s AND shown_at >= %s",
+                (account_id, cutoff),
+            ).fetchone()["n"]
+        )
+        show = notice_allowed(used, limit, body.demo)
+        if show and not body.demo:
+            conn.execute("INSERT INTO bank.call_notices (account_id, shown_at) VALUES (%s, %s)", (account_id, now))
+            conn.commit()
+    return {"show": show, "used": used, "max": limit}
 
 
 @app.post("/demo/persona")

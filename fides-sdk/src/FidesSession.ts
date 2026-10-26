@@ -31,6 +31,11 @@ let rememberedDirection: CallDirection | null = null
 let frozenSeconds: number | null = null
 let listening = false
 let watchingApp = false
+const listeners = new Set<() => void>()
+
+function emit() {
+  for (const listener of listeners) listener()
+}
 
 function onForeground() {
   const next = nativeModule()?.reconcile?.()
@@ -99,6 +104,7 @@ function applyNative(event: NativeCall) {
       frozenSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000))
     }
   }
+  emit()
 }
 
 export const FidesSession = {
@@ -140,10 +146,21 @@ export const FidesSession = {
         }
       }
       simulation = null
+      emit()
       return
     }
     frozenSeconds = null
     simulation = { in_call: true, voip_suspected: voipSuspected, startedAt: Date.now() }
+    emit()
+  },
+
+  onCallStateChanged(listener: () => void) {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  },
+
+  callEndedInSession() {
+    return endedInSession
   },
 
   callState(): CallState {

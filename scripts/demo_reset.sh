@@ -6,6 +6,7 @@ ENGINE=${ENGINE_URL:-http://127.0.0.1:8091}
 DATABASE_URL=${DATABASE_URL:-postgresql://hainamtran@localhost:5432/fides_w1}
 REDIS_URL=${REDIS_URL:-redis://localhost:6379/15}
 REDIS_PORT=${REDIS_PORT:-6379}
+REDIS_HOST=${REDIS_HOST:-127.0.0.1}
 REDIS_MODE=${REDIS_MODE:-host}
 API_KEY=${FIDES_API_KEY:-fides-demo-key}
 DB=${REDIS_URL##*/}
@@ -21,8 +22,11 @@ WHERE ts >= TIMESTAMPTZ '2026-09-20T00:00:00+07:00'
 DELETE FROM decisions WHERE ts >= TIMESTAMPTZ '2026-09-20T00:00:00+07:00';
 ALTER TABLE decisions ENABLE TRIGGER USER;
 ALTER TABLE responses ENABLE TRIGGER USER;
+ALTER TABLE events DISABLE TRIGGER USER;
+DELETE FROM events WHERE ts >= TIMESTAMPTZ '2026-09-20T00:00:00+07:00';
+ALTER TABLE events ENABLE TRIGGER USER;
 TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
-         bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency;
+         bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices;
 SQL
 
 # DEBUG RELOAD bị tắt. Tắt Redis không ghi đè file, rồi bật lại để nạp đúng RDB.
@@ -30,18 +34,18 @@ SQL
 if [ "$REDIS_MODE" = "docker" ]; then
   docker compose restart redis >/dev/null
 else
-  redis-cli -p "$REDIS_PORT" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
   REDIS_SERVER=${REDIS_SERVER:-redis-server}
   REDIS_CONF=${REDIS_CONF:-/opt/homebrew/etc/redis.conf}
   "$REDIS_SERVER" "$REDIS_CONF" --daemonize yes
 fi
 i=0
 while true; do
-  out=$(redis-cli -p "$REDIS_PORT" -n "$DB" DBSIZE 2>&1 || true)
+  out=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" DBSIZE 2>&1 || true)
   case "$out" in
     *ERR*|*LOADING*|*loading*)
       i=$((i + 1))
-      if [ "$i" -gt 120 ]; then
+      if [ "$i" -gt 600 ]; then
         echo "redis không lên: $out" >&2
         exit 1
       fi
@@ -51,7 +55,7 @@ while true; do
       case "$out" in
         ''|*[!0-9]*)
           i=$((i + 1))
-          if [ "$i" -gt 120 ]; then
+          if [ "$i" -gt 600 ]; then
             echo "redis không lên: $out" >&2
             exit 1
           fi
@@ -60,7 +64,7 @@ while true; do
         *)
           if [ "$out" -lt 1000000 ]; then
             i=$((i + 1))
-            if [ "$i" -gt 120 ]; then
+            if [ "$i" -gt 600 ]; then
               echo "redis chưa nạp đủ snapshot: $out" >&2
               exit 1
             fi
@@ -73,14 +77,15 @@ while true; do
       ;;
   esac
 done
-engine_body=$(curl -sS -X POST "$ENGINE/demo/reset" -H "X-API-Key: $API_KEY" -H "Content-Length: 0" -w '\n%{http_code}')
+RESET_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
+engine_body=$(curl -sS -X POST "$ENGINE/demo/reset" -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d "{\"reset_id\":\"$RESET_ID\"}" -w '\n%{http_code}')
 engine_code=${engine_body##*$'\n'}
 if [ "$engine_code" != "200" ]; then
   echo "engine reset $engine_code" >&2
   echo "$engine_body" >&2
   exit 22
 fi
-bank_body=$(curl -sS -X POST "$BANK/demo/reset" -w '\n%{http_code}')
+bank_body=$(curl -sS -X POST "$BANK/demo/reset" -H "Content-Type: application/json" -d "{\"reset_id\":\"$RESET_ID\"}" -w '\n%{http_code}')
 bank_code=${bank_body##*$'\n'}
 if [ "$bank_code" != "200" ]; then
   echo "bank reset $bank_code" >&2

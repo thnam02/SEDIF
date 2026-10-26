@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS bank.idempotency (
     transfer_id text NOT NULL,
     response jsonb NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bank.call_notices (
+    account_id text NOT NULL,
+    shown_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bank.demo_state (
+    id integer PRIMARY KEY,
+    reset_id text NOT NULL
+);
 """
 
 
@@ -125,7 +133,7 @@ def load(conn) -> int:
     conn.execute(
         """
         TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
-                 bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency
+                 bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices
         """
     )
     ids = related_ids()

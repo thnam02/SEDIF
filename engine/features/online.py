@@ -325,7 +325,7 @@ class OnlineStore:
         )
 
     def forget_runtime(self) -> None:
-        """Xoá cache trong tiến trình sau khi nạp lại RDB. Không xoá Redis."""
+        """Xoá cache trong tiến trình sau khi nạp lại RDB, và bỏ điểm phiên thử ghi sau snapshot."""
         try:
             self.redis.ping()
         except Exception:
@@ -358,6 +358,116 @@ class OnlineStore:
             demo = [item for item in members if str(item).startswith("demo-")]
             if demo:
                 self.redis.zrem(key, *demo)
+        self._strip_demo_ledger()
+
+    def _population_seq(self) -> int:
+        """Seq của điểm f:out muộn nhất. Snapshot diễn ra trước mọi phiên thử."""
+        cursor = 0
+        best_score = -1
+        best_seq = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor, match="f:out:*", count=400)
+            if keys:
+                pipe = self.redis.pipeline(transaction=False)
+                for key in keys:
+                    pipe.zrange(key, -1, -1, withscores=True)
+                grouped = pipe.execute()
+                for members in grouped:
+                    for member, score in members:
+                        parts = str(member).split("|")
+                        if len(parts) < 2 or not parts[1].isdigit():
+                            continue
+                        if score > best_score:
+                            best_score = score
+                            best_seq = int(parts[1])
+            if cursor == 0:
+                break
+        return best_seq
+
+    def _strip_demo_ledger(self) -> None:
+        """Bỏ điểm ghi sau snapshot: sổ ra, sản phẩm, đổi hạn mức, lần gặp người nhận."""
+        cutoff = self._population_seq()
+        if cutoff <= 0:
+            return
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor, match="f:out:*", count=400)
+            if keys:
+                pipe = self.redis.pipeline(transaction=False)
+                for key in keys:
+                    pipe.zrange(key, 0, -1)
+                grouped = pipe.execute()
+                remove = self.redis.pipeline(transaction=False)
+                queued = 0
+                for key, members in zip(keys, grouped):
+                    account = key.removeprefix("f:out:")
+                    for member in members:
+                        parts = str(member).split("|")
+                        if len(parts) < 8 or not parts[1].isdigit() or int(parts[1]) <= cutoff:
+                            continue
+                        ts, seq, payee, amount, _bal, xfer, _session, tx_type = parts[:8]
+                        remove.zrem(key, member)
+                        queued += 1
+                        if xfer == "1":
+                            remove.zrem(f"f:xf:{account}", f"{ts}|{seq}|{amount}")
+                        if payee != "-":
+                            remove.zrem(f"f:in:{payee}", f"{ts}|{seq}|{account}|{amount}")
+                        if tx_type in PRODUCT_TX:
+                            remove.zrem(f"f:prod:{tx_type}:{account}", str(int(seq) + 1))
+                if queued:
+                    remove.execute()
+            if cursor == 0:
+                break
+        self._drop_after(cutoff)
+
+    def _drop_after(self, cutoff: int) -> None:
+        for pattern in ("f:prod:*", "f:chg:*"):
+            cursor = 0
+            while True:
+                cursor, keys = self.redis.scan(cursor, match=pattern, count=200)
+                if keys:
+                    pipe = self.redis.pipeline(transaction=False)
+                    for key in keys:
+                        pipe.zrange(key, 0, -1)
+                    grouped = pipe.execute()
+                    remove = self.redis.pipeline(transaction=False)
+                    queued = 0
+                    for key, members in zip(keys, grouped):
+                        late = [item for item in members if str(item).isdigit() and int(item) > cutoff]
+                        if late:
+                            remove.zrem(key, *late)
+                            queued += 1
+                    if queued:
+                        remove.execute()
+                if cursor == 0:
+                    break
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor, match="f:fst:*", count=400)
+            if keys:
+                pipe = self.redis.pipeline(transaction=False)
+                for key in keys:
+                    pipe.hgetall(key)
+                grouped = pipe.execute()
+                remove = self.redis.pipeline(transaction=False)
+                queued = 0
+                for key, mapping in zip(keys, grouped):
+                    late = [payee for payee, raw in mapping.items() if str(raw).split("|", 1)[0].isdigit() and int(str(raw).split("|", 1)[0]) > cutoff]
+                    if late:
+                        remove.hdel(key, *late)
+                        account = key.removeprefix("f:fst:")
+                        customer = self.redis.hget(f"f:meta:{account}", "customer")
+                        if customer:
+                            stamps = self.redis.hmget(f"f:fstc:{customer}", late)
+                            for payee, raw, stamp in zip(late, (mapping[item] for item in late), stamps):
+                                parts = str(raw).split("|")
+                                if stamp is not None and len(parts) > 1 and stamp == parts[1]:
+                                    remove.hdel(f"f:fstc:{customer}", payee)
+                        queued += 1
+                if queued:
+                    remove.execute()
+            if cursor == 0:
+                break
 
     def memory_bytes(self) -> int:
         self.flush()

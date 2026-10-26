@@ -1,3 +1,5 @@
+export { FidesCallIndicator, FidesCallNotice } from "./FidesCallIndicator"
+export { showCallNotice } from "./callNotice"
 export { FidesGuardianRequest, FidesIntervention, FidesPermissionScreen } from "./FidesIntervention"
 export type { FidesGuardianView, FidesProps, FidesRespond } from "./FidesIntervention"
 export { copyVi } from "./copy.vi"

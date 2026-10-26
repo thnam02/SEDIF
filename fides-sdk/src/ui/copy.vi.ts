@@ -88,6 +88,11 @@ export const copyVi = {
     title: "Giao dịch đã huỷ",
     body: "Lệnh chuyển không được thực hiện.",
   },
+  callPill: "Đang trong cuộc gọi",
+  callPillIn: "Đang trong cuộc gọi đến",
+  callPillOut: "Đang trong cuộc gọi đi",
+  callEnded: "Cuộc gọi vừa kết thúc",
+  callNotice: "Bạn đang trong một cuộc gọi. BVC Bank, công an và toà án không bao giờ yêu cầu bạn chuyển tiền qua điện thoại.",
   permission: {
     title: "Bảo vệ bạn khi chuyển tiền",
     body: "FIDES chỉ kiểm tra bạn CÓ đang trong cuộc gọi hay không khi bạn chuyển tiền. Chúng tôi không nghe, không ghi âm, không đọc số điện thoại hay tin nhắn.",

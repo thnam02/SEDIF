@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 import threading
 from datetime import timedelta
@@ -42,7 +43,10 @@ from engine.review import consider as consider_review
 from engine.review import queue as review_queue
 from engine.policy import actions_for
 
+log = logging.getLogger("engine")
 NAME = os.environ.get("SERVICE_NAME", "engine")
+RESET_ID = ""
+_RESET_LOADED = False
 HASH_LEN = 64
 TYPES = {"txn", "account_change", "device_change", "product", "complaint", "simo_listing"}
 STREAM = {"account", "session", "device_link", "payee_add", "session_event", "device_signal", "txn", "product", "account_change", "simo_listing"}
@@ -75,6 +79,60 @@ def _bad(handler: BaseHTTPRequestHandler, status: int, detail: str) -> None:
 
 def _hash_ok(value) -> bool:
     return isinstance(value, str) and len(value) == HASH_LEN and all(ch in "0123456789abcdef" for ch in value)
+
+
+def current_reset_id() -> str:
+    global RESET_ID, _RESET_LOADED
+    if _RESET_LOADED:
+        return RESET_ID
+    with connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS demo_state (
+                id integer PRIMARY KEY,
+                reset_id text NOT NULL
+            )
+            """
+        )
+        row = conn.execute("SELECT reset_id FROM demo_state WHERE id = 1").fetchone()
+        RESET_ID = str(row[0]) if row else ""
+        conn.commit()
+    _RESET_LOADED = True
+    return RESET_ID
+
+
+def store_reset(value: str) -> None:
+    global RESET_ID, _RESET_LOADED
+    with connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS demo_state (
+                id integer PRIMARY KEY,
+                reset_id text NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO demo_state (id, reset_id) VALUES (1, %s)
+            ON CONFLICT (id) DO UPDATE SET reset_id = EXCLUDED.reset_id
+            """,
+            (value,),
+        )
+        conn.commit()
+    RESET_ID = value
+    _RESET_LOADED = True
+
+
+def _same_reset(handler: BaseHTTPRequestHandler) -> bool:
+    sent = handler.headers.get("X-Reset-Id")
+    if sent is None:
+        return True
+    if sent != current_reset_id():
+        log.warning("ledger_mismatch")
+        _bad(handler, 409, "ledger_mismatch")
+        return False
+    return True
 
 
 def _authorized(handler: BaseHTTPRequestHandler) -> bool:
@@ -156,6 +214,7 @@ def ingest(event: dict) -> bool:
     stream = event if _stream_event(event) else _ledger_stream(event)
     if STORE is not None and stream is not None:
         STORE.update(stream)
+        STORE.flush()
         if stream.get("type") == "txn":
             from datetime import datetime
 
@@ -321,7 +380,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            _json(self, 200, {"status": "ok", "service": NAME})
+            _json(self, 200, {"status": "ok", "service": NAME, "reset_id": current_reset_id()})
             return
         if not _authorized(self):
             return
@@ -400,15 +459,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/demo/reset":
             if not _authorized(self):
                 return
+            body = _read_json(self) or {}
+            if not body.get("reset_id"):
+                _bad(self, 400, "thiếu reset_id")
+                return
             if STORE is not None:
                 STORE.forget_runtime()
-            _json(self, 200, {"status": "ok"})
+            store_reset(str(body["reset_id"]))
+            _json(self, 200, {"status": "ok", "reset_id": current_reset_id()})
             return
         if path not in {"/events", "/decide", "/respond"}:
             self.send_response(404)
             self.end_headers()
             return
         if not _authorized(self):
+            return
+        if not _same_reset(self):
             return
         event = _read_json(self)
         if event is None:

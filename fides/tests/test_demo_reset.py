@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 from http.server import ThreadingHTTPServer
@@ -79,6 +80,27 @@ def _clear_demo_payees() -> None:
         hashed = account_hash(raw)
         client.hdel(f"f:fst:{sender}", hashed)
         client.hdel(f"f:fstc:{customer}", hashed)
+
+
+def _consistency() -> str:
+    env = os.environ.copy()
+    env["BANK_URL"] = BANK
+    done = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "check_consistency.py")],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    lines = [line for line in done.stdout.splitlines() if line.strip()]
+    if not lines or not lines[-1].startswith(("CONSISTENT", "MISMATCH")):
+        raise AssertionError(done.stdout + "\n" + done.stderr)
+    return lines[-1], done.stdout
+
+
+def _transfer_count() -> int:
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        return int(conn.execute("SELECT count(*) FROM bank.transfers").fetchone()[0])
 
 
 def _reset() -> None:
@@ -170,7 +192,39 @@ def test_fee_scenario_repeats_after_reset():
     try:
         _reset()
         first = _fee()
+        verdict, report = _consistency()
+        assert verdict == "CONSISTENT", report
+        kept = _transfer_count()
+        assert kept >= 1
+        bank.boot()
+        assert _transfer_count() == kept
+        verdict, report = _consistency()
+        assert verdict == "CONSISTENT", report
+        os.environ["BANK_RESEED"] = "1"
+        bank.boot()
+        os.environ["BANK_RESEED"] = "0"
+        bank_health = _request("GET", f"{BANK}/health")
+        with urllib.request.urlopen("http://127.0.0.1:8091/health", timeout=5) as response:
+            engine_health = json.loads(response.read().decode())
+        assert bank_health["reset_id"] != engine_health["reset_id"]
+        assert bank_health["ledger_mismatch"] is True
+        blocked = urllib.request.Request(
+            f"{BANK}/transfer",
+            data=json.dumps({"from_account": "A0002119", "to_account": "ZHIGH0001", "amount": 1000, "purpose_text": "phi"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(blocked, timeout=30)
+            raise AssertionError("transfer phải bị 409")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 409
+            assert "ledger_mismatch" in exc.read().decode()
+        verdict, report = _consistency()
+        assert verdict.startswith("MISMATCH"), report
         _reset()
+        verdict, report = _consistency()
+        assert verdict == "CONSISTENT", report
         second = _fee()
         assert first == second
     finally:
