@@ -1,14 +1,16 @@
 openapi: 3.1.0
 info:
   title: FIDES
-  version: 2.1.0
+  version: 2.4.0
   summary: Engine chấm điểm và lõi ngân hàng giả.
   description: >
     App không gửi ts. Bank-core đóng dấu theo đồng hồ demo: bắt đầu
     2026-09-20T00:00:00+07:00, chạy nhanh gấp 60, phủ 9 ngày cuối đến trước
     2026-09-29. Engine chỉ nhận HMAC-SHA256, khoá lấy từ biến môi trường
     FIDES_HMAC_KEY. Ví dụ giả công an và người nhà hướng dẫn minh họa hợp đồng,
-    không phải điểm của một phiên đã chấm.
+    không phải điểm của một phiên đã chấm. Bản 2.4.0 khai báo Signal, các trường
+    chấm mới trên /decide, evidence_card và POST /decisions/{id}/choice.
+    Engine và bank-core chưa đọc các trường mới và chưa mở endpoint choice.
 servers:
   - url: http://localhost:8081
     description: FIDES Engine
@@ -90,6 +92,9 @@ paths:
       description: >
         device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile
         hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo.
+        task_type, call, behaviour_features, transfer_purpose, state trên device,
+        recent_funds_events và experiment là hợp đồng 2.4. Engine chưa đọc chúng.
+        behaviour_features chỉ là số tổng hợp trên máy, không có mốc thời gian thô.
       requestBody:
         required: true
         content:
@@ -106,6 +111,24 @@ paths:
                   payee_hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
                   amount: 50000000
                   ts: "2026-09-21T10:15:00+07:00"
+                  task_type: new_pasted
+                  call:
+                    state: active
+                    observability: supported_observed
+                    transport: cellular
+                  behaviour_features:
+                    median_gap_ms: 420
+                    p90_gap_ms: 1800
+                    burst_count: 3
+                    pause_to_action_ratio: 0.15
+                    review_dwell_ms: 900
+                    edit_count: 0
+                    backtrack_count: 1
+                    screen_revisit_count: 2
+                    background_count: 4
+                    background_total_ms: 12000
+                    session_duration_ms: 640000
+                  transfer_purpose: authority_request
                   device:
                     in_call: true
                     call_seconds_since_open: 640
@@ -113,6 +136,16 @@ paths:
                     call_direction: null
                     acct_input: pasted
                     app_switches: 7
+                    state: none
+                    integrity_verdict_at: null
+                  recent_funds_events:
+                    - type: savings_liquidation
+                      at: "2026-09-21T09:40:00+07:00"
+                      channel: app
+                  experiment:
+                    participant_id: p-001
+                    condition: control
+                    session_index: 1
               nguoi_nha_huong_dan:
                 summary: Người nhận đã quen, tự gõ số
                 value:
@@ -122,6 +155,24 @@ paths:
                   payee_hash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
                   amount: 8000000
                   ts: "2026-09-22T19:40:00+07:00"
+                  task_type: saved_payee
+                  call:
+                    state: active
+                    observability: supported_observed
+                    transport: voip
+                  behaviour_features:
+                    median_gap_ms: 800
+                    p90_gap_ms: 2200
+                    burst_count: 0
+                    pause_to_action_ratio: 0.4
+                    review_dwell_ms: 4000
+                    edit_count: 1
+                    backtrack_count: 0
+                    screen_revisit_count: 0
+                    background_count: 0
+                    background_total_ms: 0
+                    session_duration_ms: 180000
+                  transfer_purpose: family_friends
                   device:
                     in_call: true
                     call_seconds_since_open: 180
@@ -129,6 +180,8 @@ paths:
                     call_direction: inbound
                     acct_input: typed
                     app_switches: 1
+                    state: none
+                    integrity_verdict_at: null
       responses:
         "200":
           description: Quyết định
@@ -141,7 +194,24 @@ paths:
                   summary: High vì cuộc gọi, dán số và người nhận mới
                   value:
                     decision_id: dec-police-001
-                    level: high
+                    level: 3
+                    rules_fired: [in_call, acct_pasted, new_payee]
+                    evidence_card:
+                      signals:
+                        - signal_id: call.state
+                          status: present
+                          tier: suspicious
+                          confidence: 0.9
+                          source: sdk
+                          observed_at: "2026-09-21T10:15:00+07:00"
+                          freshness_s: 2
+                      reasons_vi:
+                        - "Cuộc gọi đang mở trong phiên này."
+                        - "Số tài khoản được dán vào ô chuyển tiền."
+                        - "Chưa từng chuyển tới người nhận này."
+                      baseline_quality: medium
+                      episode_id: ep-police-001
+                    intervention: security_workflow
                     actions: [hangup_required, recovery_window]
                     p_fraud: 0.84
                     group_scores: {call: 1, entry: 1, payee: 1, mobilization: 0}
@@ -159,7 +229,15 @@ paths:
                   summary: Banner vì chỉ có cuộc gọi, người nhận đã từng nhận tiền
                   value:
                     decision_id: dec-guided-001
-                    level: banner
+                    level: 1
+                    rules_fired: [in_call]
+                    evidence_card:
+                      signals: []
+                      reasons_vi:
+                        - "Cuộc gọi đang mở trong phiên này."
+                      baseline_quality: high
+                      episode_id: ep-guided-001
+                    intervention: banner
                     actions: [g1_banner]
                     p_fraud: 0.01
                     group_scores: {call: 1, entry: 0, payee: 0, mobilization: 0}
@@ -300,6 +378,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DecideResponse"
+        "404":
+          description: Không có quyết định
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /decisions/{id}/choice:
+    post:
+      tags: [FIDES Engine]
+      operationId: recordUserChoice
+      security:
+        - apiKey: []
+      summary: Ghi lựa chọn của khách sau can thiệp
+      description: >
+        pause, cancel hoặc continue. response_ms chỉ ghi cho nghiên cứu,
+        không đưa vào chấm điểm và không đổi level. Endpoint chưa được thực hiện.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: decision_id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserChoiceRequest"
+            examples:
+              tiep_tuc:
+                summary: Khách bấm tiếp tục sau 12 giây
+                value:
+                  choice: continue
+                  response_ms: 12000
+      responses:
+        "200":
+          description: Đã ghi lựa chọn cho nghiên cứu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserChoiceReceipt"
+              examples:
+                tiep_tuc:
+                  value:
+                    decision_id: dec-police-001
+                    choice: continue
+                    logged: true
         "404":
           description: Không có quyết định
           content:
@@ -794,6 +920,163 @@ components:
           description: Đúng acct_input_share trong fides-sim/config.yaml.
         app_switches:
           $ref: "#/components/schemas/NullableInt"
+    Signal:
+      type: object
+      additionalProperties: false
+      description: Tín hiệu dùng lại trong thẻ bằng chứng. Chưa có bộ tín hiệu chạy thật.
+      required: [signal_id, status, tier, confidence, source, observed_at, freshness_s]
+      properties:
+        signal_id:
+          type: string
+        status:
+          type: string
+          enum: [present, absent, unknown]
+        tier:
+          type: string
+          enum: [contextual, suspicious, verified]
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        source:
+          type: string
+          enum: [sdk, core_banking, simo, model, device_attestation, user_answer]
+        observed_at:
+          type: string
+          format: date-time
+          description: RFC3339.
+        freshness_s:
+          type: integer
+          minimum: 0
+          description: Số giây từ observed_at tới lúc chấm.
+    TaskType:
+      type: string
+      enum: [saved_payee, new_typed, new_pasted, qr]
+      description: Cách khách chọn người nhận. Hợp đồng 2.4, engine chưa đọc.
+    CallContext:
+      type: object
+      additionalProperties: false
+      description: Trạng thái cuộc gọi lúc chấm. Không ghi ai gọi hay ứng dụng nào.
+      required: [state, observability, transport]
+      properties:
+        state:
+          type: string
+          enum: [active, ended_in_session, none, unknown]
+        observability:
+          type: string
+          enum: [supported_observed, supported_not_observed, unavailable]
+        transport:
+          type: string
+          enum: [cellular, voip, unknown]
+    BehaviourFeatures:
+      type: object
+      additionalProperties: false
+      description: >
+        Số tổng hợp tính trên máy. Không gửi mốc thời gian thô.
+        Hợp đồng 2.4, engine chưa đọc.
+      required:
+        - median_gap_ms
+        - p90_gap_ms
+        - burst_count
+        - pause_to_action_ratio
+        - review_dwell_ms
+        - edit_count
+        - backtrack_count
+        - screen_revisit_count
+        - background_count
+        - background_total_ms
+        - session_duration_ms
+      properties:
+        median_gap_ms:
+          type: number
+          minimum: 0
+        p90_gap_ms:
+          type: number
+          minimum: 0
+        burst_count:
+          type: integer
+          minimum: 0
+        pause_to_action_ratio:
+          type: number
+          minimum: 0
+        review_dwell_ms:
+          type: integer
+          minimum: 0
+        edit_count:
+          type: integer
+          minimum: 0
+        backtrack_count:
+          type: integer
+          minimum: 0
+        screen_revisit_count:
+          type: integer
+          minimum: 0
+        background_count:
+          type: integer
+          minimum: 0
+        background_total_ms:
+          type: integer
+          minimum: 0
+        session_duration_ms:
+          type: integer
+          minimum: 0
+    TransferPurpose:
+      type: string
+      enum:
+        - authority_request
+        - fee_to_receive
+        - investment
+        - refund_request
+        - purchase
+        - family_friends
+        - debt_salary
+        - other
+        - not_asked
+      description: Mục đích khách chọn, hoặc not_asked khi app chưa hỏi. Engine chưa đọc.
+    DeviceIntegrity:
+      type: object
+      description: >
+        Toàn vẹn thiết bị gửi kèm khối device trên /decide.
+        additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input.
+        Engine chưa đọc state và integrity_verdict_at.
+      properties:
+        state:
+          type: string
+          enum: [capability_detected, active_capture, verified_compromise, unknown, none]
+        integrity_verdict_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: RFC3339. Thời điểm phán quyết toàn vẹn. null khi chưa có.
+    RecentFundsEvent:
+      type: object
+      additionalProperties: false
+      description: Sự kiện tiền gần đây từ core banking. Engine chưa đọc.
+      required: [type, at, channel]
+      properties:
+        type:
+          type: string
+        at:
+          type: string
+          format: date-time
+          description: RFC3339.
+        channel:
+          type: string
+          enum: [app, branch]
+    ExperimentAssignment:
+      type: object
+      additionalProperties: false
+      description: Nhánh thí nghiệm, nếu có. Không tham gia chấm điểm.
+      required: [participant_id, condition, session_index]
+      properties:
+        participant_id:
+          type: string
+        condition:
+          type: string
+        session_index:
+          type: integer
+          minimum: 0
     TxType:
       type: string
       enum:
@@ -965,10 +1248,29 @@ components:
           type: string
           format: date-time
           description: Bank-core điền. App không có trường này.
+        task_type:
+          $ref: "#/components/schemas/TaskType"
+        call:
+          $ref: "#/components/schemas/CallContext"
+        behaviour_features:
+          $ref: "#/components/schemas/BehaviourFeatures"
+        transfer_purpose:
+          $ref: "#/components/schemas/TransferPurpose"
         device:
+          description: >
+            Khối v2.1 (in_call, acct_input, ...) cộng state và integrity_verdict_at của v2.4.
+            Có thể bỏ cả khối.
           oneOf:
-            - $ref: "#/components/schemas/Device"
+            - allOf:
+                - $ref: "#/components/schemas/Device"
+                - $ref: "#/components/schemas/DeviceIntegrity"
             - type: "null"
+        recent_funds_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentFundsEvent"
+        experiment:
+          $ref: "#/components/schemas/ExperimentAssignment"
     GroupScores:
       type: object
       additionalProperties: false
@@ -1000,11 +1302,41 @@ components:
         text:
           type: string
           description: Câu hiện cho khách. simo_listed dùng câu cảnh báo tài khoản đã bị báo cáo.
+    EvidenceCard:
+      type: object
+      additionalProperties: false
+      description: Thẻ bằng chứng v2.4. Engine chưa trả khối này.
+      required: [signals, reasons_vi, baseline_quality, episode_id]
+      properties:
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Signal"
+        reasons_vi:
+          type: array
+          items:
+            type: string
+        baseline_quality:
+          type: string
+          enum: [low, medium, high, none]
+        episode_id:
+          type: string
+    Intervention:
+      type: string
+      enum: [none, banner, three_button, security_workflow]
+      description: Kiểu màn hình v2.4. Chưa gắn vào màn hình đang chạy.
     DecideResponse:
       type: object
+      description: >
+        Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và
+        intervention. 0 không can thiệp, 1 banner, 2 medium, 3 high trong ví dụ
+        hợp đồng. Engine chưa trả các trường mới.
       required:
         - decision_id
         - level
+        - rules_fired
+        - evidence_card
+        - intervention
         - actions
         - p_fraud
         - group_scores
@@ -1019,8 +1351,18 @@ components:
         decision_id:
           type: string
         level:
-          type: string
-          enum: [none, info, banner, medium, high]
+          type: integer
+          enum: [0, 1, 2, 3]
+          description: Mức v2.4. Ví dụ hợp đồng lấy 0 không can thiệp, 1 banner, 2 medium, 3 high.
+        rules_fired:
+          type: array
+          items:
+            type: string
+          description: Mã luật đã khớp. Ví dụ, chưa phải bộ luật đang chạy.
+        evidence_card:
+          $ref: "#/components/schemas/EvidenceCard"
+        intervention:
+          $ref: "#/components/schemas/Intervention"
         actions:
           type: array
           items:
@@ -1062,6 +1404,35 @@ components:
               format: date-time
             - type: "null"
           description: Hung_up ở high cộng 10 phút. Cuộc gọi mới tính lại. Proceed trước mốc này không nhả tiền.
+    UserChoice:
+      type: string
+      enum: [pause, cancel, continue]
+    UserChoiceRequest:
+      type: object
+      additionalProperties: false
+      required: [choice, response_ms]
+      properties:
+        choice:
+          $ref: "#/components/schemas/UserChoice"
+        response_ms:
+          type: integer
+          minimum: 0
+          description: >
+            Mili giây từ lúc hiện can thiệp tới lúc bấm. Chỉ ghi cho nghiên cứu.
+            Không đưa vào chấm điểm.
+    UserChoiceReceipt:
+      type: object
+      additionalProperties: false
+      required: [decision_id, choice, logged]
+      properties:
+        decision_id:
+          type: string
+        choice:
+          $ref: "#/components/schemas/UserChoice"
+        logged:
+          type: boolean
+          const: true
+          description: Đã ghi response_ms cho nghiên cứu. Không đổi quyết định.
     WhoGuides:
       type: string
       enum: [authority, bank, relative, friend, seller, nobody, other]
