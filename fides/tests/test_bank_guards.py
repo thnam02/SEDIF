@@ -206,6 +206,56 @@ def test_z_new_call_resets_countdown(stack):
     assert abs((row[0] - stamp).total_seconds() - 600) < 2
 
 
+def test_z_call_during_hold_raises_one_level(stack):
+    sender = "A0002845"
+    payee = "Z" + uuid.uuid4().hex[:12]
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        conn.execute(
+            """
+            INSERT INTO bank.accounts
+            (id, customer_id, holder_name, segment, balance, status, has_guardian, account_type, bank_id, limit_per_txn, limit_per_day)
+            VALUES (%s,'CDEMO','Nguoi nhan','thường',0,'open',false,'personal','B02',1000000000,1000000000)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (payee,),
+        )
+        conn.execute("UPDATE bank.accounts SET balance = balance + 80000000 WHERE id = %s", (sender,))
+        conn.commit()
+    created = _ok(
+        "POST",
+        f"{BANK}/transfer",
+        {"from_account": sender, "to_account": payee, "amount": 40_000_000, "purpose_text": "giữ", "device": {"in_call": True}},
+    )
+    assert created["funds_status"] == "held", created
+    start = created["decision"]["level"]
+    assert start == "medium", created
+    _advance(20)
+    stamp = datetime.fromisoformat(_ok("GET", f"{BANK}/clock")["ts"])
+    status, payload = _call(
+        "POST",
+        f"{ENGINE}/events",
+        {
+            "type": "device_signal",
+            "ts": int(stamp.timestamp() * 1_000_000),
+            "session": f"demo-{sender}",
+            "in_call": "1",
+            "ended": "0",
+        },
+        {"X-API-Key": os.environ["FIDES_API_KEY"]},
+    )
+    assert status in {200, 201}, payload
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        row = conn.execute(
+            """
+            SELECT level, countdown_until FROM responses
+            WHERE decision_id = %s ORDER BY id DESC LIMIT 1
+            """,
+            (f"dec-{created['transfer_id']}",),
+        ).fetchone()
+    assert row[0] == "high"
+    assert abs((row[1] - stamp).total_seconds() - 600) < 2
+
+
 def test_guardian_confirm_releases(stack):
     sender = "A0072556"
     payee = "Z" + uuid.uuid4().hex[:12]

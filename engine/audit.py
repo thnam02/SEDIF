@@ -237,6 +237,9 @@ def decision_payload(conn, decision_id: str) -> dict | None:
 
 
 def reset_countdown(conn, sender_hash: str, until: datetime, now: datetime) -> None:
+    """Cuộc gọi mới trong lúc giữ tiền hoặc đang countdown: nâng một bậc và đặt lại countdown."""
+    from engine.decide import LEVELS, hold_for
+
     conn.row_factory = dict_row
     rows = conn.execute(
         """
@@ -247,25 +250,37 @@ def reset_countdown(conn, sender_hash: str, until: datetime, now: datetime) -> N
             WHERE decision_id = d.decision_id ORDER BY id DESC LIMIT 1
         ) r ON true
         WHERE d.sender_hash = %s
-          AND COALESCE(r.countdown_until, d.countdown_until) IS NOT NULL
           AND COALESCE(r.funds_status, d.funds_status) <> 'cancelled'
+          AND (
+            COALESCE(r.countdown_until, d.countdown_until) IS NOT NULL
+            OR COALESCE(r.funds_status, d.funds_status) = 'held'
+          )
         """,
         (sender_hash,),
     ).fetchall()
     for row in rows:
         decision_id = row["decision_id"]
         state = load_state(conn, decision_id)
-        if state is None or state["countdown_until"] is None:
+        if state is None:
             continue
+        if state["countdown_until"] is None and state["funds_status"] != "held":
+            continue
+        level = state["level"]
+        if level in LEVELS:
+            level = LEVELS[min(LEVELS.index(level) + 1, len(LEVELS) - 1)]
+        funds = "held" if state["funds_status"] != "cancelled" else "cancelled"
+        hold = state["hold_until"]
+        if level != state["level"] and level in {"medium", "high"}:
+            _, hold = hold_for(level, now)
         insert_response(
             conn,
             {
                 "decision_id": decision_id,
                 "ts": now,
-                "level": state["level"],
-                "funds_status": state["funds_status"],
+                "level": level,
+                "funds_status": funds,
                 "gate": state["gate"],
-                "hold_until": state["hold_until"],
+                "hold_until": hold,
                 "countdown_until": until,
                 "body": {"kind": "new_call"},
             },
