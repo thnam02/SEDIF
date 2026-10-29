@@ -105,6 +105,17 @@ CREATE TABLE IF NOT EXISTS bank.demo_state (
     id integer PRIMARY KEY,
     reset_id text NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bank.experiment_sessions (
+    id bigserial PRIMARY KEY,
+    participant_id text NOT NULL,
+    condition text NOT NULL,
+    session_index integer NOT NULL,
+    task_type text NOT NULL,
+    call jsonb NOT NULL,
+    behaviour_features jsonb NOT NULL,
+    raw_events jsonb,
+    created_at timestamptz NOT NULL
+);
 """
 
 
@@ -133,7 +144,8 @@ def load(conn) -> int:
     conn.execute(
         """
         TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
-                 bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices
+                 bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices,
+                 bank.experiment_sessions
         """
     )
     ids = related_ids()

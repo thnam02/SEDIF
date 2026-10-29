@@ -25,8 +25,20 @@ ALTER TABLE responses ENABLE TRIGGER USER;
 ALTER TABLE events DISABLE TRIGGER USER;
 DELETE FROM events WHERE ts >= TIMESTAMPTZ '2026-09-20T00:00:00+07:00';
 ALTER TABLE events ENABLE TRIGGER USER;
+CREATE TABLE IF NOT EXISTS bank.experiment_sessions (
+    id bigserial PRIMARY KEY,
+    participant_id text NOT NULL,
+    condition text NOT NULL,
+    session_index integer NOT NULL,
+    task_type text NOT NULL,
+    call jsonb NOT NULL,
+    behaviour_features jsonb NOT NULL,
+    raw_events jsonb,
+    created_at timestamptz NOT NULL
+);
 TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
-         bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices;
+         bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices,
+         bank.experiment_sessions;
 SQL
 
 # DEBUG RELOAD bị tắt. Tắt Redis không ghi đè file, rồi bật lại để nạp đúng RDB.

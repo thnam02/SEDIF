@@ -55,7 +55,8 @@ export interface paths {
         put?: never;
         /**
          * Cập nhật quyết định sau câu trả lời
-         * @description Không bao giờ hạ level. authority hoặc bank nâng lên high. relative khi khách có giám hộ đặt gate guardian_confirm_requested và giữ level. relative khi không có giám hộ đặt gate short_wait và giữ level. friend, seller, nobody, other giữ level. hung_up khi level là high bắt đầu countdown 10 phút và không huỷ tiền. Cuộc gọi mới reset countdown. proceed sau countdown thì funds_status released. cancel bất cứ lúc nào thì cancelled. guardian_confirm nhả tiền sớm. hold_until của medium là 30 phút, của high là 24 giờ. short_wait là 2 phút. Các mốc này là GIẢ ĐỊNH trong fides-sim/config.yaml.
+         * @deprecated
+         * @description Deprecated. Sẽ bỏ sau policy v2.4. Lựa chọn mới là POST /decisions/{id}/choice. Không bao giờ hạ level. authority hoặc bank nâng lên high. relative khi khách có giám hộ đặt gate guardian_confirm_requested và giữ level. relative khi không có giám hộ đặt gate short_wait và giữ level. friend, seller, nobody, other giữ level. hung_up khi level là high bắt đầu countdown 10 phút và không huỷ tiền. Cuộc gọi mới reset countdown. proceed sau countdown thì funds_status released. cancel bất cứ lúc nào thì cancelled. guardian_confirm nhả tiền sớm. hold_until của medium là 30 phút, của high là 24 giờ. short_wait là 2 phút. Các mốc này là GIẢ ĐỊNH trong fides-sim/config.yaml.
          */
         post: operations["respond"];
         delete?: never;
@@ -217,6 +218,26 @@ export interface paths {
          * @description App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256 rồi gọi POST /decide. none, info và banner cho đi. Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng: lúc đó chỉ là ghi chú info. medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy. Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai. /decide hết 300 ms hoặc lỗi thì chuyển bình thường và ghi log engine_unavailable. Từ 50 triệu tới người nhận mới thì vẫn hiện banner. Thiếu device thì engine dùng profile basic.
          */
         post: operations["createTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiment/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lưu một phiên thí nghiệm
+         * @description Chỉ khi khách đã đồng ý. raw_events là loại sự kiện và mốc monotonic, không có ký tự đã gõ, số tài khoản, số tiền hay toạ độ. Bank-core băm HMAC mọi mã tài khoản trước khi ghi. raw_events không được gửi vào /decide.
+         */
+        post: operations["storeExperimentSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -470,6 +491,30 @@ export interface components {
             condition: string;
             session_index: number;
         };
+        /** @description Chỉ loại sự kiện và mốc monotonic. Không có nội dung ô nhập. */
+        SessionEvent: {
+            /** @enum {string} */
+            type: "field_focus" | "field_blur" | "key_tick" | "paste" | "qr_scan" | "saved_payee_pick" | "field_edit" | "screen_enter" | "app_background" | "app_foreground" | "confirm_tap";
+            /** @description Mốc monotonic, mili giây. Không phải đồng hồ tường. */
+            t: number;
+            /** @description Tên ô, chỉ với field_focus và field_blur. */
+            field?: string;
+            /** @description Tên màn, chỉ với screen_enter. */
+            screen?: string;
+        };
+        ExperimentSessionUpload: {
+            participant_id: string;
+            condition: string;
+            session_index: number;
+            task_type: components["schemas"]["TaskType"];
+            call: components["schemas"]["CallContext"];
+            behaviour_features: components["schemas"]["BehaviourFeatures"];
+            raw_events?: components["schemas"]["SessionEvent"][] | null;
+        };
+        ExperimentSessionReceipt: {
+            /** @constant */
+            stored: true;
+        };
         /**
          * @description Đúng các giá trị tx_type trong observed/transactions.parquet.
          * @enum {string}
@@ -622,11 +667,11 @@ export interface components {
          * @enum {string}
          */
         Intervention: "none" | "banner" | "three_button" | "security_workflow";
-        /** @description Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và intervention. 0 không can thiệp, 1 banner, 2 medium, 3 high trong ví dụ hợp đồng. Engine chưa trả các trường mới. */
+        /** @description Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và intervention. 0 proceed, 1 banner, 2 three-button verification, 3 security workflow (verified evidence only). Engine chưa trả các trường mới. */
         DecideResponse: {
             decision_id: string;
             /**
-             * @description Mức v2.4. Ví dụ hợp đồng lấy 0 không can thiệp, 1 banner, 2 medium, 3 high.
+             * @description 0 proceed, 1 banner, 2 three-button verification, 3 security workflow (verified evidence only).
              * @enum {integer}
              */
             level: 0 | 1 | 2 | 3;
@@ -735,7 +780,13 @@ export interface components {
             to_account: string;
             amount: number;
             purpose_text?: string;
-            device?: components["schemas"]["Device"] | null;
+            task_type?: components["schemas"]["TaskType"];
+            call?: components["schemas"]["CallContext"];
+            behaviour_features?: components["schemas"]["BehaviourFeatures"];
+            transfer_purpose?: components["schemas"]["TransferPurpose"];
+            /** @description Khối v2.1 cộng state của v2.4. Có thể bỏ cả khối. */
+            device?: (components["schemas"]["Device"] & components["schemas"]["DeviceIntegrity"]) | null;
+            experiment?: components["schemas"]["ExperimentAssignment"];
         };
         BankDecision: {
             /** @enum {string} */
@@ -1215,6 +1266,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransferResponse"];
+                };
+            };
+        };
+    };
+    storeExperimentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentSessionUpload"];
+            };
+        };
+        responses: {
+            /** @description Đã ghi */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentSessionReceipt"];
                 };
             };
         };

@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 import pandas as pd
 import psycopg
@@ -117,6 +117,36 @@ def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
 
 def _us(stamp: datetime) -> int:
     return int(stamp.timestamp() * 1_000_000)
+
+
+_ACCOUNT_KEYS = {"account", "account_id", "from_account", "to_account", "payee", "sender", "counterparty"}
+
+
+def _is_hmac(text: str) -> bool:
+    return len(text) == 64 and all(char in "0123456789abcdef" for char in text)
+
+
+def hash_accounts(value):
+    """Băm mã tài khoản trước khi ghi. Hash 64 hex giữ nguyên."""
+    if isinstance(value, dict):
+        hashed = {}
+        for key, item in value.items():
+            if key in _ACCOUNT_KEYS and isinstance(item, str) and not _is_hmac(item):
+                hashed[key] = account_hash(item)
+            else:
+                hashed[key] = hash_accounts(item)
+        return hashed
+    if isinstance(value, list):
+        return [hash_accounts(item) for item in value]
+    return value
+
+
+def _plain(value):
+    if value is None:
+        return None
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    return value
 
 
 def touch_session(account: str, device: dict | None, now: datetime) -> str:
@@ -289,12 +319,63 @@ def apply_funds(conn, transfer: dict, previous: str, funds: str, now: datetime) 
         entry(conn, transfer["from_account"], transfer["id"] + ":refund", now, "in", int(transfer["amount"]), "transfer", "hoàn", "cancelled")
 
 
+class CallIn(BaseModel):
+    state: Literal["active", "ended_in_session", "none", "unknown"]
+    observability: Literal["supported_observed", "supported_not_observed", "unavailable"]
+    transport: Literal["cellular", "voip", "unknown"]
+
+
+class BehaviourIn(BaseModel):
+    median_gap_ms: float
+    p90_gap_ms: float
+    burst_count: int
+    pause_to_action_ratio: float
+    review_dwell_ms: int
+    edit_count: int
+    backtrack_count: int
+    screen_revisit_count: int
+    background_count: int
+    background_total_ms: int
+    session_duration_ms: int
+
+
+class ExperimentIn(BaseModel):
+    participant_id: str
+    condition: str
+    session_index: int
+
+
 class TransferIn(BaseModel):
     from_account: str
     to_account: str
     amount: int
     purpose_text: str | None = None
     device: dict | None = None
+    task_type: Literal["saved_payee", "new_typed", "new_pasted", "qr"] | None = None
+    call: CallIn | None = None
+    behaviour_features: BehaviourIn | None = None
+    transfer_purpose: Literal[
+        "authority_request",
+        "fee_to_receive",
+        "investment",
+        "refund_request",
+        "purchase",
+        "family_friends",
+        "debt_salary",
+        "other",
+        "not_asked",
+    ] | None = None
+    experiment: ExperimentIn | None = None
+
+
+class ExperimentSessionIn(BaseModel):
+    participant_id: str
+    condition: str
+    session_index: int
+    task_type: Literal["saved_payee", "new_typed", "new_pasted", "qr"]
+    call: CallIn
+    behaviour_features: BehaviourIn
+    raw_events: list[dict] | None = None
 
 
 class RespondIn(BaseModel):
@@ -664,6 +745,10 @@ def transfer(
         }
         if body.device is not None:
             request["device"] = body.device
+        for key in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment"):
+            sent = _plain(getattr(body, key))
+            if sent is not None:
+                request[key] = sent
         try:
             decided = engine_post("/decide", request, timeout=DECIDE_TIMEOUT_S)
         except EngineUnavailable:
@@ -738,6 +823,33 @@ def transfer(
         stored = prior["response"]
         return stored if isinstance(stored, dict) else json.loads(stored)
     return result
+
+
+@app.post("/experiment/sessions")
+def store_experiment_session(body: ExperimentSessionIn) -> dict:
+    now = CLOCK.now()
+    raw = hash_accounts(body.raw_events) if body.raw_events is not None else None
+    with connect() as conn:
+        conn.execute(SCHEMA)
+        conn.execute(
+            """
+            INSERT INTO bank.experiment_sessions
+            (participant_id, condition, session_index, task_type, call, behaviour_features, raw_events, created_at)
+            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+            """,
+            (
+                body.participant_id,
+                body.condition,
+                body.session_index,
+                body.task_type,
+                json.dumps(hash_accounts(body.call.model_dump())),
+                json.dumps(hash_accounts(body.behaviour_features.model_dump())),
+                None if raw is None else json.dumps(raw),
+                now,
+            ),
+        )
+        conn.commit()
+    return {"stored": True}
 
 
 @app.post("/transfer/{transfer_id}/respond")

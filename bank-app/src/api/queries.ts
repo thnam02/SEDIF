@@ -78,7 +78,18 @@ export function useLimit() {
 export function useTransfer() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { from: string; to: string; amount: number; note: string }) => {
+    mutationFn: async (input: {
+      from: string
+      to: string
+      amount: number
+      note: string
+      task_type: components["schemas"]["TaskType"]
+      call: components["schemas"]["CallContext"]
+      behaviour_features: components["schemas"]["BehaviourFeatures"]
+      transfer_purpose: components["schemas"]["TransferPurpose"]
+      device: components["schemas"]["Device"] & { state: "unknown" }
+      experiment?: components["schemas"]["ExperimentAssignment"]
+    }) => {
       const key = await transferKey(input.from, input.to, input.amount)
       return unwrap(
         bank.POST("/transfer", {
@@ -88,7 +99,12 @@ export function useTransfer() {
             to_account: input.to,
             amount: input.amount,
             purpose_text: input.note || undefined,
-            device: FidesSession.collectSignals(),
+            task_type: input.task_type,
+            call: input.call,
+            behaviour_features: input.behaviour_features,
+            transfer_purpose: input.transfer_purpose,
+            device: input.device,
+            experiment: input.experiment,
           },
         }),
       )

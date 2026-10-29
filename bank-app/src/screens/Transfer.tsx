@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react"
 import { Pressable, Text, TextInput, View } from "react-native"
 import { useRouter } from "expo-router"
 import { Check, ChevronRight, Search, ShieldCheck } from "lucide-react-native"
-import { FidesCallNotice, FidesIntervention, FidesSession, useAccountInput } from "fides-sdk"
+import { FidesCallNotice, FidesIntervention, FidesSession, sessionRecorder, useAccountInput } from "fides-sdk"
 
 import { BANK_URL } from "../api/client"
 import { useBeneficiaries, useRespond, useTransfer } from "../api/queries"
+import { rememberSession } from "../dev/lastSession"
+import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
 import { displayHolder } from "../names"
 import { digits, grouped, vnd } from "../format"
@@ -20,7 +22,13 @@ export function RecipientScreen() {
   const input = useAccountInput()
   const [query, setQuery] = useState("")
   const type = useType()
-  useEffect(() => { FidesSession.start() }, [])
+  useEffect(() => {
+    if (!sessionRecorder.isOpen()) {
+      FidesSession.start()
+      sessionRecorder.start("new_typed")
+    }
+    sessionRecorder.note({ type: "screen_enter", screen: "recipient" })
+  }, [])
   const rows = (saved.data?.beneficiaries ?? []).filter((item) => `${item.holder_name} ${item.account_id}`.toLowerCase().includes(query.trim().toLowerCase()))
   function go(account: string, name: string) {
     input.choose(account)
@@ -58,6 +66,7 @@ export function NewAccountScreen() {
   const input = useAccountInput()
   const field = useRef<TextInput>(null)
   const type = useType()
+  useEffect(() => { sessionRecorder.note({ type: "screen_enter", screen: "new_account" }) }, [])
   function submit() {
     const account = input.value.trim()
     if (!account) {
@@ -70,7 +79,7 @@ export function NewAccountScreen() {
   return (
     <Screen call>
       <Header title={copy.newRecipient} />
-      <TextInput ref={field} testID="new-account" value={input.value} onChangeText={input.onChangeText} onSubmitEditing={submit} placeholder={copy.newRecipient} autoCapitalize="characters" autoFocus returnKeyType="go" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy, fontSize: type.body }} />
+      <TextInput ref={field} testID="new-account" value={input.value} onChangeText={input.onChangeText} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "account" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "account" })} onSubmitEditing={submit} placeholder={copy.newRecipient} autoCapitalize="characters" autoFocus returnKeyType="go" style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy, fontSize: type.body }} />
       {DEMO ? (
         <Pressable testID="paste-account" accessibilityRole="button" onPress={() => input.onChangeText("ZVAY000000000001")} style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}>
           <Text style={{ color: colors.deep, fontWeight: "700" }}>Dán số tài khoản</Text>
@@ -123,13 +132,28 @@ export function AmountScreen() {
   const setNote = useBank((state) => state.setNote)
   const name = useBank((state) => state.toName)
   const type = useType()
+  useEffect(() => { sessionRecorder.note({ type: "screen_enter", screen: "amount" }) }, [])
+  function onAmount(value: string) {
+    const next = digits(value)
+    const prev = digits(String(amount))
+    if (next.length < prev.length) sessionRecorder.note({ type: "field_edit" })
+    else if (next.length - prev.length > 1) sessionRecorder.note({ type: "paste" })
+    else if (next.length > prev.length) sessionRecorder.note({ type: "key_tick" })
+    setAmount(Number(next) || 0)
+  }
+  function onNote(value: string) {
+    if (value.length < note.length) sessionRecorder.note({ type: "field_edit" })
+    else if (value.length - note.length > 1) sessionRecorder.note({ type: "paste" })
+    else if (value.length > note.length) sessionRecorder.note({ type: "key_tick" })
+    setNote(value)
+  }
   return (
     <Screen call>
       <Header title={copy.amount} />
       <AmountNotice />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · BVC bank</Text>
-        <TextInput testID="amount" value={grouped(amount)} onChangeText={(value) => setAmount(Number(digits(value)) || 0)} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
+        <TextInput testID="amount" value={grouped(amount)} onChangeText={onAmount} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "amount" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "amount" })} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.dong}</Text>
       </Card>
       <View style={{ flexDirection: "row", gap: 8 }}>
@@ -139,7 +163,7 @@ export function AmountScreen() {
           </Pressable>
         ))}
       </View>
-      <TextInput value={note} onChangeText={setNote} placeholder={copy.note} style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12 }} />
+      <TextInput value={note} onChangeText={onNote} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "note" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "note" })} placeholder={copy.note} style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12 }} />
       <Button label={copy.confirm} onPress={() => router.push("/(main)/transfer/confirm")} />
     </Screen>
   )
@@ -155,6 +179,7 @@ export function ConfirmScreen() {
   const setOutcome = useBank((state) => state.setOutcome)
   const transfer = useTransfer()
   const type = useType()
+  useEffect(() => { sessionRecorder.note({ type: "screen_enter", screen: "confirm" }) }, [])
   return (
     <Screen call>
       <Header title={copy.confirm} />
@@ -173,9 +198,34 @@ export function ConfirmScreen() {
       <Button
         label={copy.confirm}
         onPress={() => {
-          FidesSession.collectSignals()
+          const call = FidesSession.callBlock()
+          const session = sessionRecorder.end()
+          const device = { ...FidesSession.collectSignals(), state: "unknown" as const }
+          rememberSession({ task_type: session.task_type, call, behaviour_features: session.behaviour_features })
+          if (session.experiment && session.raw_events) {
+            void uploadExperiment({
+              participant_id: session.experiment.participant_id,
+              condition: session.experiment.condition,
+              session_index: session.experiment.session_index,
+              task_type: session.task_type,
+              call,
+              behaviour_features: session.behaviour_features,
+              raw_events: session.raw_events,
+            })
+          }
           transfer.mutate(
-            { from: accountId, to: toAccount, amount, note },
+            {
+              from: accountId,
+              to: toAccount,
+              amount,
+              note,
+              task_type: session.task_type,
+              call,
+              behaviour_features: session.behaviour_features,
+              transfer_purpose: "not_asked",
+              device,
+              experiment: session.experiment,
+            },
             {
               onSuccess: (result) => {
                 setOutcome({

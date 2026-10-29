@@ -7,7 +7,7 @@ import { copy } from "../copy/vi"
 import { statement, vnd, when } from "../format"
 import { personas } from "../personas"
 import { useHistory, useAccount } from "../api/queries"
-import { useBank } from "../store"
+import { DEMO, useBank } from "../store"
 import { JudgePanel } from "../judge/JudgePanel"
 import { colors, Screen, useType } from "../ui/parts"
 
@@ -36,6 +36,11 @@ export function HomeScreen() {
           <UserRound size={19} color={colors.deep} />
         </View>
       </View>
+      {DEMO ? (
+        <Pressable accessibilityRole="button" onPress={() => router.push("/dev")}>
+          <Text style={{ color: colors.deep, fontWeight: "700", fontSize: type.small }}>Phiên FIDES</Text>
+        </Pressable>
+      ) : null}
       <View className="rounded-3xl bg-deep p-5" style={{ borderRadius: 24, backgroundColor: colors.deep, padding: 20, gap: 16 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ color: colors.white, fontSize: type.small }}>{copy.balance}</Text>
