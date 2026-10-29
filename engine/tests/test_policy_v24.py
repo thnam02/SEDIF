@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO)]
 
-from engine.policy.v24 import Facts, MemoryState, evaluate, load_policy
+from engine.policy.v24 import Facts, MemoryState, cost_tau, evaluate, load_policy
 
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 SENDER = "a" * 64
@@ -223,6 +223,39 @@ def test_episode_skips_saved_payee_and_floors_the_next_new_payee():
     assert nxt.episode_id != ""
 
 
+def test_model_cost_is_level_1_until_tau_hi():
+    amount = 50_000_000
+    tau = cost_tau(amount, "thường")
+    sme = cost_tau(amount, "doanh nghiệp nhỏ")
+    assert abs(tau - (150_000 / (150_000 + amount))) < 1e-12
+    assert abs(sme - (450_000 / (450_000 + amount))) < 1e-12
+    assert tau < sme < 0.8125
+    quiet = dict(
+        amount=amount,
+        call_state="none",
+        new_payee=False,
+        funds_events=[],
+        task_type="saved_payee",
+        transfer_purpose="purchase",
+        device_state="none",
+        simo_listed=False,
+        segment="thường",
+    )
+    just = evaluate(_facts(**quiet, p_fraud=tau + 1e-6))
+    assert just.level == 1
+    assert "R_MODEL_COST" in just.rules_fired
+    assert "R_MODEL_HIGH" not in just.rules_fired
+    sme_quiet = dict(quiet)
+    sme_quiet["segment"] = "doanh nghiệp nhỏ"
+    below_sme = evaluate(_facts(**sme_quiet, p_fraud=tau + 1e-6))
+    assert below_sme.level == 0
+    assert "R_MODEL_COST" not in below_sme.rules_fired
+    high = evaluate(_facts(**quiet, p_fraud=0.8125))
+    assert high.level == 2
+    assert "R_MODEL_HIGH" in high.rules_fired
+    assert "R_MODEL_COST" in high.rules_fired
+
+
 def test_authority_purpose_is_level_2():
     out = evaluate(_facts(transfer_purpose="authority_request", call_state="none"))
     assert out.level == 2
@@ -231,7 +264,7 @@ def test_authority_purpose_is_level_2():
 
 
 def test_capability_is_banner_plus_extra_auth_not_a_workflow():
-    out = evaluate(_facts(device_state="capability_detected", call_state="none"))
+    out = evaluate(_facts(device_state="capability_detected", call_state="none", p_fraud=0.0))
     assert out.level == 1
     assert out.extra_auth is True
     assert out.intervention == "banner"

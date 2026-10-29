@@ -38,6 +38,7 @@ SIGNAL_ORDER = (
     "recipient_unusual",
     "recipient_simo_flag",
     "model_p_high",
+    "model_p_cost",
     "behaviour_rare",
     "screen_capture_active",
     "device_capability",
@@ -122,6 +123,7 @@ class Facts:
     prior_payments: int | None = None
     first_days_before_listing: float | None = None
     p_fraud: float | None = None
+    segment: str = "thường"
     behaviour_p_rarity: float | None = None
     same_task_sessions: int | None = None
     limit_per_txn: int | None = None
@@ -317,6 +319,7 @@ def build_signals(facts: Facts, now: datetime) -> tuple[dict[str, Signal], dict[
         "recipient_unusual": _signal("recipient_unusual", unusual, "suspicious", "core_banking", observed, now),
         "recipient_simo_flag": _signal("recipient_simo_flag", _tri(facts.simo_listed), "suspicious", "simo", observed, now),
         "model_p_high": _signal("model_p_high", _model(facts.p_fraud), "suspicious", "model", observed, now),
+        "model_p_cost": _signal("model_p_cost", _model_cost(facts), "suspicious", "model", observed, now),
         "behaviour_rare": _signal("behaviour_rare", behaviour, "suspicious", "sdk", observed, now),
         "screen_capture_active": _signal("screen_capture_active", capture, "suspicious", "device_attestation", observed, now),
         "device_capability": _signal("device_capability", capability, "suspicious", "device_attestation", observed, now),
@@ -354,6 +357,20 @@ def _model(probability: float | None) -> str:
     if probability is None:
         return "unknown"
     return "present" if probability >= float(threshold("model_p_high")) else "absent"
+
+
+def cost_tau(amount: float, segment: str) -> float:
+    """τ(A) = c_FP / (c_FP + η·A), c_FP = scale × (50.000 + 0,002·A). Doanh nghiệp nhỏ ×3."""
+    paid = 0.0 if amount != amount or amount < 0 else float(amount)
+    scale = float(threshold("c_fp_sme_scale")) if segment == "doanh nghiệp nhỏ" else 1.0
+    false_positive = (float(threshold("c_fp_fixed")) + float(threshold("c_fp_rate")) * paid) * scale
+    return false_positive / (false_positive + float(threshold("cost_eta")) * paid)
+
+
+def _model_cost(facts: Facts) -> str:
+    if facts.p_fraud is None:
+        return "unknown"
+    return "present" if facts.p_fraud >= cost_tau(float(facts.amount), facts.segment) else "absent"
 
 
 def _behaviour(facts: Facts) -> str:
@@ -540,6 +557,8 @@ def _reason_text(name: str, facts: Facts, funds: list[dict]) -> str:
         return SIMO_TEXT
     if name == "model_p_high":
         return "Mẫu chấm điểm cho lệnh này một điểm cao."
+    if name == "model_p_cost":
+        return "Điểm mô hình vượt ngưỡng theo số tiền của lệnh này."
     if name == "behaviour_rare":
         return "Cách thao tác khác với những lần chuyển cùng loại trước đây."
     if name == "screen_capture_active":
@@ -650,6 +669,19 @@ def _opt_float(row: dict, name: str) -> float | None:
     return number
 
 
+def _segment(row: dict) -> str:
+    value = row.get("segment")
+    if value is None:
+        return "thường"
+    try:
+        if float(value) != float(value):
+            return "thường"
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return text or "thường"
+
+
 def _opt_bool(row: dict, name: str) -> bool | None:
     if name not in row or row.get(name) is None:
         return None
@@ -686,9 +718,10 @@ def facts_from_row(body: dict, row: dict, probability: float, decided: datetime,
         distinct_senders_7d=_opt_float(row, "distinct_senders_7d"),
         passthrough_24h=_opt_float(row, "passthrough_24h"),
         simo_listed=_opt_bool(row, "simo_listed"),
-        prior_payments=None if row.get("payee_transfers_before_listing") is None else int(row.get("payee_transfers_before_listing") or 0),
+        prior_payments=None if _opt_float(row, "payee_transfers_before_listing") is None else int(_opt_float(row, "payee_transfers_before_listing")),
         first_days_before_listing=_opt_float(row, "payee_first_days_before_listing"),
         p_fraud=None if probability is None else float(probability),
+        segment=_segment(row),
         behaviour_p_rarity=None,
         same_task_sessions=None,
         limit_per_txn=limit,

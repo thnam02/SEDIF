@@ -94,6 +94,13 @@ def _official_test_levels(frames, bundle) -> dict[str, str]:
     families, _, _ = _family_counts(population, legit_train, True, "strict")
     eligible, _, _ = _eligible(population, legit_train)
     level = _assign_levels(probability, amount, families, scale, 0.8125, eligible)
+    listed = pd.to_numeric(population["simo_listed"], errors="coerce").fillna(0).to_numpy() >= 1
+    prior = pd.to_numeric(population["payee_transfers_before_listing"], errors="coerce").fillna(0).to_numpy()
+    first_days = pd.to_numeric(population["payee_first_days_before_listing"], errors="coerce").fillna(0).to_numpy()
+    repeat = listed & (families == 0) & (prior >= 3) & (first_days >= 60)
+    level = level.copy()
+    level[repeat] = "info"
+    level[listed & (families == 0) & ~repeat & (level == "none")] = "banner"
     on_test = population["session_id"].isin(bundle["test_ids"]).to_numpy()
     return dict(zip(population.loc[on_test, "session_id"].astype(str), level[on_test]))
 

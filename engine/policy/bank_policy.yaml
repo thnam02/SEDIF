@@ -52,6 +52,18 @@ thresholds:
   hold_level_3_hours:
     value: 24
     provenance: chosen on simulated data
+  c_fp_fixed:
+    value: 50000
+    provenance: chosen on simulated data
+  c_fp_rate:
+    value: 0.002
+    provenance: chosen on simulated data
+  c_fp_sme_scale:
+    value: 3
+    provenance: chosen on simulated data
+  cost_eta:
+    value: 1
+    provenance: chosen on simulated data
 
 funds_types:
   term_deposit_closure: "Sổ tiết kiệm vừa được tất toán."
@@ -100,6 +112,9 @@ rules:
   - id: R_SIMO_KNOWN
     level: 1
     all_present: [recipient_simo_flag, simo_info_rule]
+  - id: R_MODEL_COST
+    level: 1
+    all_present: [model_p_cost]
   - id: R_MODEL_HIGH
     level: 2
     all_present: [model_p_high]
