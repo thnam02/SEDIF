@@ -231,6 +231,13 @@ def _fallback(conn, sender: str, payee: str, amount: int) -> dict:
     }
 
 
+def legacy_level(level) -> str:
+    """TransferResponse vẫn dùng mức chữ. /decide v2.4 trả 0–3."""
+    if isinstance(level, int) and not isinstance(level, bool):
+        return {0: "none", 1: "banner", 2: "medium", 3: "high"}.get(level, "none")
+    return str(level)
+
+
 def status_of(level: str, funds: str, hung_up: bool) -> str:
     if funds == "cancelled":
         return "cancelled"
@@ -366,6 +373,7 @@ class TransferIn(BaseModel):
         "not_asked",
     ] | None = None
     experiment: ExperimentIn | None = None
+    recent_funds_events: list[dict] | None = None
 
 
 class ExperimentSessionIn(BaseModel):
@@ -745,7 +753,7 @@ def transfer(
         }
         if body.device is not None:
             request["device"] = body.device
-        for key in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment"):
+        for key in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment", "recent_funds_events"):
             sent = _plain(getattr(body, key))
             if sent is not None:
                 request[key] = sent
@@ -754,7 +762,7 @@ def transfer(
         except EngineUnavailable:
             decided = _fallback(conn, body.from_account, body.to_account, body.amount)
             decision_id = None
-        level = decided["level"]
+        level = legacy_level(decided["level"])
         funds = decided["funds_status"]
         hung = False
         status = status_of(level, funds, hung)

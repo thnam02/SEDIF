@@ -24,9 +24,7 @@ from engine.audit import (
 from engine.common.hashing import require_key
 from engine.decide import (
     apply_contract,
-    assign_level,
     gated_families,
-    hold_for,
     iso,
     missing_signals,
     parse_ts,
@@ -42,6 +40,7 @@ from engine.review import confirm as confirm_review
 from engine.review import consider as consider_review
 from engine.review import queue as review_queue
 from engine.policy import actions_for
+from engine.policy.v24 import STRING_LEVEL, RedisState, evaluate, facts_from_row
 
 log = logging.getLogger("engine")
 NAME = os.environ.get("SERVICE_NAME", "engine")
@@ -288,17 +287,21 @@ def decide(body: dict) -> tuple[int, dict]:
         probability = MODEL.score(row)
     families = gated_families(row)
     segment = str(row.get("segment") or "thường")
-    amount = row.get("amount")
-    amount_value = 0.0 if amount is None else float(amount)
-    level = assign_level(probability, amount_value, families, segment, row)
+    limit = int(STORE.limit_of.get(body["sender_hash"]) or 0)
+    outcome = evaluate(facts_from_row(body, row, probability, decided, limit or None), RedisState(STORE.redis))
+    level_name = STRING_LEVEL[outcome.level]
     guardian = bool(int(row.get("has_guardian") or 0))
-    actions = actions_for(level, segment, guardian)
+    actions = actions_for(level_name, segment, guardian)
     names = [name for name in ("call", "entry", "payee", "mobilization") if families[name]]
-    reasons = reasons_for(row, families)
-    funds, hold = hold_for(level, decided)
+    reasons = outcome.reason_rows()[:3] or reasons_for(row, families)
+    funds, hold = outcome.funds_status, outcome.hold_until
     payload = {
         "decision_id": body["decision_id"],
-        "level": level,
+        "level": outcome.level,
+        "rules_fired": outcome.rules_fired,
+        "evidence_card": outcome.evidence_card,
+        "intervention": outcome.intervention,
+        "extra_auth": outcome.extra_auth,
         "actions": actions,
         "p_fraud": probability,
         "group_scores": {name: float(families[name]) for name in ("call", "entry", "payee", "mobilization")},
@@ -320,7 +323,7 @@ def decide(body: dict) -> tuple[int, dict]:
         "payee_hash": body["payee_hash"],
         "features": _features(row, MODEL.columns),
         "p": probability,
-        "level": level,
+        "level": level_name,
         "actions": actions,
         "families_hit": names,
         "reasons": reasons,

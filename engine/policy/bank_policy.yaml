@@ -1,0 +1,132 @@
+version: "2.4.0"
+description: >
+  Luật và ngưỡng của /decide. Mức cuối là mức cao nhất trong các luật đã khớp.
+  Không có luật đếm số tín hiệu. unknown không bao giờ bị coi là absent.
+
+thresholds:
+  model_p_high:
+    value: 0.8125
+    provenance: chosen on simulated data
+  recipient_age_days_below:
+    value: 365
+    provenance: chosen on simulated data
+  distinct_senders_7d_above:
+    value: 6
+    provenance: chosen on simulated data
+  passthrough_24h_above:
+    value: 0.951
+    provenance: chosen on simulated data
+  behaviour_p_rarity_at_most:
+    value: 0.05
+    provenance: chosen on simulated data
+  behaviour_baseline_medium_sessions:
+    value: 3
+    provenance: chosen on simulated data
+  behaviour_baseline_high_sessions:
+    value: 10
+    provenance: chosen on simulated data
+  funds_fresh_hours:
+    value: 72
+    provenance: chosen on simulated data
+  episode_hours:
+    value: 24
+    provenance: chosen on simulated data
+  customer_state_hours:
+    value: 24
+    provenance: chosen on simulated data
+  near_limit_below:
+    value: 0.005
+    provenance: chosen on simulated data
+  biometric_vnd:
+    value: 10000000
+    provenance: chosen on simulated data
+  simo_prior_payments:
+    value: 3
+    provenance: chosen on simulated data
+  simo_first_days_before_listing:
+    value: 60
+    provenance: chosen on simulated data
+  hold_level_2_minutes:
+    value: 30
+    provenance: chosen on simulated data
+  hold_level_3_hours:
+    value: 24
+    provenance: chosen on simulated data
+
+funds_types:
+  term_deposit_closure: "Sổ tiết kiệm vừa được tất toán."
+  savings_liquidation: "Sổ tiết kiệm vừa được tất toán."
+  fast_loan_disbursement: "Khoản vay nhanh vừa được giải ngân."
+  quick_loan_disbursement: "Khoản vay nhanh vừa được giải ngân."
+  limit_increase: "Hạn mức vừa được nâng."
+  limit_raise: "Hạn mức vừa được nâng."
+  card_cash_advance: "Thẻ vừa được ứng tiền mặt."
+  credit_card_cash_advance: "Thẻ vừa được ứng tiền mặt."
+
+manipulation_signals:
+  - has_call
+  - entry_paste_or_qr
+  - beneficiary_is_new
+  - recent_funds_event
+  - purpose_high_risk
+  - screen_capture_active
+  - behaviour_rare
+
+contextual_signals:
+  - has_call
+  - entry_paste_or_qr
+  - beneficiary_is_new
+  - recent_funds_event
+
+call_rules:
+  - R_CALL_FUNDS_NEWPAYEE
+  - R_BEHAVIOUR_GUIDED
+
+rules:
+  - id: R_CALL_FUNDS_NEWPAYEE
+    level: 2
+    all_present: [has_call, recent_funds_event, beneficiary_is_new]
+    needs_call: true
+  - id: R_PURPOSE_HIGH_RISK
+    level: 2
+    all_present: [purpose_high_risk]
+  - id: R_RECIPIENT_UNUSUAL
+    level: 2
+    all_present: [recipient_unusual, beneficiary_is_new]
+  - id: R_SIMO
+    level: 2
+    all_present: [recipient_simo_flag]
+    all_absent: [simo_info_rule]
+  - id: R_SIMO_KNOWN
+    level: 1
+    all_present: [recipient_simo_flag, simo_info_rule]
+  - id: R_MODEL_HIGH
+    level: 2
+    all_present: [model_p_high]
+  - id: R_BEHAVIOUR_GUIDED
+    level: 2
+    all_present: [behaviour_rare, has_call, beneficiary_is_new]
+    baseline_at_least: medium
+    needs_call: true
+  - id: R_BEHAVIOUR_ONLY
+    level: 1
+    all_present: [behaviour_rare]
+    baseline_at_least: medium
+    unless_fired: [R_BEHAVIOUR_GUIDED]
+  - id: R_CAPTURE
+    level: 2
+    all_present: [screen_capture_active]
+  - id: R_DEVICE_CAPABILITY
+    level: 1
+    all_present: [device_capability]
+    extra_auth: true
+  - id: R_VERIFIED_RECIPIENT
+    level: 3
+    any_present: [recipient_bank_confirmed_mule, recipient_le_confirmed_case]
+  - id: R_VERIFIED_DEVICE
+    level: 3
+    all_present: [verified_compromise]
+    customer_level: true
+  - id: R_CONTEXTUAL_ONLY
+    level: 1
+    contextual_only: true
