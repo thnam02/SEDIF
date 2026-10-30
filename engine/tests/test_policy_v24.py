@@ -418,7 +418,7 @@ def test_low_baseline_behaviour_is_not_used_for_level_2():
     assert out.level < 2
     assert "R_BEHAVIOUR_GUIDED" not in out.rules_fired
     rare = next(item for item in out.signals if item.signal_id == "behaviour_rare")
-    assert rare.status == "present"
+    assert rare.status == "unknown"
     assert out.baseline_quality == "low"
 
 

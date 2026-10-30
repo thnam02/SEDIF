@@ -46,7 +46,7 @@ def _hash_ok(value) -> bool:
 
 def _cleanup(client: redis.Redis) -> int:
     removed = 0
-    for pattern in ("pol:v24:bench_*", "f:sess:bench_*", "f:*bench_*"):
+    for pattern in ("pol:v24:bench_*", "beh:v24:bench_*", "f:sess:bench_*", "f:*bench_*"):
         cursor = 0
         while True:
             cursor, keys = client.scan(cursor, match=pattern, count=500)
@@ -90,6 +90,21 @@ def main() -> None:
                 "device": {},
             }
         )
+        if os.environ.get("BENCH_BEHAVIOUR") == "1":
+            jobs[-1]["task_type"] = "saved_payee"
+            jobs[-1]["behaviour_features"] = {
+                "median_gap_ms": 800,
+                "p90_gap_ms": 2200,
+                "burst_count": 2,
+                "pause_to_action_ratio": 0.18,
+                "review_dwell_ms": 1400,
+                "edit_count": 1,
+                "backtrack_count": 0,
+                "screen_revisit_count": 1,
+                "background_count": 0,
+                "background_total_ms": 350,
+                "session_duration_ms": 40000,
+            }
     appmod.STORE = OnlineStore(flush=False)
     appmod.MODEL = Scorer.load()
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)

@@ -92,8 +92,8 @@ paths:
       description: >
         device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile
         hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo.
-        task_type, call, behaviour_features, transfer_purpose, state trên device,
-        recent_funds_events và experiment là hợp đồng 2.4. Engine chưa đọc chúng.
+        task_type và behaviour_features được engine đọc để chấm tầng thao tác.
+        experiment chọn ghi baseline ngay (thí nghiệm) hay sau 24 giờ.
         behaviour_features chỉ là số tổng hợp trên máy, không có mốc thời gian thô.
       requestBody:
         required: true
@@ -976,7 +976,7 @@ components:
     TaskType:
       type: string
       enum: [saved_payee, new_typed, new_pasted, qr]
-      description: Cách khách chọn người nhận. Hợp đồng 2.4, engine chưa đọc.
+      description: Cách khách chọn người nhận. Khoá baseline thao tác cùng loại.
     CallContext:
       type: object
       additionalProperties: false
@@ -997,7 +997,7 @@ components:
       additionalProperties: false
       description: >
         Số tổng hợp tính trên máy. Không gửi mốc thời gian thô.
-        Hợp đồng 2.4, engine chưa đọc.
+        Engine dùng các số này để chấm tầng thao tác.
       required:
         - median_gap_ms
         - p90_gap_ms
@@ -1390,7 +1390,7 @@ components:
     EvidenceCard:
       type: object
       additionalProperties: false
-      description: Thẻ bằng chứng v2.4. Engine chưa trả khối này.
+      description: Thẻ bằng chứng v2.4. behaviour_score và p_rarity null khi không có behaviour_features.
       required: [signals, reasons_vi, baseline_quality, episode_id]
       properties:
         signals:
@@ -1406,6 +1406,14 @@ components:
           enum: [low, medium, high, none]
         episode_id:
           type: string
+        behaviour_score:
+          type: number
+          nullable: true
+          description: Điểm thao tác S của phiên. null khi không có behaviour_features.
+        p_rarity:
+          type: number
+          nullable: true
+          description: (1 + số điểm tham chiếu >= S) / (n + 1). Ngưỡng 0,05 là demo.
     Intervention:
       type: string
       enum: [none, banner, three_button, security_workflow]
@@ -1415,7 +1423,7 @@ components:
       description: >
         Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và
         intervention. 0 proceed, 1 banner, 2 three-button verification,
-        3 security workflow (verified evidence only). Engine chưa trả các trường mới.
+        3 security workflow (verified evidence only).
       required:
         - decision_id
         - level

@@ -33,6 +33,7 @@ from engine.decide import (
     to_us,
 )
 from engine.events import connect, ensure_schema, insert_event
+from engine.features.behaviour import assess, remember
 from engine.features.online import OnlineStore
 from engine.features.stream import TRANSFER_TYPES
 from engine.model import Scorer
@@ -288,7 +289,19 @@ def decide(body: dict) -> tuple[int, dict]:
     families = gated_families(row)
     segment = str(row.get("segment") or "thường")
     limit = int(STORE.limit_of.get(body["sender_hash"]) or 0)
-    outcome = evaluate(facts_from_row(body, row, probability, decided, limit or None), RedisState(STORE.redis))
+    behaviour = assess(
+        STORE.redis,
+        str(body.get("user_hash") or body["sender_hash"]),
+        body.get("task_type"),
+        body.get("behaviour_features"),
+        decided,
+        experiment=isinstance(body.get("experiment"), dict),
+    )
+    facts = facts_from_row(body, row, probability, decided, limit or None)
+    if behaviour is not None:
+        facts.same_task_sessions = behaviour.n
+        facts.behaviour_p_rarity = behaviour.p_rarity if behaviour.usable else None
+    outcome = evaluate(facts, RedisState(STORE.redis), behaviour)
     level_name = STRING_LEVEL[outcome.level]
     guardian = bool(int(row.get("has_guardian") or 0))
     actions = actions_for(level_name, segment, guardian)
@@ -337,6 +350,8 @@ def decide(body: dict) -> tuple[int, dict]:
     with audit_conn() as conn:
         if not insert_decision(conn, stored):
             return 409, {"detail": "decision_id đã có"}
+    if behaviour is not None:
+        remember(STORE.redis, behaviour, outcome.level)
     return 200, payload
 
 

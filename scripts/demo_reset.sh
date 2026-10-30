@@ -89,23 +89,31 @@ while true; do
       ;;
   esac
 done
-# Chỉ xoá kho episode v2.4. SCAN + DEL, không FLUSHDB.
-removed=0
-cursor=0
-while true; do
-  out=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" --raw SCAN "$cursor" MATCH 'pol:v24:*' COUNT 500)
-  cursor=$(printf '%s\n' "$out" | head -n 1)
-  keys=$(printf '%s\n' "$out" | tail -n +2)
-  if [ -n "$keys" ]; then
-    n=$(printf '%s\n' "$keys" | wc -l | tr -d ' ')
-    printf '%s\n' "$keys" | xargs -n 100 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" DEL >/dev/null
-    removed=$((removed + n))
-  fi
-  if [ "$cursor" = "0" ]; then
-    break
-  fi
-done
-echo "pol:v24 removed $removed"
+# Chỉ xoá kho episode và baseline thao tác. SCAN + DEL, không FLUSHDB.
+# BEGIN purge_prefix
+purge_prefix() {
+  pattern=$1
+  label=$2
+  removed=0
+  cursor=0
+  while true; do
+    out=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" --raw SCAN "$cursor" MATCH "$pattern" COUNT 500)
+    cursor=$(printf '%s\n' "$out" | head -n 1)
+    keys=$(printf '%s\n' "$out" | tail -n +2)
+    if [ -n "$keys" ]; then
+      n=$(printf '%s\n' "$keys" | wc -l | tr -d ' ')
+      printf '%s\n' "$keys" | xargs -n 100 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" DEL >/dev/null
+      removed=$((removed + n))
+    fi
+    if [ "$cursor" = "0" ]; then
+      break
+    fi
+  done
+  echo "$label removed $removed"
+}
+# END purge_prefix
+purge_prefix 'pol:v24:*' 'pol:v24'
+purge_prefix 'beh:v24:*' 'beh:v24'
 RESET_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
 engine_body=$(curl -sS -X POST "$ENGINE/demo/reset" -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d "{\"reset_id\":\"$RESET_ID\"}" -w '\n%{http_code}')
 engine_code=${engine_body##*$'\n'}

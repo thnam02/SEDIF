@@ -148,6 +148,8 @@ class Outcome:
     funds_status: str
     hold_until: datetime | None
     score_ms: float
+    behaviour_score: float | None = None
+    behaviour_p_rarity: float | None = None
 
     @property
     def evidence_card(self) -> dict:
@@ -156,6 +158,8 @@ class Outcome:
             "reasons_vi": list(self.reasons_vi),
             "baseline_quality": self.baseline_quality,
             "episode_id": self.episode_id,
+            "behaviour_score": self.behaviour_score,
+            "p_rarity": self.behaviour_p_rarity,
         }
 
     def reason_rows(self) -> list[dict[str, str]]:
@@ -245,11 +249,15 @@ def _tri(present: bool | None) -> str:
 def _baseline(sessions: int | None) -> str:
     if sessions is None:
         return "none"
-    if sessions >= int(threshold("behaviour_baseline_high_sessions")):
+    block = load_policy().get("behavioural_baseline") or {}
+    high = int(block.get("high_sessions", threshold("behaviour_baseline_high_sessions")))
+    medium = int(block.get("medium_sessions", threshold("behaviour_baseline_medium_sessions")))
+    count = int(sessions)
+    if count >= high:
         return "high"
-    if sessions >= int(threshold("behaviour_baseline_medium_sessions")):
+    if count >= medium:
         return "medium"
-    if sessions > 0:
+    if count > 0:
         return "low"
     return "none"
 
@@ -403,6 +411,14 @@ def _model_cost(facts: Facts) -> str:
 
 
 def _behaviour(facts: Facts) -> str:
+    """Baseline thấp hoặc chưa có thì behaviour_rare là unknown, kể cả khi p đã tính."""
+    block = load_policy().get("behavioural_baseline") or {}
+    minimum = str(block.get("min_quality") or "medium")
+    needed = int(block.get("min_sessions_for_level_2", threshold("behaviour_baseline_medium_sessions")))
+    sessions = 0 if facts.same_task_sessions is None else int(facts.same_task_sessions)
+    quality = _baseline(facts.same_task_sessions)
+    if sessions < needed or BASELINE_RANK.get(quality, 0) < BASELINE_RANK.get(minimum, 2):
+        return "unknown"
     if facts.behaviour_p_rarity is None:
         return "unknown"
     return "present" if facts.behaviour_p_rarity <= float(threshold("behaviour_p_rarity_at_most")) else "absent"
@@ -606,7 +622,7 @@ def _reason_text(name: str, facts: Facts, funds: list[dict]) -> str:
     return ""
 
 
-def evaluate(facts: Facts, state: MemoryState | RedisState | None = None) -> Outcome:
+def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behaviour=None) -> Outcome:
     started = datetime.now(ICT)
     clock = _when(facts)
     policy = load_policy()
@@ -674,11 +690,20 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None) -> Out
     elapsed_ms = (datetime.now(ICT) - started).total_seconds() * 1000
     _note_latency(elapsed_ms)
     ordered = [signals[name] for name in SIGNAL_ORDER]
+    reasons = _reasons(facts, fired, signals, funds)
+    behaviour_score = None
+    behaviour_p = facts.behaviour_p_rarity
+    if behaviour is not None:
+        behaviour_score = behaviour.score
+        behaviour_p = behaviour.p_rarity
+        for line in behaviour.reasons[:2]:
+            if line and line not in reasons:
+                reasons.append(line)
     return Outcome(
         level=level,
         rules_fired=[rule["id"] for rule in fired],
         signals=ordered,
-        reasons_vi=_reasons(facts, fired, signals, funds),
+        reasons_vi=reasons,
         baseline_quality=baseline,
         episode_id=doc["episode_id"] if in_episode else "",
         intervention=INTERVENTION[level],
@@ -688,6 +713,8 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None) -> Out
         funds_status=funds_status,
         hold_until=hold,
         score_ms=elapsed_ms,
+        behaviour_score=behaviour_score,
+        behaviour_p_rarity=behaviour_p,
     )
 
 

@@ -19,11 +19,12 @@ thresholds:
   behaviour_p_rarity_at_most:
     value: 0.05
     provenance: chosen on simulated data
+    demo: true
   behaviour_baseline_medium_sessions:
     value: 3
     provenance: chosen on simulated data
   behaviour_baseline_high_sessions:
-    value: 10
+    value: 8
     provenance: chosen on simulated data
   funds_fresh_hours:
     value: 72
@@ -64,6 +65,31 @@ thresholds:
   cost_eta:
     value: 1
     provenance: chosen on simulated data
+
+# Baseline cá nhân. high từ 8 phiên cùng task_type. Ngưỡng p 0,05 ở trên được đánh dấu demo.
+behavioural_baseline:
+  min_sessions_for_level_2: 3
+  min_quality: medium
+  mad_floor_fraction_of_population: 0.5
+  shrink_prior: 5
+  max_sessions: 30
+  inclusion_delay_hours: 24
+  medium_sessions: 3
+  high_sessions: 8
+  rarity_threshold_demo: true
+
+# Chỉ lệch theo chiều này mới vào điểm. Mặc định hướng lên.
+behaviour_directions:
+  median_gap_ms: up
+  p90_gap_ms: up
+  burst_count: up
+  pause_to_action_ratio: up
+  review_dwell_ms: up
+  edit_count: up
+  backtrack_count: up
+  screen_revisit_count: up
+  background_count: up
+  background_total_ms: up
 
 funds_types:
   term_deposit_closure: "Sổ tiết kiệm vừa được tất toán."
