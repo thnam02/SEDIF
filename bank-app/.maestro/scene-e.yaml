@@ -10,15 +10,22 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "new-account"
 - inputText: "ZMULEDEMO0000001"
-- hideKeyboard:
-    optional: true
 - tapOn:
     id: "new-account-go"
-- tapOn: "Xác nhận giao dịch"
 - scrollUntilVisible:
-    element: "Khác"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Khác"
+- scrollUntilVisible:
+    element:
+      id: "continue-transfer"
+    direction: DOWN
+- tapOn:
+    id: "continue-transfer"
 - scrollUntilVisible:
     element:
       id: "confirm-transfer"
@@ -26,5 +33,5 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "confirm-transfer"
 - assertVisible: "Giao dịch đang được ngân hàng xem xét"
-- assertVisible: "Giữ 24 giờ là chính sách giả của ngân hàng trong bản demo."
+- assertVisible: "Mô phỏng chính sách tạm giữ 24 giờ của ngân hàng"
 - assertNotVisible: "Tạm dừng để xác minh"

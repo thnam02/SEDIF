@@ -20,21 +20,28 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "new-account"
 - inputText: "ZLANB40000000001"
-- hideKeyboard:
-    optional: true
 - tapOn:
     id: "new-account-go"
 - tapOn:
     id: "amount"
 - eraseText: 12
 - inputText: "120000000"
-- hideKeyboard:
-    optional: true
-- tapOn: "Xác nhận giao dịch"
+- tapOn:
+    id: "amount-dismiss"
 - scrollUntilVisible:
-    element: "Mua hàng, dịch vụ"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Mua hàng, dịch vụ"
+- scrollUntilVisible:
+    element:
+      id: "continue-transfer"
+    direction: DOWN
+- tapOn:
+    id: "continue-transfer"
 - scrollUntilVisible:
     element:
       id: "confirm-transfer"

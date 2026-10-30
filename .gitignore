@@ -17,5 +17,8 @@ __pycache__/
 .expo/
 fides-sdk/android/build/
 
+# Cài đặt editor cục bộ
+.vscode/
+
 # Nhật ký sinh khi chạy test. Gói mô hình và parquet đặc trưng trong fides/out/ vẫn được theo dõi.
 fides/out/audit/

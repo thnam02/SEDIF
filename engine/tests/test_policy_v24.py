@@ -91,7 +91,10 @@ def test_customer_lines_keep_context_on_the_card_without_raising_the_level():
     assert _signal(scanned, "entry_paste_or_qr").status == "present"
     assert _signal(scanned, "has_call").status == "present"
     costly = evaluate(_facts(amount=120_000_000, p_fraud=0.5, call_state="none", task_type="saved_payee", new_payee=False, funds_events=[]))
-    assert "Số tiền lớn và giao dịch khác thường so với lịch sử" in costly.reasons_vi
+    assert "Số tiền lớn và giao dịch khác thường so với lịch sử của bạn" in costly.reasons_vi
+    small = evaluate(_facts(amount=60_000, p_fraud=0.5, call_state="none", task_type="saved_payee", new_payee=False, funds_events=[]))
+    assert "Giao dịch khác thường so với lịch sử của bạn" in small.reasons_vi
+    assert "Số tiền lớn và" not in " ".join(small.reasons_vi)
     assert "Điểm mô hình vượt ngưỡng theo số tiền của lệnh này." not in costly.reasons_vi
 
 

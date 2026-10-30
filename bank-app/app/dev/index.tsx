@@ -2,6 +2,7 @@ import { useCallback, useState } from "react"
 import { Text, View } from "react-native"
 import { useFocusEffect } from "expo-router"
 
+import { DemoControls } from "../../src/dev/DemoDrawer"
 import { readLastSession, type LastSession } from "../../src/dev/lastSession"
 import { colors, Header, Screen, useType } from "../../src/ui/parts"
 
@@ -34,6 +35,7 @@ export default function DevSessionScreen() {
   return (
     <Screen>
       <Header title="Phiên FIDES" />
+      <DemoControls />
       {session == null ? <Text style={{ color: "#64748B", fontSize: type.body }}>Chưa có phiên. Hãy xác nhận một lệnh chuyển.</Text> : null}
       {session ? (
         <View style={{ gap: 8 }}>

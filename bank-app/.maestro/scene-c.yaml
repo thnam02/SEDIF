@@ -16,20 +16,26 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "new-account"
 - inputText: "ZGUIDE4000000001"
-- hideKeyboard:
-    optional: true
 - tapOn:
     id: "new-account-go"
-- tapOn: "Xác nhận giao dịch"
 - scrollUntilVisible:
-    element: "Phiên có hướng dẫn (demo)"
+    element:
+      id: "purpose-open"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
+- tapOn: "Gia đình, bạn bè"
+- scrollUntilVisible:
+    element:
+      id: "continue-transfer"
     direction: DOWN
 - tapOn:
+    id: "continue-transfer"
+- tapOn:
+    id: "demo-drawer"
+- tapOn:
     id: "dev-guided"
-- scrollUntilVisible:
-    element: "Gia đình, bạn bè"
-    direction: UP
-- tapOn: "Gia đình, bạn bè"
 - scrollUntilVisible:
     element:
       id: "confirm-transfer"
