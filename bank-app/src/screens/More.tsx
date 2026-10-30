@@ -3,7 +3,7 @@ import { Pressable, Text, TextInput, View } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { FidesGuardianRequest } from "fides-sdk"
 
-import { useAccount, useConfirmGuardian, useGuardianRequests, useHistory, useRespond } from "../api/queries"
+import { useAccount, useChoice, useConfirmGuardian, useGuardianRequests, useHistory, useRegisterGuardian } from "../api/queries"
 import { copy } from "../copy/vi"
 import { displayHolder } from "../names"
 import { fullDate, statement, vnd, weekStart, when } from "../format"
@@ -172,19 +172,39 @@ export function ProfileScreen() {
 
 export function GuardianScreen() {
   const router = useRouter()
-  const role = useBank((state) => state.role)
+  const accountId = useBank((state) => state.accountId) ?? ""
   const requests = useGuardianRequests()
-  const person = personas.find((item) => item.role === role)
+  const register = useRegisterGuardian()
   const type = useType()
+  const [phone, setPhone] = useState("")
+  const [relation, setRelation] = useState("")
+  const [consent, setConsent] = useState(false)
+  const [saved, setSaved] = useState(false)
   return (
     <Screen>
       <Header title={copy.loved} />
       <Card>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.lovedBody}</Text>
-        <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{(person?.guardian?.relation ?? "người giám hộ").replaceAll("_", " ")}</Text>
-        <Text style={{ color: "#64748B" }}>{copy.wait24}</Text>
       </Card>
-      <Button label={copy.addLoved} />
+      <TextInput testID="guardian-phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder={copy.guardianPhone} style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy, fontSize: type.body }} />
+      <TextInput testID="guardian-relation" value={relation} onChangeText={setRelation} placeholder={copy.guardianRelation} style={{ borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingHorizontal: 16, paddingVertical: 12, color: colors.navy, fontSize: type.body }} />
+      <Pressable testID="guardian-consent" accessibilityRole="checkbox" accessibilityState={{ checked: consent }} onPress={() => setConsent(!consent)} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <View style={{ width: 22, height: 22, borderRadius: 4, borderWidth: 1, borderColor: colors.deep, backgroundColor: consent ? colors.deep : colors.white }} />
+        <Text style={{ flex: 1, color: colors.navy, fontSize: type.body }}>{copy.guardianConsent}</Text>
+      </Pressable>
+      <Button
+        testID="guardian-save"
+        label={copy.addLoved}
+        onPress={() => {
+          if (!consent || !phone.trim() || !relation.trim()) return
+          register.mutate(
+            { account_id: accountId, phone: phone.trim(), relation: relation.trim(), consent: true },
+            { onSuccess: () => setSaved(true) },
+          )
+        }}
+      />
+      {saved ? <Text style={{ color: "#2E7D32", fontWeight: "700" }}>{copy.guardianSaved}</Text> : null}
+      {register.isError ? <Text style={{ color: colors.danger }}>{register.error.message}</Text> : null}
       {(requests.data?.requests ?? []).map((item) => (
         <Button key={item.id} outline label={item.id} onPress={() => router.push(`/(main)/guardian/requests/${item.id}`)} />
       ))}
@@ -196,11 +216,18 @@ export function GuardianRequestScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const requests = useGuardianRequests()
   const confirm = useConfirmGuardian()
-  const respond = useRespond()
+  const choice = useChoice()
   const item = (requests.data?.requests ?? []).find((row) => row.id === id)
   const largeText = useBank((state) => state.largeText)
   const [released, setReleased] = useState(false)
-  if (!item) return <Screen><Header title={copy.loved} /></Screen>
+  if (!item) {
+    return (
+      <Screen>
+        <Header title={copy.loved} />
+        {released ? <Text style={{ color: "#2E7D32", fontSize: 22, fontWeight: "700", textAlign: "center" }}>{copy.released}</Text> : null}
+      </Screen>
+    )
+  }
   return (
     <Screen>
       <FidesGuardianRequest
@@ -213,7 +240,7 @@ export function GuardianRequestScreen() {
         }}
         onDecide={(body) => {
           if (body.guardian_confirm) confirm.mutate(item.id, { onSuccess: () => setReleased(true) })
-          else if (body.cancel && item.transfer_id) respond.mutate({ id: item.transfer_id, body: { cancel: true } })
+          else if (body.cancel && item.transfer_id) choice.mutate({ decisionId: `dec-${item.transfer_id}`, choice: "cancel", responseMs: 0 })
         }}
       />
       {released ? <Text style={{ color: "#2E7D32", fontSize: 22, fontWeight: "700", textAlign: "center" }}>{copy.released}</Text> : null}

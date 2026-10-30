@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import redis
@@ -76,12 +77,14 @@ class OnlineStore:
         self.limit_of: dict[str, int] = {}
         self.listed_at: dict[str, int] = {}
         self.get_times: list[float] = []
+        self._lock = threading.RLock()
 
     def flush(self) -> None:
-        self.pipe.set("f:seq", self.seq)
-        if len(self.pipe.command_stack) if hasattr(self.pipe, "command_stack") else True:
-            self.pipe.execute()
-        self.pipe = self.redis.pipeline(transaction=False)
+        with self._lock:
+            self.pipe.set("f:seq", self.seq)
+            if len(self.pipe.command_stack) if hasattr(self.pipe, "command_stack") else True:
+                self.pipe.execute()
+            self.pipe = self.redis.pipeline(transaction=False)
 
     def _cached_first(self, account: str, payee: str):
         key = (account, payee)
@@ -111,6 +114,10 @@ class OnlineStore:
             self.flush()
 
     def update(self, event: dict) -> None:
+        with self._lock:
+            self._update(event)
+
+    def _update(self, event: dict) -> None:
         kind = event["type"]
         if kind == "account":
             self._account(event)
@@ -326,6 +333,10 @@ class OnlineStore:
 
     def forget_runtime(self) -> None:
         """Xoá cache trong tiến trình sau khi nạp lại RDB, và bỏ điểm phiên thử ghi sau snapshot."""
+        with self._lock:
+            self._forget_runtime()
+
+    def _forget_runtime(self) -> None:
         try:
             self.redis.ping()
         except Exception:
@@ -476,8 +487,9 @@ class OnlineStore:
 
     def get(self, sender: str, payee: str | None, ts: int, session_id: str, pending: dict | None = None) -> dict:
         started = time.perf_counter()
-        self.flush()
-        row = self._read(sender, payee, int(ts), session_id, pending)
+        with self._lock:
+            self.flush()
+            row = self._read(sender, payee, int(ts), session_id, pending)
         self.get_times.append(time.perf_counter() - started)
         return row
 
@@ -546,8 +558,9 @@ class OnlineStore:
         row["pasted"] = 1 if pasted else 0
         if login is not None and decision["ts"] >= int(login):
             row["seconds_since_login"] = (decision["ts"] - int(login)) / 1_000_000
-        row["a_w"] = self._window_amount(sender, as_of, str(sender_meta.get("customer") or ""))
-        row["new_payees_24h"] = self._new_payees(sender, as_of, str(sender_meta.get("customer") or ""))
+        # Cùng khung huấn luyện: một tài khoản của phiên, không gộp theo khách.
+        row["a_w"] = self._window_amount(sender, as_of, "")
+        row["new_payees_24h"] = self._new_payees(sender, as_of, "")
         customer = str(sender_meta.get("customer") or "")
         first = client.hget(f"f:fstc:{customer}", decision["payee"]) if customer else client.hget(f"f:fst:{sender}", decision["payee"])
         if decision["seq"] < 0:
@@ -616,7 +629,7 @@ class OnlineStore:
                 break
 
     def index_customers(self) -> None:
-        """Lập tập tài khoản theo khách từ meta đã có, để a_w gộp như khung network."""
+        """Lập tập tài khoản theo khách từ meta đã có. a_w không đọc tập này."""
         cursor = 0
         while True:
             cursor, keys = self.redis.scan(cursor, match="f:meta:*", count=500)

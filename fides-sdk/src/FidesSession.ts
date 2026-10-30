@@ -1,5 +1,7 @@
 import { classifyAccountInput, type AccountInput, type InputEvent } from "./accountInput"
 import { deviceBlockFromCall, type CallDirection } from "./callState"
+import { deriveCallBlock, inferObservability, inferTransport, liveActive } from "./session/callBlock"
+import type { CallBlock, CallObservability, CallTransport } from "./session/types"
 
 export type DeviceBlock = {
   in_call: boolean | null
@@ -15,6 +17,8 @@ export type CallState = {
   call_started_at_ms: number | null
   voip_suspected: boolean
   call_direction?: CallDirection | null
+  observability?: CallObservability
+  transport?: CallTransport
 }
 
 type NativeCall = CallState & { phase?: "started" | "ended" }
@@ -29,6 +33,9 @@ let simulation: Simulation | null = null
 let nativeState: CallState = { in_call: null, call_started_at_ms: null, voip_suspected: false, call_direction: null }
 let rememberedDirection: CallDirection | null = null
 let frozenSeconds: number | null = null
+let callActiveAtStart: boolean | null = null
+let callStartedDuring = false
+let callEndedDuring = false
 let listening = false
 let watchingApp = false
 const listeners = new Set<() => void>()
@@ -96,9 +103,13 @@ function applyNative(event: NativeCall) {
     call_started_at_ms: event.call_started_at_ms,
     voip_suspected: Boolean(event.voip_suspected),
     call_direction: live,
+    observability: event.observability,
+    transport: event.transport,
   }
+  if (startedAtSession !== null && event.phase === "started") callStartedDuring = true
   if (startedAtSession !== null && event.phase === "ended") {
     endedInSession = true
+    callEndedDuring = true
     const started = event.call_started_at_ms
     if (started != null) {
       frozenSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000))
@@ -110,6 +121,10 @@ function applyNative(event: NativeCall) {
 export const FidesSession = {
   /** Gọi khi mở màn chuyển tiền. Không gửi gì lên engine. */
   start() {
+    const live = this.callState()
+    callActiveAtStart = liveActive(live)
+    callStartedDuring = false
+    callEndedDuring = false
     startedAtSession = Date.now()
     endedInSession = false
     rememberedDirection = null
@@ -141,6 +156,7 @@ export const FidesSession = {
     if (!active) {
       if (simulation?.in_call && startedAtSession !== null) {
         endedInSession = true
+        callEndedDuring = true
         if (simulation.startedAt != null) {
           frozenSeconds = Math.max(0, Math.floor((Date.now() - simulation.startedAt) / 1000))
         }
@@ -150,8 +166,33 @@ export const FidesSession = {
       return
     }
     frozenSeconds = null
+    if (startedAtSession !== null && callActiveAtStart !== true) callStartedDuring = true
     simulation = { in_call: true, voip_suspected: voipSuspected, startedAt: Date.now() }
     emit()
+  },
+
+  /** Khối call của hợp đồng 2.4. none chỉ khi nền tảng đã quan sát được. */
+  callBlock(): CallBlock {
+    if (simulation === null && startedAtSession !== null && (callEndedDuring || endedInSession)) {
+      return deriveCallBlock({
+        observability: "supported_observed",
+        transport: "unknown",
+        activeAtStart: callActiveAtStart,
+        startedDuring: callStartedDuring,
+        endedDuring: true,
+        activeNow: false,
+      })
+    }
+    const state = this.callState()
+    const platform = platformOs()
+    return deriveCallBlock({
+      observability: inferObservability(platform, state),
+      transport: inferTransport(platform, state),
+      activeAtStart: callActiveAtStart,
+      startedDuring: callStartedDuring,
+      endedDuring: callEndedDuring,
+      activeNow: liveActive(state),
+    })
   },
 
   onCallStateChanged(listener: () => void) {
@@ -182,6 +223,8 @@ export const FidesSession = {
         call_started_at_ms: next.call_started_at_ms,
         voip_suspected: Boolean(next.voip_suspected),
         call_direction: live,
+        observability: next.observability,
+        transport: next.transport,
       }
     }
     return nativeState

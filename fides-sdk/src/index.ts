@@ -3,6 +3,8 @@ export type { AccountInput, InputEvent } from "./accountInput"
 export { useAccountInput } from "./useAccountInput"
 export { FidesSession } from "./FidesSession"
 export type { DeviceBlock, CallState } from "./FidesSession"
+export { sessionRecorder, SessionRecorder } from "./session"
+export type { BehaviourFeatures, CallBlock, SessionSnapshot, TaskType } from "./session"
 export { CallPermissionScreen } from "./CallPermissionScreen"
 export {
   FidesCallIndicator,

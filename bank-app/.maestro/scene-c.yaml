@@ -1,0 +1,42 @@
+# Scene C — chỉ Trương Gia Thịnh có 10 phiên nền. Cuộc gọi, người nhận gõ mới. Mức 2.
+appId: com.hainamtran.saobank
+---
+- launchApp:
+    clearKeychain: true
+- tapOn: ".*Trương Gia Thịnh.*"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "BVC BANK"
+- tapOn:
+    id: "call-stranger"
+- tapOn: "Chuyển tiền"
+- tapOn:
+    id: "new-account-open"
+- tapOn:
+    id: "new-account"
+- inputText: "ZGUIDE4000000001"
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: "new-account-go"
+- tapOn: "Xác nhận giao dịch"
+- scrollUntilVisible:
+    element: "Phiên có hướng dẫn (demo)"
+    direction: DOWN
+- tapOn:
+    id: "dev-guided"
+- scrollUntilVisible:
+    element: "Gia đình, bạn bè"
+    direction: UP
+- tapOn: "Gia đình, bạn bè"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
+- tapOn:
+    id: "confirm-transfer"
+- assertVisible: "Tạm dừng để xác minh"
+- assertVisible: ".*ở ngoài app.*"
+- assertVisible: ".*cuộc gọi.*"
+- assertVisible: ".*người nhận.*"

@@ -25,8 +25,22 @@ ALTER TABLE responses ENABLE TRIGGER USER;
 ALTER TABLE events DISABLE TRIGGER USER;
 DELETE FROM events WHERE ts >= TIMESTAMPTZ '2026-09-20T00:00:00+07:00';
 ALTER TABLE events ENABLE TRIGGER USER;
+CREATE TABLE IF NOT EXISTS bank.experiment_sessions (
+    id bigserial PRIMARY KEY,
+    participant_id text NOT NULL,
+    condition text NOT NULL,
+    session_index integer NOT NULL,
+    task_type text NOT NULL,
+    call jsonb NOT NULL,
+    behaviour_features jsonb NOT NULL,
+    raw_events jsonb,
+    created_at timestamptz NOT NULL,
+    decision jsonb
+);
+ALTER TABLE bank.experiment_sessions ADD COLUMN IF NOT EXISTS decision jsonb;
 TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
-         bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices;
+         bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices,
+         bank.experiment_sessions;
 SQL
 
 # DEBUG RELOAD bị tắt. Tắt Redis không ghi đè file, rồi bật lại để nạp đúng RDB.
@@ -77,6 +91,31 @@ while true; do
       ;;
   esac
 done
+# Chỉ xoá kho episode và baseline thao tác. SCAN + DEL, không FLUSHDB.
+# BEGIN purge_prefix
+purge_prefix() {
+  pattern=$1
+  label=$2
+  removed=0
+  cursor=0
+  while true; do
+    out=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" --raw SCAN "$cursor" MATCH "$pattern" COUNT 500)
+    cursor=$(printf '%s\n' "$out" | head -n 1)
+    keys=$(printf '%s\n' "$out" | tail -n +2)
+    if [ -n "$keys" ]; then
+      n=$(printf '%s\n' "$keys" | wc -l | tr -d ' ')
+      printf '%s\n' "$keys" | xargs -n 100 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$DB" DEL >/dev/null
+      removed=$((removed + n))
+    fi
+    if [ "$cursor" = "0" ]; then
+      break
+    fi
+  done
+  echo "$label removed $removed"
+}
+# END purge_prefix
+purge_prefix 'pol:v24:*' 'pol:v24'
+purge_prefix 'beh:v24:*' 'beh:v24'
 RESET_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
 engine_body=$(curl -sS -X POST "$ENGINE/demo/reset" -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d "{\"reset_id\":\"$RESET_ID\"}" -w '\n%{http_code}')
 engine_code=${engine_body##*$'\n'}
@@ -92,4 +131,33 @@ if [ "$bank_code" != "200" ]; then
   echo "$bank_body" >&2
   exit 22
 fi
+# Lệnh treo và yêu cầu giám hộ của bốn khách demo. Không đụng sổ lịch sử đã xong.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DELETE FROM bank.guardian_requests
+WHERE account_id IN (
+    'A0000623', 'A0050272', 'A0072556', 'A0077690',
+    'A0002119',
+    'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
+    'A0031239'
+);
+DELETE FROM bank.idempotency
+WHERE transfer_id IN (
+    SELECT id FROM bank.transfers
+    WHERE from_account IN (
+        'A0000623', 'A0050272', 'A0072556', 'A0077690',
+        'A0002119',
+        'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
+        'A0031239'
+    )
+      AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup')
+);
+DELETE FROM bank.transfers
+WHERE from_account IN (
+    'A0000623', 'A0050272', 'A0072556', 'A0077690',
+    'A0002119',
+    'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
+    'A0031239'
+)
+  AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup');
+SQL
 echo ready

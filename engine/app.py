@@ -17,6 +17,7 @@ from engine.audit import (
     ensure_audit,
     insert_decision,
     insert_response,
+    record_choice,
     list_decisions,
     load_state,
     reset_countdown,
@@ -24,9 +25,7 @@ from engine.audit import (
 from engine.common.hashing import require_key
 from engine.decide import (
     apply_contract,
-    assign_level,
     gated_families,
-    hold_for,
     iso,
     missing_signals,
     parse_ts,
@@ -35,6 +34,7 @@ from engine.decide import (
     to_us,
 )
 from engine.events import connect, ensure_schema, insert_event
+from engine.features.behaviour import assess, remember
 from engine.features.online import OnlineStore
 from engine.features.stream import TRANSFER_TYPES
 from engine.model import Scorer
@@ -42,6 +42,7 @@ from engine.review import confirm as confirm_review
 from engine.review import consider as consider_review
 from engine.review import queue as review_queue
 from engine.policy import actions_for
+from engine.policy.v24 import STRING_LEVEL, RedisState, evaluate, facts_from_row
 
 log = logging.getLogger("engine")
 NAME = os.environ.get("SERVICE_NAME", "engine")
@@ -288,17 +289,33 @@ def decide(body: dict) -> tuple[int, dict]:
         probability = MODEL.score(row)
     families = gated_families(row)
     segment = str(row.get("segment") or "thường")
-    amount = row.get("amount")
-    amount_value = 0.0 if amount is None else float(amount)
-    level = assign_level(probability, amount_value, families, segment, row)
+    limit = int(STORE.limit_of.get(body["sender_hash"]) or 0)
+    behaviour = assess(
+        STORE.redis,
+        str(body.get("user_hash") or body["sender_hash"]),
+        body.get("task_type"),
+        body.get("behaviour_features"),
+        decided,
+        experiment=isinstance(body.get("experiment"), dict),
+    )
+    facts = facts_from_row(body, row, probability, decided, limit or None)
+    if behaviour is not None:
+        facts.same_task_sessions = behaviour.n
+        facts.behaviour_p_rarity = behaviour.p_rarity if behaviour.usable else None
+    outcome = evaluate(facts, RedisState(STORE.redis), behaviour)
+    level_name = STRING_LEVEL[outcome.level]
     guardian = bool(int(row.get("has_guardian") or 0))
-    actions = actions_for(level, segment, guardian)
+    actions = actions_for(level_name, segment, guardian)
     names = [name for name in ("call", "entry", "payee", "mobilization") if families[name]]
-    reasons = reasons_for(row, families)
-    funds, hold = hold_for(level, decided)
+    reasons = outcome.reason_rows()[:3] or reasons_for(row, families)
+    funds, hold = outcome.funds_status, outcome.hold_until
     payload = {
         "decision_id": body["decision_id"],
-        "level": level,
+        "level": outcome.level,
+        "rules_fired": outcome.rules_fired,
+        "evidence_card": outcome.evidence_card,
+        "intervention": outcome.intervention,
+        "extra_auth": outcome.extra_auth,
         "actions": actions,
         "p_fraud": probability,
         "group_scores": {name: float(families[name]) for name in ("call", "entry", "payee", "mobilization")},
@@ -320,7 +337,7 @@ def decide(body: dict) -> tuple[int, dict]:
         "payee_hash": body["payee_hash"],
         "features": _features(row, MODEL.columns),
         "p": probability,
-        "level": level,
+        "level": level_name,
         "actions": actions,
         "families_hit": names,
         "reasons": reasons,
@@ -334,6 +351,8 @@ def decide(body: dict) -> tuple[int, dict]:
     with audit_conn() as conn:
         if not insert_decision(conn, stored):
             return 409, {"detail": "decision_id đã có"}
+    if behaviour is not None:
+        remember(STORE.redis, behaviour, outcome.level)
     return 200, payload
 
 
@@ -467,6 +486,26 @@ class Handler(BaseHTTPRequestHandler):
                 STORE.forget_runtime()
             store_reset(str(body["reset_id"]))
             _json(self, 200, {"status": "ok", "reset_id": current_reset_id()})
+            return
+        if path.startswith("/decisions/") and path.endswith("/choice"):
+            if not _authorized(self):
+                return
+            decision_id = path[len("/decisions/") : -len("/choice")].strip("/")
+            body = _read_json(self)
+            if body is None:
+                _bad(self, 400, "JSON không đọc được")
+                return
+            choice = body.get("choice")
+            response_ms = body.get("response_ms")
+            if choice not in {"pause", "cancel", "continue"} or not isinstance(response_ms, int) or isinstance(response_ms, bool) or response_ms < 0:
+                _bad(self, 400, "choice hoặc response_ms không hợp lệ")
+                return
+            with audit_conn() as conn:
+                logged = record_choice(conn, decision_id, choice, response_ms)
+            if not logged:
+                _bad(self, 404, "không có quyết định")
+                return
+            _json(self, 200, {"decision_id": decision_id, "choice": choice, "logged": True})
             return
         if path not in {"/events", "/decide", "/respond"}:
             self.send_response(404)

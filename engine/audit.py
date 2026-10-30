@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -127,6 +127,29 @@ def insert_decision(conn, row: dict) -> bool:
     ).fetchone()
     conn.commit()
     return found is not None
+
+
+def record_choice(conn, decision_id: str, choice: str, response_ms: int) -> bool:
+    row = conn.execute(
+        "SELECT level, funds_status, hold_until, countdown_until FROM decisions WHERE decision_id = %s",
+        (decision_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    insert_response(
+        conn,
+        {
+            "decision_id": decision_id,
+            "ts": datetime.now(timezone.utc),
+            "level": row["level"],
+            "funds_status": row["funds_status"],
+            "gate": "none",
+            "hold_until": row["hold_until"],
+            "countdown_until": row["countdown_until"],
+            "body": {"choice": choice, "response_ms": int(response_ms)},
+        },
+    )
+    return True
 
 
 def insert_response(conn, row: dict) -> None:

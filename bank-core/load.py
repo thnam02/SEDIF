@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS bank.entries (
     amount bigint NOT NULL,
     tx_type text NOT NULL,
     purpose_text text,
-    status text NOT NULL
+    status text NOT NULL,
+    channel text
 );
 CREATE TABLE IF NOT EXISTS bank.guardians (
     account_id text PRIMARY KEY,
@@ -90,7 +91,8 @@ CREATE TABLE IF NOT EXISTS bank.products (
     account_id text NOT NULL,
     amount bigint NOT NULL,
     kind text NOT NULL,
-    ts timestamptz NOT NULL
+    ts timestamptz NOT NULL,
+    channel text
 );
 CREATE TABLE IF NOT EXISTS bank.idempotency (
     key text PRIMARY KEY,
@@ -104,6 +106,18 @@ CREATE TABLE IF NOT EXISTS bank.call_notices (
 CREATE TABLE IF NOT EXISTS bank.demo_state (
     id integer PRIMARY KEY,
     reset_id text NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bank.experiment_sessions (
+    id bigserial PRIMARY KEY,
+    participant_id text NOT NULL,
+    condition text NOT NULL,
+    session_index integer NOT NULL,
+    task_type text NOT NULL,
+    call jsonb NOT NULL,
+    behaviour_features jsonb NOT NULL,
+    raw_events jsonb,
+    created_at timestamptz NOT NULL,
+    decision jsonb
 );
 """
 
@@ -133,7 +147,8 @@ def load(conn) -> int:
     conn.execute(
         """
         TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
-                 bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices
+                 bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices,
+                 bank.experiment_sessions
         """
     )
     ids = related_ids()

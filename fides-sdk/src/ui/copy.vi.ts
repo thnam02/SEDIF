@@ -23,7 +23,6 @@ export const copyVi = {
   simo: "Tài khoản nhận đã bị báo cáo có dấu hiệu liên quan đến lừa đảo. Cơ quan công an và ngân hàng không bao giờ yêu cầu chuyển tiền vào tài khoản 'tạm giữ' hay 'xác minh'. Nếu ai đó đang hướng dẫn bạn chuyển khoản, hãy dừng lại.",
   pause: {
     title: "Tạm dừng để kiểm tra",
-    sub: "Giao dịch đang được giữ an toàn trong 30 phút",
     question: "Ai đang hướng dẫn bạn chuyển khoản này?",
   },
   guides: [

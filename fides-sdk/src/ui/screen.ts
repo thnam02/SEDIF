@@ -3,9 +3,10 @@ import type { components } from "../generated/openapi"
 type Decide = components["schemas"]["DecideResponse"]
 type Respond = components["schemas"]["RespondResponse"]
 
-export type FidesDecision = Pick<Decide, "decision_id" | "level" | "actions" | "reasons" | "hold_until" | "countdown_until"> &
+export type FidesDecision = Omit<Pick<Decide, "decision_id" | "level" | "actions" | "reasons" | "hold_until" | "countdown_until">, "level"> &
   Partial<Pick<Decide, "p_fraud" | "group_scores" | "families_hit" | "missing_signals" | "profile" | "model_version">> &
   Partial<Pick<Respond, "funds_status" | "gate">> & {
+    level: Respond["level"]
     payee_name?: string
     amount_text?: string
     channel?: string
@@ -30,13 +31,9 @@ export function fidesScreen(decision: FidesDecision): FidesScreenId {
   const has = (name: string) => actions.includes(name)
   const simo = (decision.reasons ?? []).some((reason) => reason.code === "simo_listed")
   if (decision.funds_status === "cancelled") return "cancelled"
-  const highCountdown = Boolean(decision.countdown_until) && (decision.level === "high" || has("hangup_required") || has("recovery_window"))
-  if (highCountdown) return "countdown"
-  if (has("hangup_required") || decision.level === "high") return "hangup_required"
   if (decision.gate === "short_wait") return "short_wait"
   if (decision.gate === "guardian_confirm_requested") return "guardian_confirm_requested"
-  if (has("show_chain") && !has("pause_and_verify")) return "show_chain"
-  if (has("pause_and_verify") || decision.level === "medium") return "pause_and_verify"
+  if (has("show_chain")) return "show_chain"
   if (simo) return "simo_listed"
   if (decision.level === "banner" || has("g1_banner")) return "banner"
   if (decision.funds_status === "held" || has("hold")) return "held"

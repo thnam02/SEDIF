@@ -147,7 +147,7 @@ export function LimitScreen() {
       <Header title={copy.limits} />
       <Card>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.limitPer}</Text>
-        <TextInput testID="limit-txn" value={grouped(Number(txn) || 0)} onChangeText={(value) => setPerTxn(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
+        <TextInput testID="limit-txn" value={grouped(Number(txn) || 0)} onChangeText={(value) => setPerTxn(digits(value))} selectTextOnFocus keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
         <Text style={{ color: "#64748B" }}>{copy.limitDay}</Text>
         <TextInput value={grouped(Number(dayLimit) || 0)} onChangeText={(value) => setPerDay(digits(value))} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 24, fontWeight: "700" }} />
       </Card>

@@ -9,7 +9,8 @@
     "test": "node --experimental-strip-types --test src/copy/vi.test.ts",
     "postinstall": "node scripts/fix-expo-publication.js",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "ios:device": "bash scripts/ios-device.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.5",

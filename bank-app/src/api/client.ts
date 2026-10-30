@@ -17,9 +17,16 @@ export function resolveBankUrl(configured: string, platform: string, packagerHos
   const local = url.hostname === "10.0.2.2" || url.hostname === "127.0.0.1" || url.hostname === "localhost"
   if (!local || platform === "android") return configured
   const host = packagerHost?.split(":")[0]
-  if (!host || host === "localhost" || host === "127.0.0.1" || host === "10.0.2.2") return configured
-  url.hostname = host
-  return url.toString().replace(/\/$/, "")
+  const packagerIsDevice = Boolean(host && host !== "localhost" && host !== "127.0.0.1" && host !== "10.0.2.2")
+  if (packagerIsDevice) {
+    url.hostname = host as string
+    return url.toString().replace(/\/$/, "")
+  }
+  if (url.hostname === "10.0.2.2") {
+    url.hostname = "127.0.0.1"
+    return url.toString().replace(/\/$/, "")
+  }
+  return configured
 }
 
 export const BANK_URL = resolveBankUrl(CONFIGURED, Platform.OS, Constants.expoConfig?.hostUri)

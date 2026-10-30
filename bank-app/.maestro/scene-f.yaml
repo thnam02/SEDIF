@@ -1,0 +1,69 @@
+# Scene F — mục đích cơ quan nhà nước. Mức 2, người thân xác nhận.
+appId: com.hainamtran.saobank
+---
+- launchApp:
+    clearKeychain: true
+- tapOn: ".*Huỳnh Thị Mận.*"
+- tapOn: ".*Cá nhân.*"
+- tapOn: "Người thân bảo vệ"
+- tapOn:
+    id: "guardian-phone"
+- inputText: "0901234567"
+- tapOn:
+    id: "guardian-relation"
+- inputText: "con"
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: "guardian-consent"
+- tapOn:
+    id: "guardian-save"
+- assertVisible: "Đã lưu người thân"
+- tapOn: "Trang chủ"
+- tapOn: "Trang chủ, tab, 1 of 4"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "BVC BANK"
+- tapOn:
+    id: "call-stranger"
+- tapOn: "Chuyển tiền"
+- tapOn:
+    id: "new-account-open"
+- tapOn:
+    id: "new-account"
+- inputText: "ZMED230000000001"
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: "new-account-go"
+- tapOn:
+    id: "amount"
+- eraseText: 12
+- inputText: "23000000"
+- hideKeyboard:
+    optional: true
+- tapOn: "Xác nhận giao dịch"
+- scrollUntilVisible:
+    element: "Cơ quan nhà nước / công an yêu cầu chuyển"
+    direction: DOWN
+- tapOn: "Cơ quan nhà nước / công an yêu cầu chuyển"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
+- tapOn:
+    id: "confirm-transfer"
+- assertVisible: "Tạm dừng để xác minh"
+- launchApp
+- tapOn: "GH, Người giám hộ.*"
+- extendedWaitUntil:
+    visible: ".*Huỳnh Thị Mận.*"
+    timeout: 10000
+- scrollUntilVisible:
+    element: ".*23.000.000.*"
+    direction: DOWN
+    timeout: 20000
+- tapOn: ".*23.000.000.*"
+- tapOn: "Tôi xác nhận, cho chuyển"
+- assertVisible: "Đã cho chuyển"
