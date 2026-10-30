@@ -10,7 +10,8 @@ info:
     FIDES_HMAC_KEY. Ví dụ giả công an và người nhà hướng dẫn minh họa hợp đồng,
     không phải điểm của một phiên đã chấm. Bản 2.4.0 khai báo Signal, các trường
     chấm mới trên /decide, evidence_card và POST /decisions/{id}/choice.
-    Engine và bank-core chưa đọc các trường mới và chưa mở endpoint choice.
+    Bank-core trả level số, rules_fired, evidence_card và intervention.
+    POST /decisions/{id}/choice ghi response_ms và áp dụng pause, cancel, continue.
 servers:
   - url: http://localhost:8081
     description: FIDES Engine
@@ -394,8 +395,8 @@ paths:
         - apiKey: []
       summary: Ghi lựa chọn của khách sau can thiệp
       description: >
-        pause, cancel hoặc continue. response_ms chỉ ghi cho nghiên cứu,
-        không đưa vào chấm điểm và không đổi level. Endpoint chưa được thực hiện.
+        pause giữ lệnh pending_draft và tiền held. cancel hoàn tiền. continue giải phóng tiền.
+        Engine chỉ ghi response_ms, không đổi level. Bank-core chuyển tiếp rồi áp dụng lên lệnh.
       parameters:
         - name: id
           in: path
@@ -832,6 +833,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProductAck"
+  /config:
+    get:
+      tags: [Bank core]
+      operationId: bankConfig
+      summary: Ngưỡng hỏi mục đích chuyển khoản
+      responses:
+        "200":
+          description: Số tiền vượt ngưỡng này thì app hỏi mục đích, kể cả người nhận đã lưu
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [purpose_amount_vnd]
+                properties:
+                  purpose_amount_vnd:
+                    type: integer
+                    minimum: 0
   /guardian:
     post:
       tags: [Bank core]
@@ -1417,7 +1435,7 @@ components:
     Intervention:
       type: string
       enum: [none, banner, three_button, security_workflow]
-      description: Kiểu màn hình v2.4. Chưa gắn vào màn hình đang chạy.
+      description: Kiểu màn hình v2.4. App dùng trường này cùng engine_level.
     DecideResponse:
       type: object
       description: >
@@ -1659,7 +1677,7 @@ components:
           minimum: 0
     TransferStatus:
       type: string
-      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled]
+      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled, pending_draft]
     TransferRequest:
       type: object
       required: [from_account, to_account, amount]
@@ -1714,13 +1732,15 @@ components:
           type: array
           items:
             type: string
-          description: Có khi lệnh mang khối experiment. Production không thêm trường này.
+          description: Luật đã khớp trên /decide.
         evidence_card:
           $ref: "#/components/schemas/EvidenceCard"
         engine_level:
           type: integer
           enum: [0, 1, 2, 3]
-          description: Mức số từ /decide. Chỉ có khi experiment.
+          description: Mức số từ /decide.
+        intervention:
+          $ref: "#/components/schemas/Intervention"
     TransferResponse:
       type: object
       required: [transfer_id, status, funds_status, hold_until, decision]
@@ -1818,14 +1838,20 @@ components:
             - type: "null"
     GuardianRequest:
       type: object
-      required: [account_id, guardian_phone_hash, relation]
+      required: [account_id, relation, consent]
       properties:
         account_id:
           type: string
         guardian_phone_hash:
           $ref: "#/components/schemas/Hash"
+        phone:
+          type: string
+          description: Số thô. Bank-core băm HMAC trước khi ghi. Không gửi sang engine.
         relation:
           type: string
+        consent:
+          type: boolean
+          description: Phải true. Không có sự đồng ý thì không ghi và không báo.
     GuardianResponse:
       type: object
       required: [account_id, status]

@@ -1,7 +1,9 @@
-appId: com.fides.saobank
+# Scene C — expected level 1. Dán số tài khoản mới, mục đích Khác.
+# The live card is the model-cost line plus a behaviour line, still one non-blocking line.
+appId: com.hainamtran.saobank
 ---
 - launchApp
-- tapOn: "Trương Gia Thịnh"
+- tapOn: ".*Trương Gia Thịnh.*"
 - tapOn: "Chuyển tiền"
 - tapOn:
     id: "new-account-open"
@@ -12,9 +14,11 @@ appId: com.fides.saobank
 - tapOn: "5.000.000"
 - tapOn: "Nội dung chuyển khoản"
 - inputText: "vay bạn"
-- hideKeyboard
+- hideKeyboard:
+    optional: true
 - tapOn: "Xác nhận giao dịch"
+- tapOn: "Khác"
 - tapOn:
-    text: "Xác nhận giao dịch"
-    index: 1
-- assertVisible: "Chuyển tiền thành công|Hãy cẩn thận|Tạm dừng để kiểm tra|Hãy cúp máy trước khi tiếp tục|Xác nhận chuyển tiền"
+    id: "confirm-transfer"
+- assertVisible: ".*Điểm mô hình vượt ngưỡng theo số tiền của lệnh này.*"
+- assertNotVisible: "Tạm dừng để xác minh"

@@ -17,6 +17,7 @@ from engine.audit import (
     ensure_audit,
     insert_decision,
     insert_response,
+    record_choice,
     list_decisions,
     load_state,
     reset_countdown,
@@ -485,6 +486,26 @@ class Handler(BaseHTTPRequestHandler):
                 STORE.forget_runtime()
             store_reset(str(body["reset_id"]))
             _json(self, 200, {"status": "ok", "reset_id": current_reset_id()})
+            return
+        if path.startswith("/decisions/") and path.endswith("/choice"):
+            if not _authorized(self):
+                return
+            decision_id = path[len("/decisions/") : -len("/choice")].strip("/")
+            body = _read_json(self)
+            if body is None:
+                _bad(self, 400, "JSON không đọc được")
+                return
+            choice = body.get("choice")
+            response_ms = body.get("response_ms")
+            if choice not in {"pause", "cancel", "continue"} or not isinstance(response_ms, int) or isinstance(response_ms, bool) or response_ms < 0:
+                _bad(self, 400, "choice hoặc response_ms không hợp lệ")
+                return
+            with audit_conn() as conn:
+                logged = record_choice(conn, decision_id, choice, response_ms)
+            if not logged:
+                _bad(self, 404, "không có quyết định")
+                return
+            _json(self, 200, {"decision_id": decision_id, "choice": choice, "logged": True})
             return
         if path not in {"/events", "/decide", "/respond"}:
             self.send_response(404)

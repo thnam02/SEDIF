@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Pressable, Text, View } from "react-native"
 import Animated, { FadeIn } from "react-native-reanimated"
-import { AlertTriangle, CheckCircle2, Clock3, Phone, Shield, ShieldCheck, UserRound } from "lucide-react-native"
+import { CheckCircle2, Clock3, Phone, Shield, ShieldCheck, UserRound } from "lucide-react-native"
 
 import type { components } from "../generated/openapi"
 import { copyVi as c } from "./copy.vi"
@@ -9,7 +9,6 @@ import { capPrimary, mergeFidesTheme, type FidesThemeOverride, type ResolvedThem
 import { fidesScreen, formatHold, formatRemaining, remainingSeconds, type FidesDecision } from "./screen"
 
 type RespondRequest = components["schemas"]["RespondRequest"]
-type WhoGuides = components["schemas"]["WhoGuides"]
 
 export type FidesRespond = (body: RespondRequest) => void
 export type FidesProps = {
@@ -18,16 +17,6 @@ export type FidesProps = {
   theme?: FidesThemeOverride
   largeText?: boolean
 }
-
-const WHO: { value: WhoGuides; label: (typeof c.guides)[number] }[] = [
-  { value: "authority", label: c.guides[0] },
-  { value: "bank", label: c.guides[1] },
-  { value: "relative", label: c.guides[2] },
-  { value: "friend", label: c.guides[3] },
-  { value: "seller", label: c.guides[4] },
-  { value: "nobody", label: c.guides[5] },
-  { value: "other", label: c.guides[6] },
-]
 
 function respond(onRespond: FidesRespond, decisionId: string, extra: Omit<RespondRequest, "decision_id"> = {}) {
   onRespond({ decision_id: decisionId, ...extra })
@@ -170,34 +159,6 @@ function Simo({ decision, onRespond, colors, largeText }: FidesProps & { colors:
   )
 }
 
-function Pause({ decision, onRespond, colors }: FidesProps & { colors: ResolvedTheme }) {
-  return (
-    <Frame testID="fides-pause_and_verify">
-      <AlertTriangle color={colors.colors.warn} size={42} />
-      <Title colors={colors}>{c.pause.title}</Title>
-      <Body colors={colors}>{c.pause.sub}</Body>
-      <Text style={{ color: colors.colors.navy, fontSize: colors.type.title * 1.25, fontWeight: "800", lineHeight: colors.type.title * 1.4 }}>{c.pause.question}</Text>
-      <Transaction decision={decision} colors={colors} />
-      <View className="flex-col gap-3" style={{ gap: 12 }}>
-        {WHO.map((guide) => (
-          <Pressable
-            key={guide.value}
-            accessibilityRole="button"
-            onPress={() => respond(onRespond, decision.decision_id, { who_guides: guide.value })}
-            className="min-h-11 justify-center rounded-xl border border-deep px-4"
-            style={{ minHeight: 44, justifyContent: "center", borderRadius: colors.radius.button, borderWidth: 1, borderColor: colors.colors.deep, paddingHorizontal: 16, paddingVertical: 10 }}
-          >
-            <Text style={{ color: colors.colors.navy, fontSize: colors.type.body }}>{guide.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <Pressable accessibilityRole="button" onPress={() => respond(onRespond, decision.decision_id, { cancel: true })}>
-        <Text style={{ color: colors.colors.deep, fontWeight: "700", textAlign: "center" }}>{c.cancel}</Text>
-      </Pressable>
-    </Frame>
-  )
-}
-
 function Chain({ decision, onRespond, colors, largeText }: FidesProps & { colors: ResolvedTheme }) {
   const rows = decision.chain_rows?.length ? decision.chain_rows : [...c.chain.steps]
   return (
@@ -250,43 +211,6 @@ function Wait({ decision, onRespond, colors, largeText }: FidesProps & { colors:
   )
 }
 
-function Hangup({ decision, onRespond, colors, largeText }: FidesProps & { colors: ResolvedTheme }) {
-  return (
-    <Frame testID="fides-hangup_required">
-      <AlertTriangle color={colors.colors.danger} size={42} />
-      <Title colors={colors}>{c.hangup.title}</Title>
-      <Body colors={colors}>{c.hangup.body}</Body>
-      <Transaction decision={decision} colors={colors} />
-      {(decision.reasons ?? []).map((reason) => (
-        <Text key={reason.code} style={{ color: colors.colors.navy, fontSize: colors.type.body }}>{reason.text}</Text>
-      ))}
-      <Actions
-        colors={colors}
-        largeText={largeText}
-        stack
-        items={[
-          { key: "call", label: c.hangup.call, onPress: () => respond(onRespond, decision.decision_id, { hung_up: true }), fill: colors.colors.danger, labelColor: colors.colors.white },
-          { key: "close", label: c.close, onPress: () => respond(onRespond, decision.decision_id), fill: colors.colors.white, labelColor: colors.colors.deep, border: colors.colors.deep },
-        ]}
-      />
-    </Frame>
-  )
-}
-
-function Countdown({ decision, onRespond, colors, largeText }: FidesProps & { colors: ResolvedTheme }) {
-  return (
-    <Frame testID="fides-countdown">
-      <Title colors={colors}>{c.countdown.body}</Title>
-      <Clock until={decision.countdown_until} colors={colors} />
-      <Actions
-        colors={colors}
-        largeText={largeText}
-        items={[{ key: "close", label: c.close, onPress: () => respond(onRespond, decision.decision_id), fill: colors.colors.white, labelColor: colors.colors.deep, border: colors.colors.deep }]}
-      />
-    </Frame>
-  )
-}
-
 function Held({ decision, onRespond, colors, largeText }: FidesProps & { colors: ResolvedTheme }) {
   return (
     <Frame testID="fides-held">
@@ -325,12 +249,9 @@ export function FidesIntervention({ decision, onRespond, theme, largeText = fals
   const screen = fidesScreen(decision)
   const props = { decision, onRespond, theme, largeText, colors }
   if (screen === "cancelled") return <Cancelled {...props} />
-  if (screen === "countdown") return <Countdown {...props} />
-  if (screen === "hangup_required") return <Hangup {...props} />
   if (screen === "short_wait") return <Wait {...props} />
   if (screen === "guardian_confirm_requested") return <GuardianWait {...props} />
   if (screen === "show_chain") return <Chain {...props} />
-  if (screen === "pause_and_verify") return <Pause {...props} />
   if (screen === "simo_listed") return <Simo {...props} />
   if (screen === "banner") return <Banner {...props} />
   if (screen === "held") return <Held {...props} />

@@ -4,10 +4,14 @@ import type { components } from "./api/openapi"
 
 type Outcome = {
   transferId: string
+  decisionId: string
   status: components["schemas"]["TransferStatus"]
   level: components["schemas"]["BankDecision"]["level"]
+  engineLevel: 0 | 1 | 2 | 3
+  intervention: components["schemas"]["Intervention"]
   actions: string[]
   reasons: components["schemas"]["Reason"][]
+  reasonsVi: string[]
   familiesHit: string[]
   funds_status: "held" | "released" | "cancelled"
   gate: "none" | "guardian_confirm_requested" | "short_wait"

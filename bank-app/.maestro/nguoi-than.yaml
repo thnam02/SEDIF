@@ -1,20 +1,23 @@
-appId: com.fides.saobank
+# Scene B — expected level 1. Cuộc gọi, người nhận đã lưu. Một dòng không chặn.
+appId: com.hainamtran.saobank
 ---
 - launchApp
-- tapOn: "Hoàng Văn Tâm"
+- tapOn: ".*Hoàng Văn Tâm.*"
 - repeat:
     times: 7
     commands:
       - tapOn: "BVC BANK"
-- tapOn: "Người thân gọi đến"
+- tapOn:
+    id: "call-relative"
 - tapOn: "Chuyển tiền"
-- tapOn: "CHU DAU TU NGUYEN HUE"
+- tapOn: ".*Lê Lan Hà.*"
 - tapOn: "Nội dung chuyển khoản"
 - inputText: "học phí"
-- hideKeyboard
+- hideKeyboard:
+    optional: true
 - tapOn: "Xác nhận giao dịch"
 - tapOn:
-    text: "Xác nhận giao dịch"
-    index: 1
-- assertNotVisible: "Hãy cúp máy trước khi tiếp tục"
-- assertVisible: "Chuyển tiền thành công|Hãy cẩn thận|Tạm dừng để kiểm tra|Xác nhận chuyển tiền"
+    id: "confirm-transfer"
+- assertVisible: "Đang trong cuộc gọi"
+- assertVisible: ".*nghỉ lâu giữa các thao tác.*"
+- assertNotVisible: "Tạm dừng để xác minh"

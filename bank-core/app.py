@@ -27,6 +27,7 @@ from notice import notice_allowed, notice_limits
 log = logging.getLogger("bank")
 DECIDE_TIMEOUT_S = 0.3
 NEW_PAYEE_BANNER = 50_000_000
+PURPOSE_AMOUNT_VND = int(os.environ.get("PURPOSE_AMOUNT_VND", "10000000"))
 RESET_AT = datetime.fromisoformat("2026-09-20T09:00:00+07:00")
 
 CLOCK = DemoClock(speed=float(os.environ.get("DEMO_CLOCK_SPEED", "60")))
@@ -413,8 +414,15 @@ class LimitIn(BaseModel):
 
 class GuardianIn(BaseModel):
     account_id: str
-    guardian_phone_hash: str
+    guardian_phone_hash: str | None = None
+    phone: str | None = None
     relation: str
+    consent: bool = False
+
+
+class ChoiceIn(BaseModel):
+    choice: Literal["pause", "cancel", "continue"]
+    response_ms: int
 
 
 class PersonaIn(BaseModel):
@@ -812,7 +820,7 @@ def transfer(
             release_payee(conn, stored, now)
         if experiment is not None:
             _save_experiment_decision(conn, body, decided, now)
-        if level == "medium" and balance["has_guardian"] and experiment is None:
+        if level == "medium" and experiment is None and _guardian_consented(conn, body.from_account):
             conn.execute(
                 """
                 INSERT INTO bank.guardian_requests (id, account_id, transfer_id, level, funds_status, status)
@@ -820,6 +828,7 @@ def transfer(
                 """,
                 (f"G-{transfer_id}", body.from_account, transfer_id, level, funds),
             )
+            log.info("guardian notify mock account=%s transfer=%s", body.from_account, transfer_id)
         conn.commit()
     result = {
         "transfer_id": transfer_id,
@@ -845,17 +854,29 @@ def transfer(
     return result
 
 
+def _engine_level(level: str, decided: dict) -> int:
+    raw = decided.get("level")
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return raw
+    return {"none": 0, "info": 0, "banner": 1, "medium": 2, "high": 3}.get(level, 0)
+
+
 def _decision_payload(level: str, decided: dict, experiment: bool) -> dict:
+    numeric = _engine_level(level, decided)
+    intervention = decided.get("intervention") or {0: "none", 1: "banner", 2: "three_button", 3: "security_workflow"}[numeric if numeric in {0, 1, 2, 3} else 0]
+    card = decided.get("evidence_card") or {"signals": [], "reasons_vi": [], "baseline_quality": "none", "episode_id": ""}
     payload = {
         "level": level,
         "actions": decided.get("actions") or [],
         "reasons": decided.get("reasons") or [],
         "families_hit": decided.get("families_hit") or [],
+        "rules_fired": list(decided.get("rules_fired") or []),
+        "evidence_card": card,
+        "engine_level": numeric,
+        "intervention": intervention,
     }
     if experiment:
-        payload["rules_fired"] = list(decided.get("rules_fired") or [])
-        payload["evidence_card"] = decided.get("evidence_card") or {}
-        payload["engine_level"] = decided.get("level")
+        payload["engine_level"] = decided.get("level") if isinstance(decided.get("level"), int) else numeric
     return payload
 
 
@@ -1055,20 +1076,78 @@ def limit(body: LimitIn) -> dict:
     return {"id": change_id, "status": "done"}
 
 
+def _ensure_guardian_consent(conn) -> None:
+    conn.execute("ALTER TABLE bank.guardians ADD COLUMN IF NOT EXISTS consent boolean NOT NULL DEFAULT false")
+
+
+def _guardian_consented(conn, account_id: str) -> bool:
+    _ensure_guardian_consent(conn)
+    row = conn.execute("SELECT consent FROM bank.guardians WHERE account_id = %s", (account_id,)).fetchone()
+    return bool(row and row["consent"])
+
+
+@app.get("/config")
+def bank_config() -> dict:
+    return {"purpose_amount_vnd": PURPOSE_AMOUNT_VND}
+
+
+@app.post("/decisions/{decision_id}/choice")
+def record_choice(decision_id: str, body: ChoiceIn) -> dict:
+    now = CLOCK.now()
+    if body.response_ms < 0:
+        raise HTTPException(400, "response_ms không hợp lệ")
+    try:
+        engine_post(f"/decisions/{decision_id}/choice", {"choice": body.choice, "response_ms": body.response_ms})
+    except EngineUnavailable as exc:
+        log.warning("choice not logged: %s", exc)
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            raise
+        log.warning("choice not logged: %s", exc.detail)
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE decision_id = %s", (decision_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có quyết định")
+        funds = transfer["funds_status"]
+        if body.choice == "cancel":
+            funds = "cancelled"
+            status = "cancelled"
+        elif body.choice == "continue":
+            funds = "released"
+            status = "done"
+        else:
+            status = "pending_draft"
+        apply_funds(conn, transfer, transfer["funds_status"], funds, now)
+        conn.execute(
+            "UPDATE bank.transfers SET funds_status=%s, status=%s WHERE id=%s",
+            (funds, status, transfer["id"]),
+        )
+        sync_entry(conn, transfer["id"], transfer["from_account"], funds, status)
+        conn.commit()
+    return {"decision_id": decision_id, "choice": body.choice, "logged": True, "status": status, "funds_status": funds}
+
+
 @app.post("/guardian")
 def guardian(body: GuardianIn) -> dict:
+    if body.consent is not True:
+        raise HTTPException(400, "cần sự đồng ý của khách")
+    phone_hash = body.guardian_phone_hash or (account_hash(body.phone.strip()) if body.phone and body.phone.strip() else None)
+    if not phone_hash:
+        raise HTTPException(400, "thiếu số điện thoại")
     now = CLOCK.now()
     with connect() as conn:
         found = conn.execute("SELECT 1 FROM bank.accounts WHERE id = %s", (body.account_id,)).fetchone()
         if found is None:
             raise HTTPException(404, "không có tài khoản")
+        _ensure_guardian_consent(conn)
         conn.execute(
             """
-            INSERT INTO bank.guardians (account_id, guardian_phone_hash, relation, registered_at)
-            VALUES (%s,%s,%s,%s)
-            ON CONFLICT (account_id) DO UPDATE SET guardian_phone_hash=EXCLUDED.guardian_phone_hash, relation=EXCLUDED.relation
+            INSERT INTO bank.guardians (account_id, guardian_phone_hash, relation, registered_at, consent)
+            VALUES (%s,%s,%s,%s,true)
+            ON CONFLICT (account_id) DO UPDATE
+            SET guardian_phone_hash=EXCLUDED.guardian_phone_hash, relation=EXCLUDED.relation, consent=true
             """,
-            (body.account_id, body.guardian_phone_hash, body.relation, now),
+            (body.account_id, phone_hash, body.relation, now),
         )
         conn.execute("UPDATE bank.accounts SET has_guardian = true WHERE id = %s", (body.account_id,))
         conn.commit()

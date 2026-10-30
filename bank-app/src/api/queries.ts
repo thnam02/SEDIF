@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { FidesSession } from "fides-sdk"
 
-import { bank, unwrap } from "./client"
+import { BANK_URL, bank, unwrap } from "./client"
 import { transferKey } from "./idempotency"
 import type { components } from "./openapi"
 import { useBank } from "../store"
@@ -110,6 +110,41 @@ export function useTransfer() {
       )
     },
     onSuccess: (_data, input) => refreshAccount(client, input.from),
+  })
+}
+
+export function usePurposePolicy() {
+  return useQuery({
+    queryKey: ["purpose-policy"],
+    queryFn: async () => {
+      const response = await fetch(`${BANK_URL}/config`)
+      if (!response.ok) throw new Error("config")
+      return (await response.json()) as { purpose_amount_vnd: number }
+    },
+  })
+}
+
+export function useChoice() {
+  const accountId = useBank((state) => state.accountId) ?? ""
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { decisionId: string; choice: "pause" | "cancel" | "continue"; responseMs: number }) => {
+      const response = await fetch(`${BANK_URL}/decisions/${input.decisionId}/choice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ choice: input.choice, response_ms: input.responseMs }),
+      })
+      if (!response.ok) throw new Error("choice")
+      return (await response.json()) as { decision_id: string; choice: string; logged: boolean; status: string; funds_status: string }
+    },
+    onSuccess: () => refreshAccount(client, accountId),
+  })
+}
+
+export function useRegisterGuardian() {
+  return useMutation({
+    mutationFn: (input: { account_id: string; phone: string; relation: string; consent: boolean }) =>
+      unwrap(bank.POST("/guardian", { body: input })),
   })
 }
 

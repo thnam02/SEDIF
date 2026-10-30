@@ -20,7 +20,7 @@ export function Screen({ children, call = false }: { children: ReactNode; call?:
   const insets = useSafeAreaInsets()
   return (
     <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="never" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
         {call ? <FidesCallIndicator /> : null}
         {children}
       </ScrollView>

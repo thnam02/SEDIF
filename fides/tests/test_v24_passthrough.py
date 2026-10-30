@@ -320,10 +320,133 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
         held = plain.json()
         assert held["status"] == "needs_verification"
         assert held["funds_status"] == "held"
-        assert "rules_fired" not in held["decision"]
-        assert "evidence_card" not in held["decision"]
+        assert held["decision"]["engine_level"] == 2
+        assert held["decision"]["intervention"] == "three_button"
+        assert held["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
+        assert held["decision"]["evidence_card"]["reasons_vi"] == ["dừng lâu hơn thường lệ"]
     finally:
         module.engine_post = original
         _restore_transfer(SENDER, before, ("pytest-v24", "pytest-exp", "pytest-exp-plain"))
         _set_balance(PAYEE, payee_before)
         _drop_experiment(participant)
+
+
+def test_purpose_threshold_comes_from_the_server(bank):
+    _module, client, _seen = bank
+    response = client.get("/config")
+    assert response.status_code == 200, response.text
+    assert response.json()["purpose_amount_vnd"] == 10_000_000
+
+
+def test_choice_pause_holds_a_draft_and_cancel_refunds(bank):
+    module, client, seen = bank
+    original = module.engine_post
+    before = _balance(SENDER)
+    payee_before = _balance(PAYEE)
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        seen.append((path, body))
+        if path == "/decide":
+            return {
+                "level": 2,
+                "intervention": "three_button",
+                "rules_fired": ["R_PURPOSE_HIGH_RISK"],
+                "evidence_card": {"signals": [], "reasons_vi": ["Mục đích chuyển là yêu cầu của cơ quan hoặc phí để nhận tiền."], "baseline_quality": "none", "episode_id": ""},
+                "funds_status": "held",
+                "hold_until": None,
+                "countdown_until": None,
+                "actions": [],
+                "reasons": [],
+                "families_hit": [],
+            }
+        if path.endswith("/choice"):
+            return {"decision_id": path.split("/")[2], "choice": body["choice"], "logged": True}
+        return {}
+
+    module.engine_post = engine_post
+    try:
+        paused = client.post("/transfer", json={"from_account": SENDER, "to_account": PAYEE, "amount": 1000, "purpose_text": "pytest-choice-pause", "transfer_purpose": "authority_request"})
+        assert paused.status_code == 200, paused.text
+        draft = paused.json()
+        choice = client.post(f"/decisions/dec-{draft['transfer_id']}/choice", json={"choice": "pause", "response_ms": 1200})
+        assert choice.status_code == 200, choice.text
+        assert choice.json()["status"] == "pending_draft"
+        assert choice.json()["funds_status"] == "held"
+        assert choice.json()["logged"] is True
+        assert _balance(SENDER) == before - 1000
+        assert any(path.endswith("/choice") and body.get("response_ms") == 1200 for path, body in seen)
+        cancelled = client.post("/transfer", json={"from_account": SENDER, "to_account": PAYEE, "amount": 1000, "purpose_text": "pytest-choice-cancel", "transfer_purpose": "authority_request"})
+        assert cancelled.status_code == 200, cancelled.text
+        undone = client.post(f"/decisions/dec-{cancelled.json()['transfer_id']}/choice", json={"choice": "cancel", "response_ms": 400})
+        assert undone.status_code == 200, undone.text
+        assert undone.json()["status"] == "cancelled"
+        assert undone.json()["funds_status"] == "cancelled"
+        assert _balance(SENDER) == before - 1000
+    finally:
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-choice-pause", "pytest-choice-cancel"))
+        _set_balance(PAYEE, payee_before)
+
+
+def test_guardian_is_notified_only_after_consent(bank):
+    module, client, _seen = bank
+    original = module.engine_post
+    before = _balance(SENDER)
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        if path == "/decide":
+            return {
+                "level": 2,
+                "intervention": "three_button",
+                "rules_fired": [],
+                "evidence_card": {"signals": [], "reasons_vi": [], "baseline_quality": "none", "episode_id": ""},
+                "funds_status": "held",
+                "hold_until": None,
+                "actions": [],
+                "reasons": [],
+                "families_hit": [],
+            }
+        return {}
+
+    module.engine_post = engine_post
+    with psycopg.connect(DATABASE, row_factory=psycopg.rows.dict_row) as conn:
+        conn.execute("ALTER TABLE bank.guardians ADD COLUMN IF NOT EXISTS consent boolean NOT NULL DEFAULT false")
+        prior = conn.execute("SELECT guardian_phone_hash, relation, registered_at, consent FROM bank.guardians WHERE account_id = %s", (SENDER,)).fetchone()
+        flag = conn.execute("SELECT has_guardian FROM bank.accounts WHERE id = %s", (SENDER,)).fetchone()
+        conn.execute("UPDATE bank.guardians SET consent = false WHERE account_id = %s", (SENDER,))
+        conn.commit()
+    try:
+        refused = client.post("/guardian", json={"account_id": SENDER, "phone": "0900000001", "relation": "con", "consent": False})
+        assert refused.status_code == 400, refused.text
+        silent = client.post("/transfer", json={"from_account": SENDER, "to_account": PAYEE, "amount": 1000, "purpose_text": "pytest-guard-silent"})
+        assert silent.status_code == 200, silent.text
+        with psycopg.connect(DATABASE) as conn:
+            quiet = conn.execute("SELECT 1 FROM bank.guardian_requests WHERE transfer_id = %s", (silent.json()["transfer_id"],)).fetchone()
+        assert quiet is None
+        accepted = client.post("/guardian", json={"account_id": SENDER, "phone": "0900000001", "relation": "con", "consent": True})
+        assert accepted.status_code == 200, accepted.text
+        noisy = client.post("/transfer", json={"from_account": SENDER, "to_account": PAYEE, "amount": 1000, "purpose_text": "pytest-guard-notify"})
+        assert noisy.status_code == 200, noisy.text
+        with psycopg.connect(DATABASE) as conn:
+            hit = conn.execute("SELECT status FROM bank.guardian_requests WHERE transfer_id = %s", (noisy.json()["transfer_id"],)).fetchone()
+        assert hit is not None
+        assert hit[0] == "open"
+    finally:
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-guard-silent", "pytest-guard-notify"))
+        with psycopg.connect(DATABASE) as conn:
+            if prior is None:
+                conn.execute("DELETE FROM bank.guardians WHERE account_id = %s", (SENDER,))
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO bank.guardians (account_id, guardian_phone_hash, relation, registered_at, consent)
+                    VALUES (%s,%s,%s,%s,%s)
+                    ON CONFLICT (account_id) DO UPDATE
+                    SET guardian_phone_hash=EXCLUDED.guardian_phone_hash, relation=EXCLUDED.relation,
+                        registered_at=EXCLUDED.registered_at, consent=EXCLUDED.consent
+                    """,
+                    (SENDER, prior["guardian_phone_hash"], prior["relation"], prior["registered_at"], prior["consent"]),
+                )
+            conn.execute("UPDATE bank.accounts SET has_guardian = %s WHERE id = %s", (bool(flag["has_guardian"]) if flag else False, SENDER))
+            conn.commit()

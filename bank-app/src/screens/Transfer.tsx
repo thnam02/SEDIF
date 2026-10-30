@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react"
 import { Pressable, Text, TextInput, View } from "react-native"
 import { useRouter } from "expo-router"
 import { Check, ChevronRight, Search, ShieldCheck } from "lucide-react-native"
-import { FidesCallNotice, FidesIntervention, FidesSession, sessionRecorder, useAccountInput } from "fides-sdk"
+import { FidesCallNotice, FidesSession, sessionRecorder, useAccountInput } from "fides-sdk"
 
 import { BANK_URL } from "../api/client"
-import { useBeneficiaries, useRespond, useTransfer } from "../api/queries"
+import { useBeneficiaries, useChoice, usePurposePolicy, useTransfer } from "../api/queries"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
@@ -153,7 +153,7 @@ export function AmountScreen() {
       <AmountNotice />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{name} · BVC bank</Text>
-        <TextInput testID="amount" value={grouped(amount)} onChangeText={onAmount} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "amount" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "amount" })} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
+        <TextInput testID="amount" value={grouped(amount)} onChangeText={onAmount} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "amount" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "amount" })} selectTextOnFocus keyboardType="number-pad" style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }} />
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.dong}</Text>
       </Card>
       <View style={{ flexDirection: "row", gap: 8 }}>
@@ -178,8 +178,16 @@ export function ConfirmScreen() {
   const note = useBank((state) => state.note)
   const setOutcome = useBank((state) => state.setOutcome)
   const transfer = useTransfer()
+  const saved = useBeneficiaries(accountId)
+  const policy = usePurposePolicy()
   const type = useType()
+  const [purpose, setPurpose] = useState<(typeof copy.purposes)[number][0] | null>(null)
+  const [banner, setBanner] = useState<string | null>(null)
   useEffect(() => { sessionRecorder.note({ type: "screen_enter", screen: "confirm" }) }, [])
+  const known = (saved.data?.beneficiaries ?? []).some((item) => item.account_id === toAccount)
+  const threshold = policy.data?.purpose_amount_vnd ?? 10_000_000
+  const askPurpose = saved.isSuccess && (!known || amount > threshold)
+  const waiting = !saved.isSuccess || policy.isPending
   return (
     <Screen call>
       <Header title={copy.confirm} />
@@ -195,9 +203,23 @@ export function ConfirmScreen() {
           <Text style={{ color: colors.warn, fontSize: type.small }}>{copy.face}</Text>
         </View>
       ) : null}
+      {askPurpose && !banner ? (
+        <View style={{ gap: 8 }}>
+          <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.purposeQuestion}</Text>
+          {copy.purposes.map(([id, label]) => (
+            <Pressable key={id} testID={`purpose-${id}`} accessibilityRole="button" onPress={() => setPurpose(id)} style={{ minHeight: 44, justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: purpose === id ? colors.deep : "#E2E8F0", backgroundColor: purpose === id ? colors.mint : colors.white, paddingHorizontal: 12, paddingVertical: 10 }}>
+              <Text style={{ color: colors.navy, fontSize: type.body }}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {banner ? <Text testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{banner}</Text> : null}
+      {banner ? <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} /> : (
       <Button
+        testID="confirm-transfer"
         label={copy.confirm}
         onPress={() => {
+          if (waiting || (askPurpose && !purpose) || transfer.isPending) return
           const call = FidesSession.callBlock()
           const session = sessionRecorder.end()
           const device = { ...FidesSession.collectSignals(), state: "unknown" as const }
@@ -223,7 +245,7 @@ export function ConfirmScreen() {
               task_type: session.task_type,
               call,
               behaviour_features: session.behaviour_features,
-              transfer_purpose: "not_asked",
+              transfer_purpose: askPurpose && purpose ? purpose : "not_asked",
               device,
               experiment: session.experiment,
             },
@@ -238,12 +260,18 @@ export function ConfirmScreen() {
                     evidence_card: result.decision.evidence_card ?? null,
                   }))
                 }
+                const engineLevel = result.decision.engine_level ?? 0
+                const reasonsVi = result.decision.evidence_card?.reasons_vi ?? []
                 setOutcome({
                   transferId: result.transfer_id,
+                  decisionId: `dec-${result.transfer_id}`,
                   status: experiment ? "done" : result.status,
                   level: result.decision.level,
+                  engineLevel,
+                  intervention: result.decision.intervention ?? (engineLevel === 3 ? "security_workflow" : engineLevel === 2 ? "three_button" : engineLevel === 1 ? "banner" : "none"),
                   actions: result.decision.actions,
                   reasons: result.decision.reasons,
+                  reasonsVi,
                   familiesHit: result.decision.families_hit ?? [],
                   funds_status: experiment ? "released" : result.funds_status,
                   gate: "none",
@@ -254,12 +282,17 @@ export function ConfirmScreen() {
                   amount,
                   experiment: Boolean(experiment),
                 })
+                if (!experiment && engineLevel === 1) {
+                  setBanner(reasonsVi.join(" "))
+                  return
+                }
                 router.replace("/(main)/transfer/result")
               },
             },
           )
         }}
       />
+      )}
       {transfer.isError ? <Text style={{ color: colors.danger }}>{transfer.error.message}</Text> : null}
     </Screen>
   )
@@ -268,10 +301,10 @@ export function ConfirmScreen() {
 export function ResultScreen() {
   const router = useRouter()
   const outcome = useBank((state) => state.outcome)
-  const setOutcome = useBank((state) => state.setOutcome)
-  const respond = useRespond()
+  const choice = useChoice()
+  const shownAt = useRef(Date.now())
   const type = useType()
-  const largeText = useBank((state) => state.largeText)
+  const [phase, setPhase] = useState<"choose" | "paused" | "done" | "cancelled">("choose")
   if (!outcome) return <Screen call><Header title={copy.success} /></Screen>
   if (outcome.experiment) {
     return (
@@ -283,46 +316,59 @@ export function ResultScreen() {
       </Screen>
     )
   }
+  function pick(next: "pause" | "cancel" | "continue") {
+    choice.mutate(
+      { decisionId: outcome?.decisionId ?? "", choice: next, responseMs: Math.max(0, Date.now() - shownAt.current) },
+      {
+        onSuccess: () => setPhase(next === "pause" ? "paused" : next === "cancel" ? "cancelled" : "done"),
+      },
+    )
+  }
+  if (outcome.engineLevel === 3 || outcome.intervention === "security_workflow") {
+    return (
+      <Screen call>
+        <View testID="level-3" style={{ gap: 16 }}>
+          <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.level3Title}</Text>
+          <Text style={{ color: colors.navy, fontSize: type.body }}>{copy.level3Mock}</Text>
+          {outcome.reasonsVi.map((line) => <Text key={line} style={{ color: colors.navy, fontSize: type.body }}>{line}</Text>)}
+          <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
+        </View>
+      </Screen>
+    )
+  }
+  if (outcome.engineLevel === 2 || outcome.intervention === "three_button") {
+    return (
+      <Screen call>
+        <View testID="level-2" style={{ gap: 16 }}>
+          <Text style={{ color: colors.navy, fontSize: type.body }}>{copy.level2Body}</Text>
+          {outcome.reasonsVi.map((line) => <Text key={line} style={{ color: colors.navy, fontSize: type.body }}>{line}</Text>)}
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>{vnd(outcome.amount)} · {outcome.payeeName}</Text>
+          {phase === "choose" ? (
+            <>
+              <Button testID="choice-pause" label={copy.level2Title} onPress={() => pick("pause")} />
+              <Button testID="choice-cancel" outline label={copy.level2Cancel} onPress={() => pick("cancel")} />
+              <Button testID="choice-continue" outline label={copy.level2Continue} onPress={() => pick("continue")} />
+            </>
+          ) : null}
+          {phase === "paused" ? (
+            <>
+              <Text style={{ color: colors.navy, fontSize: type.body }}>{copy.pausedDraft}</Text>
+              <Text testID="bank-hotline" selectable style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{copy.hotline}</Text>
+            </>
+          ) : null}
+          {phase === "cancelled" ? <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.cancelledTransfer}</Text> : null}
+          {phase === "done" ? <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.success}</Text> : null}
+          {phase !== "choose" ? <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} /> : null}
+          {choice.isError ? <Text style={{ color: colors.danger }}>{choice.error.message}</Text> : null}
+        </View>
+      </Screen>
+    )
+  }
   if (outcome.status !== "done") {
     return (
       <Screen call>
-        <FidesIntervention
-          largeText={largeText}
-          decision={{
-            decision_id: outcome.transferId,
-            level: outcome.level,
-            actions: outcome.actions,
-            reasons: outcome.reasons,
-            hold_until: outcome.hold_until,
-            countdown_until: outcome.countdown_until,
-            funds_status: outcome.funds_status,
-            gate: outcome.gate,
-            payee_name: outcome.payeeName,
-            amount_text: vnd(outcome.amount),
-            channel: "Chuyển khoản",
-          }}
-          onRespond={(body) => {
-            const leaves = !body.hung_up && !body.proceed && !body.cancel && !body.who_guides && !body.guardian_confirm
-            if (leaves) {
-              router.replace("/(main)/(tabs)")
-              return
-            }
-            respond.mutate(
-              { id: outcome.transferId, body: { who_guides: body.who_guides, guardian_confirm: body.guardian_confirm, hung_up: body.hung_up, proceed: body.proceed, cancel: body.cancel } },
-              {
-                onSuccess: (next) => setOutcome({
-                  ...outcome,
-                  status: next.status,
-                  level: next.level,
-                  funds_status: next.funds_status,
-                  gate: next.gate,
-                  hold_until: next.hold_until,
-                  countdown_until: next.countdown_until,
-                }),
-              },
-            )
-          }}
-        />
+        <Text style={{ color: colors.navy, fontSize: type.body }}>{outcome.reasonsVi.join(" ")}</Text>
+        <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
       </Screen>
     )
   }

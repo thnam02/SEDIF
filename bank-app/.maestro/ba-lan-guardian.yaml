@@ -1,41 +1,60 @@
-appId: com.fides.saobank
+# Scene E — expected level 2. Có sự đồng ý của người thân, mục đích cơ quan nhà nước.
+appId: com.hainamtran.saobank
 ---
 - launchApp
-- tapOn: "Huỳnh Thị Mận"
+- tapOn: ".*Huỳnh Thị Mận.*"
+- tapOn: ".*Cá nhân.*"
+- tapOn: "Người thân bảo vệ"
+- tapOn:
+    id: "guardian-phone"
+- inputText: "0901234567"
+- tapOn:
+    id: "guardian-relation"
+- inputText: "con"
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: "guardian-consent"
+- tapOn:
+    id: "guardian-save"
+- assertVisible: "Đã lưu người thân"
+- tapOn: "Trang chủ"
+- tapOn: "Trang chủ, tab, 1 of 4"
 - repeat:
     times: 7
     commands:
       - tapOn: "BVC BANK"
-- tapOn: "Số lạ gọi đến"
+- tapOn:
+    id: "call-stranger"
 - tapOn: "Chuyển tiền"
 - tapOn:
     id: "new-account-open"
 - tapOn:
     id: "new-account"
 - inputText: "ZMED000000000001"
-- hideKeyboard
+- hideKeyboard:
+    optional: true
 - tapOn:
     id: "new-account-go"
 - tapOn:
     id: "amount"
 - eraseText: 12
-- inputText: "20000000"
-- hideKeyboard
+- inputText: "21000000"
+- hideKeyboard:
+    optional: true
 - tapOn: "Xác nhận giao dịch"
-- tapOn:
-    text: "Xác nhận giao dịch"
-    index: 1
-- assertVisible: "Tạm dừng để kiểm tra"
 - scrollUntilVisible:
-    element: "Người thân trong gia đình"
+    element: "Cơ quan nhà nước / công an yêu cầu chuyển"
     direction: DOWN
-- tapOn: "Người thân trong gia đình"
-- assertVisible: "Đang chờ người thân xác nhận"
+- tapOn: "Cơ quan nhà nước / công an yêu cầu chuyển"
+- tapOn:
+    id: "confirm-transfer"
+- assertVisible: "Tạm dừng để xác minh"
 - launchApp
-- tapOn: "Người giám hộ"
+- tapOn: "GH, Người giám hộ.*"
 - extendedWaitUntil:
-    visible: "Huỳnh Thị Mận"
+    visible: ".*Huỳnh Thị Mận.*"
     timeout: 10000
-- tapOn: "Huỳnh Thị Mận"
+- tapOn: ".*21.000.000.*"
 - tapOn: "Tôi xác nhận, cho chuyển"
 - assertVisible: "Đã cho chuyển"

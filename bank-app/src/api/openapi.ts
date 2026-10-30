@@ -776,7 +776,7 @@ export interface components {
             times_paid: number;
         };
         /** @enum {string} */
-        TransferStatus: "done" | "needs_verification" | "held" | "blocked_pending_hangup" | "released" | "cancelled";
+        TransferStatus: "done" | "needs_verification" | "held" | "blocked_pending_hangup" | "released" | "cancelled" | "pending_draft";
         TransferRequest: {
             from_account: string;
             to_account: string;
@@ -796,11 +796,11 @@ export interface components {
             actions: string[];
             reasons: components["schemas"]["Reason"][];
             families_hit?: ("call" | "entry" | "payee" | "mobilization" | "long_term")[];
-            /** Có khi lệnh mang khối experiment. */
             rules_fired?: string[];
             evidence_card?: components["schemas"]["EvidenceCard"];
             /** @enum {number} */
             engine_level?: 0 | 1 | 2 | 3;
+            intervention?: components["schemas"]["Intervention"];
         };
         TransferResponse: {
             transfer_id: string;
@@ -847,8 +847,10 @@ export interface components {
         };
         GuardianRequest: {
             account_id: string;
-            guardian_phone_hash: components["schemas"]["Hash"];
+            guardian_phone_hash?: components["schemas"]["Hash"];
+            phone?: string;
             relation: string;
+            consent?: boolean;
         };
         GuardianResponse: {
             account_id: string;

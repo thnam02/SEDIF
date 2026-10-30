@@ -48,13 +48,13 @@ describe("FidesIntervention", () => {
     expect(onRespond).toHaveBeenCalledWith({ decision_id: "dec-1", cancel: true })
   })
 
-  it("pause_and_verify gửi enum who_guides", () => {
-    const onRespond = jest.fn()
-    const view = render(<FidesIntervention decision={decision({ level: "medium", actions: ["pause_and_verify", "guardian_confirm"] })} onRespond={onRespond} />)
-    expect(view.getByTestId("fides-pause_and_verify")).toBeTruthy()
-    expect(view.getByText(copyVi.pause.question)).toBeTruthy()
-    fireEvent.press(view.getByText("Bạn bè"))
-    expect(onRespond).toHaveBeenCalledWith({ decision_id: "dec-1", who_guides: "friend" })
+  it("màn medium và high cũ không còn", () => {
+    const medium = render(<FidesIntervention decision={decision({ level: "medium", actions: ["pause_and_verify", "guardian_confirm"] })} onRespond={jest.fn()} />)
+    expect(medium.queryByTestId("fides-pause_and_verify")).toBeNull()
+    expect(medium.queryByText("Giao dịch đang được giữ an toàn trong 30 phút")).toBeNull()
+    const high = render(<FidesIntervention decision={decision({ level: "high", actions: ["hangup_required", "recovery_window"] })} onRespond={jest.fn()} />)
+    expect(high.queryByTestId("fides-hangup_required")).toBeNull()
+    expect(high.queryByTestId("fides-countdown")).toBeNull()
   })
 
   it("show_chain", () => {
@@ -83,32 +83,6 @@ describe("FidesIntervention", () => {
     expect(view.getByTestId("fides-short_wait")).toBeTruthy()
     expect(view.getByText("30s")).toBeTruthy()
     expect(view.queryByText(copyVi.countdown.body)).toBeNull()
-    jest.useRealTimers()
-  })
-
-  it("hangup_required", () => {
-    const view = render(<FidesIntervention decision={decision({ level: "high", actions: ["hangup_required", "recovery_window"] })} onRespond={jest.fn()} />)
-    expect(view.getByTestId("fides-hangup_required")).toBeTruthy()
-    expect(view.getByText(copyVi.hangup.title)).toBeTruthy()
-    expect(view.getByText(copyVi.hangup.body)).toBeTruthy()
-  })
-
-  it("countdown theo countdown_until", () => {
-    jest.useFakeTimers()
-    jest.setSystemTime(new Date("2026-09-21T10:20:00+07:00"))
-    const view = render(
-      <FidesIntervention
-        decision={decision({
-          level: "high",
-          actions: ["hangup_required", "recovery_window"],
-          countdown_until: "2026-09-21T10:21:30+07:00",
-        })}
-        onRespond={jest.fn()}
-      />,
-    )
-    expect(view.getByTestId("fides-countdown")).toBeTruthy()
-    expect(view.getByText("1:30")).toBeTruthy()
-    expect(view.getByText(copyVi.countdown.body)).toBeTruthy()
     jest.useRealTimers()
   })
 

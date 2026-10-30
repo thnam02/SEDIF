@@ -1,11 +1,12 @@
-appId: com.fides.saobank
+# Scene A — expected level 0. Người nhận đã lưu, không có cuộc gọi.
+appId: com.hainamtran.saobank
 ---
 - launchApp
-- tapOn: "Trương Gia Thịnh"
+- tapOn: ".*Trương Gia Thịnh.*"
 - tapOn: "Chuyển tiền"
-- tapOn: "CHU DAU TU NGUYEN HUE"
+- tapOn: ".*CHU DAU TU NGUYEN HUE.*"
 - tapOn: "Xác nhận giao dịch"
 - tapOn:
-    text: "Xác nhận giao dịch"
-    index: 1
+    id: "confirm-transfer"
 - assertVisible: "Chuyển tiền thành công"
+- assertNotVisible: "Tạm dừng để xác minh"
