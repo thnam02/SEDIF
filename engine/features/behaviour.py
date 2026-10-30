@@ -8,6 +8,7 @@ dưới 2 mới được ghi. Production chờ inclusion_delay_hours. Thí nghi�
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -358,6 +359,55 @@ def remember(client, view: View | None, level: int) -> None:
     client.set(key_for(view.user, view.task_type), json.dumps({"records": rows}, ensure_ascii=False))
 
 
+def draw_person(rng: random.Random) -> dict:
+    """Tốc độ và tần suất rời app riêng từng người. sd 0,4 trên log của khoảng dừng và dwell."""
+    return {
+        "speed": math.exp(rng.gauss(0.0, 0.4)),
+        "pause": math.exp(rng.gauss(0.0, 0.4)),
+        "background_rate": math.exp(rng.gauss(math.log(1.5), 0.55)),
+        "background_ms": math.exp(rng.gauss(math.log(1500.0), 0.3)),
+    }
+
+
+def _poisson(rng: random.Random, rate: float) -> int:
+    if rate <= 0:
+        return 0
+    limit = math.exp(-rate)
+    count = 0
+    product = 1.0
+    while product > limit:
+        count += 1
+        product *= rng.random()
+    return count - 1
+
+
+def _apply_shift(features: dict, shift: dict | None) -> None:
+    for name, spec in (shift or {}).items():
+        if name not in features:
+            continue
+        kind, amount = spec
+        updated = features[name] * float(amount) if kind == "mul" else features[name] + float(amount)
+        if name in COUNTS:
+            features[name] = float(max(0, int(round(updated))))
+        else:
+            features[name] = max(0.0, float(updated))
+
+
+_TIMED = ("median_gap_ms", "p90_gap_ms", "review_dwell_ms")
+
+
+def draw_session(rng: random.Random, task_type: str, person: dict, shift: dict | None = None) -> dict:
+    features = draw_features(rng, task_type)
+    for name in _TIMED:
+        features[name] *= person["speed"]
+    features["pause_to_action_ratio"] *= person["pause"]
+    switches = _poisson(rng, person["background_rate"])
+    features["background_count"] = float(switches)
+    features["background_total_ms"] = float(switches) * person["background_ms"]
+    _apply_shift(features, shift)
+    return features
+
+
 def draw_features(rng: random.Random, task_type: str, shift: dict | None = None) -> dict:
     scale = _TASK_SCALE.get(task_type, 1.0)
     drawn = {}
@@ -380,32 +430,40 @@ def draw_features(rng: random.Random, task_type: str, shift: dict | None = None)
     return drawn
 
 
-def write_synthetic_references(root: Path | None = None, seed: int = 42, users: int = 60, sessions: int = 12, pool: int = 400) -> None:
-    """Reference S dựng bằng đúng giao thức baseline cá nhân theo thời gian."""
+def write_synthetic_references(root: Path | None = None, seed: int = 42, users: int = 800, sessions: int = 16, pool_people: int = 80, pool_sessions: int = 8) -> None:
+    """Reference S từ generator có khác biệt giữa người, cùng giao thức chấm rồi mới ghi."""
     target = root or REF_DIR
     target.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
-    directions = {name: "up" for name in SCORED}
+    cfg = settings()
     for task in TASKS:
-        pool_rows = [draw_features(rng, task) for _ in range(pool)]
+        pool_rows = []
+        for _person in range(pool_people):
+            person = draw_person(rng)
+            for _session in range(pool_sessions):
+                pool_rows.append(draw_session(rng, task, person))
         population = population_stats(pool_rows)
         scores = []
+        baseline_n = []
         for _user in range(users):
+            person = draw_person(rng)
             history: list[dict] = []
             for _session in range(sessions):
-                features = draw_features(rng, task)
-                scored = score_features(features, history, population, directions)
+                features = draw_session(rng, task, person)
+                scored = score_features(features, history, population, cfg["directions"], cfg["prior"], cfg["floor"])
                 scores.append(scored.score)
+                baseline_n.append(len(history))
                 history.append(features)
-                if len(history) > 30:
-                    history = history[-30:]
+                if len(history) > cfg["max_sessions"]:
+                    history = history[-cfg["max_sessions"] :]
         document = {
             "task_type": task,
             "provenance": "synthetic, demo only",
-            "protocol": "chronological personal baseline; scored before inclusion; level < 2",
+            "protocol": "chronological personal baseline; scored before inclusion; level < 2; last 30; heterogeneous persons",
             "seed": seed,
             "population": population,
             "scores": scores,
+            "baseline_n": baseline_n,
         }
         (target / f"{task}.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
         _REFS.pop(task, None)

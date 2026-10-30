@@ -21,10 +21,11 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO)]
 
 from engine.features.behaviour import (
-    COUNTS,
     PRIMARY,
-    draw_features,
+    draw_person,
+    draw_session,
     empirical_p,
+    load_reference,
     population_stats,
     score_features,
     settings,
@@ -46,7 +47,7 @@ LEGIT = {
     "p90_gap_ms": ("mul", 1.05),
 }
 GAP_SHIFTS = (0.10, 0.20, 0.30, 0.50)
-_TIMED = ("median_gap_ms", "p90_gap_ms", "review_dwell_ms")
+BASELINE_SIZES = (3, 6, 10, 15)
 ALIASES = {
     "baseline": "baseline",
     "normal": "normal_call",
@@ -172,50 +173,16 @@ def legit_share(rows: list[dict]) -> tuple[int, int]:
     return len(hit), len(chosen)
 
 
-def draw_person(rng: random.Random) -> dict:
-    """Tốc độ và tần suất rời app riêng từng người. sd 0,4 trên log của khoảng dừng và dwell."""
-    return {
-        "speed": math.exp(rng.gauss(0.0, 0.4)),
-        "pause": math.exp(rng.gauss(0.0, 0.4)),
-        "background_rate": math.exp(rng.gauss(math.log(1.5), 0.55)),
-        "background_ms": math.exp(rng.gauss(math.log(1500.0), 0.3)),
-    }
-
-
-def _poisson(rng: random.Random, rate: float) -> int:
-    if rate <= 0:
-        return 0
-    limit = math.exp(-rate)
-    count = 0
-    product = 1.0
-    while product > limit:
-        count += 1
-        product *= rng.random()
-    return count - 1
-
-
-def _apply_shift(features: dict, shift: dict | None) -> None:
-    for name, spec in (shift or {}).items():
-        if name not in features:
-            continue
+def describe_shift(shift: dict) -> str:
+    parts = []
+    for name, spec in shift.items():
         kind, amount = spec
-        updated = features[name] * float(amount) if kind == "mul" else features[name] + float(amount)
-        if name in COUNTS:
-            features[name] = float(max(0, int(round(updated))))
+        if kind == "mul":
+            parts.append(f"{name} ×{amount:g}")
         else:
-            features[name] = max(0.0, float(updated))
-
-
-def realize(rng: random.Random, person: dict, shift: dict | None = None) -> dict:
-    features = draw_features(rng, "new_typed")
-    for name in _TIMED:
-        features[name] *= person["speed"]
-    features["pause_to_action_ratio"] *= person["pause"]
-    switches = _poisson(rng, person["background_rate"])
-    features["background_count"] = float(switches)
-    features["background_total_ms"] = float(switches) * person["background_ms"]
-    _apply_shift(features, shift)
-    return features
+            sign = "+" if amount >= 0 else ""
+            parts.append(f"{name} {sign}{amount:g}")
+    return ", ".join(parts)
 
 
 def synthetic_people(count: int = 40, seed: int = 42) -> list[dict]:
@@ -234,7 +201,7 @@ def synthetic_people(count: int = 40, seed: int = 42) -> list[dict]:
                     "condition": condition,
                     "session_index": cursor,
                     "task_type": "new_typed",
-                    "features": realize(rng, traits, shift),
+                    "features": draw_session(rng, "new_typed", traits, shift),
                     "call": condition != "baseline",
                     "new_payee": condition != "baseline",
                 }
@@ -321,6 +288,8 @@ def analyse(sessions: list[dict], label: str) -> None:
         f"primary AUC guided vs normal-call (pause_to_action_ratio, p90_gap_ms, background_total_ms) "
         f"{personal[0]:.3f} CI95 {personal[1]:.3f} {personal[2]:.3f}"
     )
+    if label == "synthetic":
+        print(f"synthetic effect size chosen by us: {describe_shift(GUIDED)}")
     print(f"population-only baseline AUC {population_only[0]:.3f} CI95 {population_only[1]:.3f} {population_only[2]:.3f}")
     print(f"personal baseline AUC {personal[0]:.3f}")
     drop = personal[0] - evasion[0]
@@ -337,58 +306,91 @@ def _rarity(features: dict, history: list[dict], population: dict, reference: li
     return empirical_p(scored.score, reference)
 
 
-def recovery(people: int = 80, calibration: int = 40) -> None:
-    """Đường phát hiện. Reference là phiên không dịch của nhóm hiệu chỉnh, cùng giao thức."""
-    cfg = settings()
-    rng = random.Random(7)
-    calibration_rows = []
-    for index in range(calibration):
-        traits = draw_person(rng)
-        for session_index in range(10):
-            calibration_rows.append(
-                {
-                    "participant_id": f"C{index:03d}",
-                    "condition": "baseline",
-                    "session_index": session_index,
-                    "task_type": "new_typed",
-                    "features": realize(rng, traits),
-                }
-            )
-    population = population_of(calibration_rows).get("new_typed") or {}
-    fitted = walk(calibration_rows, {"new_typed": population}, cfg["directions"], cfg, None)
-    reference = [row["S"] for row in fitted if row["n"] >= 6]
+def _artifact(task: str = "new_typed") -> tuple[dict, list[float], list[int], str]:
+    loaded = load_reference(task)
+    if not loaded:
+        raise SystemExit(f"missing behaviour reference for {task}")
+    scores = [float(item) for item in loaded["scores"]]
+    sizes = [int(item) for item in loaded.get("baseline_n") or []]
+    return loaded["population"], scores, sizes, str(loaded.get("provenance") or "")
+
+
+def _slice_reference(scores: list[float], sizes: list[int], n_prior: int | None) -> list[float]:
+    if n_prior is None or len(sizes) != len(scores):
+        return scores
+    chosen = [score for score, size in zip(scores, sizes) if size == n_prior]
+    return chosen or scores
+
+
+def _probes(rng: random.Random, people: int, n_prior: int) -> list[tuple[list[dict], dict]]:
     probes = []
     for _ in range(people):
         traits = draw_person(rng)
-        history = [realize(rng, traits) for _ in range(6)]
-        plain = realize(rng, traits)
+        history = [draw_session(rng, "new_typed", traits) for _ in range(n_prior)]
+        plain = draw_session(rng, "new_typed", traits)
         probes.append((history, plain))
-    false_alarms = 0
+    return probes
+
+
+def _hit_rate(probes, population, reference, cfg, gap: float, extra: int) -> tuple[int, int]:
+    detected = 0
     for history, plain in probes:
-        rarity = _rarity(plain, history, population, reference, cfg)
+        moved = dict(plain)
+        if gap:
+            moved["median_gap_ms"] = plain["median_gap_ms"] * (1.0 + gap)
+            moved["p90_gap_ms"] = plain["p90_gap_ms"] * (1.0 + gap)
+        if extra:
+            moved["background_count"] = float(plain["background_count"] + extra)
+        rarity = _rarity(moved, history, population, reference, cfg)
         if rarity is not None and rarity <= 0.05:
-            false_alarms += 1
-    false_rate = false_alarms / people
+            detected += 1
+    return detected, len(probes)
+
+
+def recovery(people: int = 400) -> None:
+    """Đường phát hiện. p_rarity dùng reference đã ghi, cùng số phiên nền với probe."""
+    cfg = settings()
+    population, scores, sizes, provenance = _artifact()
+    same = _slice_reference(scores, sizes, 6)
+    rng = random.Random(7)
+    probes = _probes(rng, people, 6)
+    same_alarms, total = _hit_rate(probes, population, same, cfg, 0.0, 0)
+    false_alarms, _total = _hit_rate(probes, population, scores, cfg, 0.0, 0)
     print("recovery curve (synthetic, between-person heterogeneity)")
-    print(f"recovery reference sessions {len(reference)} (unshifted, n>=6, chronological personal baseline)")
-    print(f"false-alarm sessions {people} unshifted probes from the same participants")
+    print(f"recovery reference: {provenance}; pooled chronological scores n={len(scores)}")
+    print(
+        f"false-alarm prior=6 pooled {false_alarms / total:.3f} ({false_alarms}/{total}) "
+        f"same-baseline-size {same_alarms / total:.3f} ({same_alarms}/{total}) reference {len(same)}"
+    )
+    false_rate = false_alarms / total
     for gap in GAP_SHIFTS:
         for extra in (0, 1):
-            detected = 0
-            for history, plain in probes:
-                moved = dict(plain)
-                moved["median_gap_ms"] = plain["median_gap_ms"] * (1.0 + gap)
-                moved["p90_gap_ms"] = plain["p90_gap_ms"] * (1.0 + gap)
-                if extra:
-                    moved["background_count"] = float(plain["background_count"] + 1)
-                rarity = _rarity(moved, history, population, reference, cfg)
-                if rarity is not None and rarity <= 0.05:
-                    detected += 1
+            detected, count = _hit_rate(probes, population, scores, cfg, gap, extra)
             print(
                 f"gap +{int(gap * 100)}% background +{extra} "
-                f"detection {detected / people:.3f} ({detected}/{people}) "
-                f"false-alarm {false_rate:.3f} ({false_alarms}/{people})"
+                f"detection {detected / count:.3f} ({detected}/{count}) "
+                f"false-alarm {false_rate:.3f} ({false_alarms}/{total})"
             )
+
+
+def sensitivity(people: int = 400) -> None:
+    cfg = settings()
+    population, scores, sizes, provenance = _artifact()
+    rng = random.Random(11)
+    print(f"baseline-size sensitivity ({provenance}, gaps only, null matched to prior-session count)")
+    print("prior false-alarm detection_+30% detection_+50%")
+    for n_prior in BASELINE_SIZES:
+        reference = _slice_reference(scores, sizes, n_prior)
+        probes = _probes(rng, people, n_prior)
+        alarms, total = _hit_rate(probes, population, reference, cfg, 0.0, 0)
+        hit30, _ = _hit_rate(probes, population, reference, cfg, 0.30, 0)
+        hit50, _ = _hit_rate(probes, population, reference, cfg, 0.50, 0)
+        print(
+            f"{n_prior} {alarms / total:.3f} ({alarms}/{total}) "
+            f"{hit30 / total:.3f} ({hit30}/{total}) "
+            f"{hit50 / total:.3f} ({hit50}/{total}) "
+            f"reference {len(reference)}"
+        )
 
 
 def _t_crit(df: int) -> float:
@@ -441,6 +443,7 @@ def main() -> None:
         print("heterogeneity: log-normal sd 0.4 on gaps, dwell, and pause_to_action_ratio; personal background-switch rate")
         analyse(synthetic_people(), "synthetic")
     recovery()
+    sensitivity()
     power()
 
 

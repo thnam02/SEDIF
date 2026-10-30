@@ -278,6 +278,9 @@ def test_shipped_reference_is_labelled_synthetic():
     assert loaded is not None
     assert loaded["provenance"] == "synthetic, demo only"
     assert len(loaded["scores"]) >= 100
+    assert loaded["baseline_n"]
+    assert len(loaded["baseline_n"]) == len(loaded["scores"])
+    assert loaded["population"]["background_total_ms"]["mad"] > 0
     assert empirical_p(max(loaded["scores"]) + 1, loaded["scores"]) < empirical_p(min(loaded["scores"]), loaded["scores"])
 
 
