@@ -1,7 +1,8 @@
 # Scene C — chỉ Trương Gia Thịnh có 10 phiên nền. Cuộc gọi, người nhận gõ mới. Mức 2.
 appId: com.hainamtran.saobank
 ---
-- launchApp
+- launchApp:
+    clearKeychain: true
 - tapOn: ".*Trương Gia Thịnh.*"
 - repeat:
     times: 7

@@ -1,7 +1,8 @@
 # Scene D — Hoàng Văn Tâm. device.state active_capture, giả lập demo có gắn nhãn. Mức 2.
 appId: com.hainamtran.saobank
 ---
-- launchApp
+- launchApp:
+    clearKeychain: true
 - tapOn: ".*Hoàng Văn Tâm.*"
 - tapOn: "Chuyển tiền"
 - tapOn:

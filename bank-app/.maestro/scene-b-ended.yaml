@@ -1,7 +1,8 @@
 # Scene B — cuộc gọi kết thúc giữa phiên, vẫn mức 2.
 appId: com.hainamtran.saobank
 ---
-- launchApp
+- launchApp:
+    clearKeychain: true
 - tapOn: ".*Huỳnh Thị Mận.*"
 - repeat:
     times: 7

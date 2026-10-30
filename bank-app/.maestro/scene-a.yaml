@@ -1,7 +1,8 @@
 # Scene A — Lê Kim Trân. Cuộc gọi và quét QR tới cửa hàng mới. Mức 1.
 appId: com.hainamtran.saobank
 ---
-- launchApp
+- launchApp:
+    clearKeychain: true
 - tapOn: ".*Lê Kim Trân.*"
 - repeat:
     times: 7

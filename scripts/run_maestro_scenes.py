@@ -47,6 +47,7 @@ def isolate(accounts: tuple[str, ...]) -> None:
         for task in TASKS:
             redis("DEL", key_for(user, task))
     listed = ",".join(f"'{account}'" for account in accounts)
+    unfinished = "('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup')"
     subprocess.run(
         [
             "docker",
@@ -58,7 +59,13 @@ def isolate(accounts: tuple[str, ...]) -> None:
             "fides",
             "-d",
             "fides",
+            "-v",
+            "ON_ERROR_STOP=1",
             "-c",
+            f"DELETE FROM bank.guardian_requests WHERE account_id IN ({listed});"
+            f"DELETE FROM bank.idempotency WHERE transfer_id IN ("
+            f"SELECT id FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished});"
+            f"DELETE FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished};"
             f"DELETE FROM bank.products WHERE account_id IN ({listed}) AND channel IN ('app','branch') AND id <> 'P-demo-branch-closure';",
         ],
         check=True,

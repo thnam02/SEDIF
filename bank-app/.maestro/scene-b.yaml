@@ -1,7 +1,8 @@
 # Scene B — cuộc gọi, tất toán sổ, người nhận mới, 120.000.000. Mức 2.
 appId: com.hainamtran.saobank
 ---
-- launchApp
+- launchApp:
+    clearKeychain: true
 - tapOn: ".*Huỳnh Thị Mận.*"
 - repeat:
     times: 7

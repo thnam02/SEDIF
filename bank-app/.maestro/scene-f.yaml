@@ -1,7 +1,8 @@
 # Scene F — mục đích cơ quan nhà nước. Mức 2, người thân xác nhận.
 appId: com.hainamtran.saobank
 ---
-- launchApp
+- launchApp:
+    clearKeychain: true
 - tapOn: ".*Huỳnh Thị Mận.*"
 - tapOn: ".*Cá nhân.*"
 - tapOn: "Người thân bảo vệ"

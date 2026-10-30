@@ -131,4 +131,33 @@ if [ "$bank_code" != "200" ]; then
   echo "$bank_body" >&2
   exit 22
 fi
+# Lệnh treo và yêu cầu giám hộ của bốn khách demo. Không đụng sổ lịch sử đã xong.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DELETE FROM bank.guardian_requests
+WHERE account_id IN (
+    'A0000623', 'A0050272', 'A0072556', 'A0077690',
+    'A0002119',
+    'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
+    'A0031239'
+);
+DELETE FROM bank.idempotency
+WHERE transfer_id IN (
+    SELECT id FROM bank.transfers
+    WHERE from_account IN (
+        'A0000623', 'A0050272', 'A0072556', 'A0077690',
+        'A0002119',
+        'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
+        'A0031239'
+    )
+      AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup')
+);
+DELETE FROM bank.transfers
+WHERE from_account IN (
+    'A0000623', 'A0050272', 'A0072556', 'A0077690',
+    'A0002119',
+    'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
+    'A0031239'
+)
+  AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup');
+SQL
 echo ready
