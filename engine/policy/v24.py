@@ -659,6 +659,7 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
             fired.append(rule)
             fired_ids.add(rule["id"])
     rule_level = max((int(rule["level"]) for rule in fired), default=0)
+    # Trần, không phải sàn: tín hiệu ngữ cảnh không đưa mức lên trên 1.
     contextual = [signals[name] for name in policy["contextual_signals"] if signals[name].status == "present"]
     if contextual and rule_level < 2:
         contextual_rule = next(rule for rule in policy["rules"] if rule.get("contextual_only"))
