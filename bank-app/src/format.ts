@@ -17,8 +17,42 @@ export function vnd(amount: number): string {
   return `${grouped(amount)} đ`
 }
 
+/** Số hiển thị 10 chữ số, hậu tố khác nhau. Mã nội bộ không đưa ra màn hình. */
+const DEMO_NUMBERS: Record<string, string> = {
+  A0119434: "0901119434",
+  ZCAP400000000001: "0902401001",
+  ZGUIDE4000000001: "0902402001",
+  ZMULEDEMO0000001: "0902003001",
+  ZMED230000000001: "0902230230",
+  ZMED220000000001: "0902220220",
+  ZMED000000000001: "0902000001",
+  ZLANB40000000001: "0902101002",
+  ZLANB40000000002: "0902102002",
+  ZLAN120000000001: "0902120120",
+  ZANH000000000099: "0902000099",
+  ZVAY000000000001: "0902004001",
+}
+
+function accountKey(id: string): string {
+  return id.replace(/\s/g, "").toUpperCase()
+}
+
+export function displayDigits(id: string): string {
+  const key = accountKey(id)
+  if (DEMO_NUMBERS[key]) return DEMO_NUMBERS[key]
+  const digits = key.replace(/\D/g, "")
+  return digits.length >= 4 ? digits.padStart(10, "0").slice(-10) : digits
+}
+
+export function showAccount(id: string): string {
+  const digits = displayDigits(id)
+  if (digits.length < 10) return maskAccount(id)
+  if (!DEMO_NUMBERS[accountKey(id)]) return maskAccount(id)
+  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+}
+
 export function maskAccount(id: string): string {
-  const tail = id.replace(/\s/g, "").slice(-4)
+  const tail = displayDigits(id).slice(-4)
   return tail ? `•••• ${tail}` : ""
 }
 

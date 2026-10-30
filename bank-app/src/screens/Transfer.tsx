@@ -10,8 +10,8 @@ import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
-import { digits, grouped, maskAccount, parseTransferDraft, vnd } from "../format"
-import { displayHolder, givenName, payeeName, transferNote } from "../names"
+import { digits, grouped, maskAccount, parseTransferDraft, showAccount, vnd } from "../format"
+import { displayHolder, payeeName, recentLabel, transferNote } from "../names"
 import { personas } from "../personas"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -119,7 +119,7 @@ export function RecipientScreen() {
               <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
                 <Text style={{ color: colors.deep, fontWeight: "700" }}>{name.slice(0, 1)}</Text>
               </View>
-              <Text numberOfLines={1} style={{ color: colors.navy, fontSize: 11 }}>{givenName(name)}</Text>
+              <Text numberOfLines={1} style={{ color: colors.navy, fontSize: 11 }}>{recentLabel(name)}</Text>
             </Pressable>
           )
         })}
@@ -154,7 +154,7 @@ export function RecipientScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ color: colors.navy, fontWeight: "700", fontSize: type.body }}>{payeeName(item.holder_name, item.account_id) || displayHolder(item.holder_name)}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {maskAccount(item.account_id)}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {showAccount(item.account_id)}</Text>
           </View>
         </Pressable>
       ))}
@@ -227,6 +227,7 @@ export function AmountScreen() {
   const [bankOpen, setBankOpen] = useState(false)
   const [purposeOpen, setPurposeOpen] = useState(false)
   const [amountFocused, setAmountFocused] = useState(false)
+  const [destFocused, setDestFocused] = useState(false)
   const amountRef = useRef<TextInput>(null)
   const [dest, setDest] = useState(toAccount)
   const type = useType()
@@ -307,7 +308,7 @@ export function AmountScreen() {
           <ChevronDown size={18} color={colors.deep} />
         </Pressable>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <TextInput testID="dest-account" value={dest} onChangeText={onDest} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "account" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "account" })} keyboardType="number-pad" style={{ flex: 1, color: colors.navy, fontSize: type.body }} />
+          <TextInput testID="dest-account" value={destFocused ? dest : (showAccount(dest) || dest)} onChangeText={onDest} onFocus={() => { setDestFocused(true); sessionRecorder.note({ type: "field_focus", field: "account" }) }} onBlur={() => { setDestFocused(false); sessionRecorder.note({ type: "field_blur", field: "account" }) }} keyboardType="number-pad" style={{ flex: 1, color: colors.navy, fontSize: type.body }} />
           <Pressable testID="dest-contacts" accessibilityRole="button" onPress={() => router.push("/(main)/transfer/recipient")}>
             <Contact size={18} color={colors.deep} />
           </Pressable>
@@ -400,10 +401,10 @@ export function ConfirmScreen() {
       <Header title={copy.confirm} tools />
       <Card>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.source}</Text>
-        <Text style={{ color: colors.navy, fontWeight: "700" }}>{maskAccount(accountId)}</Text>
+        <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.balance} {maskAccount(accountId)}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.payee}</Text>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{resolved || copy.payee}</Text>
-        <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {maskAccount(toAccount)}</Text>
+        <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {showAccount(toAccount)}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.moneyLabel}</Text>
         <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{vnd(amount)}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.noteField}</Text>
@@ -550,7 +551,7 @@ export function ResultScreen() {
           </View>
           <Card>
             <Text style={{ color: colors.navy, fontWeight: "700" }}>{who}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {maskAccount(outcome.payee)}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {showAccount(outcome.payee)}</Text>
             <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{vnd(outcome.amount)}</Text>
           </Card>
           {outcome.reasonsVi.map((line) => (
@@ -559,7 +560,7 @@ export function ResultScreen() {
               <Text style={{ flex: 1, color: colors.navy, fontSize: type.body }}>{line}</Text>
             </View>
           ))}
-          <Text style={{ color: colors.navy, fontSize: type.body }}>{copy.level3Mock}</Text>
+          <Text style={{ color: "#94A3B8", fontSize: type.small }}>{copy.level3Mock}</Text>
           <EntryDetailLine />
           <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
         </View>
@@ -576,7 +577,7 @@ export function ResultScreen() {
           </View>
           <Card>
             <Text style={{ color: colors.navy, fontWeight: "700" }}>{who}</Text>
-            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {maskAccount(outcome.payee)}</Text>
+            <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {showAccount(outcome.payee)}</Text>
             <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{vnd(outcome.amount)}</Text>
           </Card>
           {outcome.reasonsVi.map((line) => (
@@ -625,7 +626,7 @@ export function ResultScreen() {
         </View>
         <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.success}</Text>
         <Text style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }}>{vnd(outcome.amount)}</Text>
-        <Text style={{ color: "#64748B", fontSize: type.body }}>{who} · {copy.bankName} · {maskAccount(outcome.payee)}</Text>
+        <Text style={{ color: "#64748B", fontSize: type.body }}>{who} · {copy.bankName} · {showAccount(outcome.payee)}</Text>
         <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
       </View>
     </Screen>

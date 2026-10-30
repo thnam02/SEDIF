@@ -38,7 +38,58 @@ def redis(*args: str) -> None:
     subprocess.run(["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15", *args], check=True)
 
 
+def scrub_demo_window(accounts: tuple[str, ...]) -> None:
+    """Bỏ dấu demo từ 20/09 trở đi để cửa sổ 24 giờ không cộng lệnh của cảnh trước."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    cut = int(datetime(2026, 9, 20, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")).timestamp() * 1_000_000)
+    hashes = ",".join(account_hash(account) for account in accounts)
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-i",
+            "-e",
+            f"CUT={cut}",
+            "-e",
+            f"HASHES={hashes}",
+            "sedif-engine-1",
+            "python",
+            "-c",
+            """
+import os, redis
+client = redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True)
+cut = int(os.environ["CUT"])
+def scrub(key):
+    for field, value in client.hscan_iter(key, count=400):
+        parts = value.split("|")
+        raw = parts[1] if len(parts) >= 3 else value
+        try:
+            stamp = int(raw)
+        except ValueError:
+            continue
+        if stamp >= cut:
+            client.hdel(key, field)
+for digest in os.environ["HASHES"].split(","):
+    if not digest:
+        continue
+    for prefix in ("f:out:", "f:fresh:", "f:xf:", "f:in:"):
+        client.zremrangebyscore(prefix + digest, cut, "+inf")
+    for kind in ("savings_liquidation", "quick_loan_disbursement", "limit_raise", "credit_card_cash_advance", "term_deposit_closure"):
+        client.zremrangebyscore(f"f:prod:{kind}:{digest}", cut, "+inf")
+    scrub(f"f:fst:{digest}")
+    customer = client.hget(f"f:meta:{digest}", "customer")
+    if customer:
+        scrub(f"f:fstc:{customer}")
+""",
+        ],
+        check=True,
+    )
+
+
 def isolate(accounts: tuple[str, ...]) -> None:
+    scrub_demo_window(accounts)
     for account in accounts:
         user = account_hash(account)
         redis("DEL", f"pol:v24:{user}")

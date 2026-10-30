@@ -617,7 +617,11 @@ def _reason_text(name: str, facts: Facts, funds: list[dict]) -> str:
     if name == "model_p_high":
         return "Mẫu chấm điểm cho lệnh này một điểm cao."
     if name == "model_p_cost":
-        return "Số tiền lớn và giao dịch khác thường so với lịch sử"
+        # Khớp purpose_amount_vnd của app. Dưới ngưỡng không nói "số tiền lớn".
+        base = "Giao dịch khác thường so với lịch sử của bạn"
+        if int(facts.amount) >= 10_000_000:
+            return f"Số tiền lớn và {base[:1].lower()}{base[1:]}"
+        return base
     if name == "behaviour_rare":
         return "Cách thao tác khác với những lần chuyển cùng loại trước đây."
     if name == "screen_capture_active":

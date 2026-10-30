@@ -5,7 +5,7 @@ import { ArrowRight, Bell, ChevronDown, ChevronUp, CreditCard, Eye, EyeOff, Hand
 
 import { useAccount, useHistory } from "../api/queries"
 import { copy } from "../copy/vi"
-import { maskAccount, movementTitle, statement, vnd, when } from "../format"
+import { movementTitle, showAccount, statement, vnd, when } from "../format"
 import { payeeName } from "../names"
 import { personas } from "../personas"
 import { DEMO, useBank } from "../store"
@@ -161,7 +161,7 @@ function RecentList({ accountId }: { accountId: string | null }) {
         const inbound = item.direction === "in"
         const who = payeeName(item.counterparty_name, item.counterparty_id)
         const title = movementTitle({ ...item, counterparty_name: who })
-        const party = item.counterparty_id ? `${copy.bankName} · ${maskAccount(item.counterparty_id)}` : ""
+        const party = item.counterparty_id ? `${copy.bankName} · ${showAccount(item.counterparty_id)}` : ""
         return (
           <View key={`${item.tx_id}-${item.direction}`} testID="recent-tx" style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12, gap: 12 }}>
             <View style={{ flex: 1 }}>

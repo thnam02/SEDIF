@@ -70,8 +70,7 @@ def _wait(url: str) -> None:
 
 
 def _advance(seconds: float) -> None:
-    _request("POST", "http://127.0.0.1:8092/clock/resume")
-    time.sleep(seconds / 60 + 0.05)
+    _request("POST", "http://127.0.0.1:8092/clock/advance", {"seconds": seconds})
     _request("POST", "http://127.0.0.1:8092/clock/pause")
 
 
@@ -97,10 +96,10 @@ def test_fee_high_and_mule_warning():
     frozen = _request("GET", "http://127.0.0.1:8092/clock")
     time.sleep(0.3)
     still = _request("GET", "http://127.0.0.1:8092/clock")
-    assert frozen["paused"] and frozen["ts"] == still["ts"]
+    assert frozen["paused"] is False and still["ts"] > frozen["ts"] and still["ts"].startswith("2026-09-20")
     _advance(30)
     moved = _request("GET", "http://127.0.0.1:8092/clock")
-    assert moved["ts"] > frozen["ts"] and moved["paused"]
+    assert moved["ts"] > still["ts"] and moved["paused"]
     skipped = _request("POST", "http://127.0.0.1:8092/demo/persona", {"customer_id": "C002119"})
     assert "A0002119" in skipped["skipped_accounts"]
 

@@ -32,7 +32,7 @@ export function Screen({ children, call = false, footer }: { children: ReactNode
 
 const round = { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center" as const, justifyContent: "center" as const }
 
-export function Header({ title, subtitle, tools = false }: { title: string; subtitle?: string; tools?: boolean }) {
+export function Header({ title, subtitle, tools = false, shield = true }: { title: string; subtitle?: string; tools?: boolean; shield?: boolean }) {
   const router = useRouter()
   const type = useType()
   return (
@@ -43,12 +43,12 @@ export function Header({ title, subtitle, tools = false }: { title: string; subt
         </Pressable>
       ) : null}
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{title}</Text>
+        <Text numberOfLines={2} style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{title}</Text>
         {subtitle ? <Text style={{ color: "#64748B", fontSize: type.small }}>{subtitle}</Text> : null}
       </View>
       {tools ? (
         <View style={{ flexDirection: "row", gap: 8 }}>
-          {DEMO ? (
+          {DEMO && shield ? (
             <Pressable testID="demo-drawer" accessibilityRole="button" accessibilityLabel="Phiên FIDES" onPress={openDemoDrawer} onLongPress={openDemoDrawer} style={round}>
               <ShieldCheck size={16} color={colors.deep} />
             </Pressable>

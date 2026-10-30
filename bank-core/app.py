@@ -45,7 +45,7 @@ FUNDS_KINDS = (
 DEMO_MULE_ACCOUNTS = frozenset({"ZMULEDEMO0000001"})
 RESET_AT = datetime.fromisoformat("2026-09-20T09:00:00+07:00")
 
-CLOCK = DemoClock(speed=float(os.environ.get("DEMO_CLOCK_SPEED", "60")))
+CLOCK = DemoClock(speed=float(os.environ.get("DEMO_CLOCK_SPEED", "1")))
 # Người nhận chỉ có trong các cảnh demo. Không phải khách thật.
 DEMO_PAYEES = {
     "A0119434": "Công ty TNHH Thành Công",
@@ -504,7 +504,7 @@ def _build_feed() -> None:
 def _play() -> None:
     global FEED_CURSOR
     while True:
-        if CLOCK.paused or FEED_CURSOR >= len(FEED):
+        if CLOCK.paused or not CLOCK.feed or FEED_CURSOR >= len(FEED):
             threading.Event().wait(0.2)
             continue
         stamp, sender, event = FEED[FEED_CURSOR]
@@ -547,12 +547,39 @@ def seed_demo_payees(conn) -> None:
         )
 
 
-def correct_epoch_stamps(conn) -> None:
-    """Đồng hồ demo từng đứng ở 00:00 ngày đặt lại. Các dòng đó là buổi sáng demo, 09:00."""
+def _varied_stamp(key: str, funds: bool) -> datetime:
+    """Giờ khác nhau trên các ngày trước 20/09. Khoản tiền vào thì trước cửa sổ 72 giờ."""
+    import hashlib
+
+    digest = int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16)
+    day = 15 + (digest % 2) if funds else 17 + (digest % 3)
+    return datetime(2026, 9, day, 7 + (digest % 12), (digest // 7) % 60, (digest // 13) % 60, tzinfo=ICT)
+
+
+def spread_frozen_stamps(conn) -> None:
+    """Dòng demo từng đóng cùng một mốc được trải ra các ngày trước, để sổ không còn một giờ."""
     epoch = datetime(2026, 9, 20, tzinfo=ICT)
-    conn.execute("UPDATE bank.entries SET ts = %s WHERE ts = %s", (RESET_AT, epoch))
-    conn.execute("UPDATE bank.transfers SET created_at = %s WHERE created_at = %s", (RESET_AT, epoch))
-    conn.execute("UPDATE bank.products SET ts = %s WHERE ts = %s", (RESET_AT, epoch))
+    frozen = (epoch, RESET_AT)
+    funds = set(FUNDS_KINDS)
+    for table, column, key in (
+        ("bank.entries", "ts", "tx_id"),
+        ("bank.transfers", "created_at", "id"),
+        ("bank.products", "ts", "id"),
+    ):
+        rows = conn.execute(
+            f"SELECT {key} AS key, {column} AS ts FROM {table} WHERE {column} = %s OR {column} = %s",
+            frozen,
+        ).fetchall()
+        for row in rows:
+            if table == "bank.products" and row["key"] == BRANCH_CLOSURE_ID:
+                continue
+            kind = ""
+            if table == "bank.products":
+                kind = conn.execute("SELECT kind FROM bank.products WHERE id = %s", (row["key"],)).fetchone()["kind"]
+            elif table == "bank.entries":
+                kind = conn.execute("SELECT tx_type FROM bank.entries WHERE tx_id = %s LIMIT 1", (row["key"],)).fetchone()["tx_type"]
+            stamp = _varied_stamp(str(row["key"]), kind in funds)
+            conn.execute(f"UPDATE {table} SET {column} = %s WHERE {key} = %s AND ({column} = %s OR {column} = %s)", (stamp, row["key"], epoch, RESET_AT))
 
 
 def backfill_counterparties(conn) -> None:
@@ -624,7 +651,11 @@ def seed_branch_closure(conn) -> None:
         VALUES (%s, 'A0119955', 1000000, 'savings_liquidation', %s, 'branch')
         ON CONFLICT (id) DO NOTHING
         """,
-        (BRANCH_CLOSURE_ID, datetime.fromisoformat("2026-09-20T08:00:00+07:00")),
+        (BRANCH_CLOSURE_ID, datetime.fromisoformat("2026-09-20T07:12:00+07:00")),
+    )
+    conn.execute(
+        "UPDATE bank.products SET ts = %s WHERE id = %s",
+        (datetime.fromisoformat("2026-09-20T07:12:00+07:00"), BRANCH_CLOSURE_ID),
     )
 
 
@@ -642,11 +673,10 @@ def boot() -> None:
             load_reset(conn)
         seed_branch_closure(conn)
         seed_demo_payees(conn)
-        correct_epoch_stamps(conn)
+        spread_frozen_stamps(conn)
         backfill_counterparties(conn)
         conn.commit()
-    if CLOCK.now() <= datetime(2026, 9, 20, tzinfo=ICT):
-        CLOCK.seek(RESET_AT)
+    CLOCK.reanchor()
     if os.environ.get("DEMO_REPLAY", "1") == "1" and not _REPLAY_STARTED:
         threading.Thread(target=_build_feed, daemon=True).start()
         threading.Thread(target=_play, daemon=True).start()
@@ -720,7 +750,7 @@ def demo_reset(body: ResetIn) -> dict:
         remember_reset(conn, body.reset_id)
         conn.commit()
     LEDGER_MISMATCH = False
-    CLOCK.seek(RESET_AT)
+    CLOCK.reanchor()
     return {"status": "ok", "reset_id": RESET_ID, **CLOCK.state()}
 
 
@@ -787,7 +817,7 @@ def history(account_id: str, before: str | None = None) -> dict:
         rows = conn.execute(
             """
             SELECT e.tx_id, e.ts, e.direction, e.amount, e.tx_type, e.purpose_text, e.status,
-                   COALESCE(NULLIF(e.counterparty_id, ''), x.other_id) AS counterparty_id,
+                   COALESCE(NULLIF(e.counterparty_id, ''), x.other_id, pair.other_id) AS counterparty_id,
                    COALESCE(NULLIF(cp.holder_name, ''), NULLIF(ben.holder_name, '')) AS counterparty_name
             FROM bank.entries e
             LEFT JOIN bank.transfers t ON t.id = e.tx_id
@@ -797,10 +827,17 @@ def history(account_id: str, before: str | None = None) -> dict:
                     ELSE NULLIF(t.from_account, '')
                 END AS other_id
             ) x ON true
-            LEFT JOIN bank.accounts cp ON cp.id = COALESCE(NULLIF(e.counterparty_id, ''), x.other_id)
+            LEFT JOIN LATERAL (
+                SELECT e2.account_id AS other_id
+                FROM bank.entries e2
+                WHERE e2.tx_id = e.tx_id AND e2.account_id <> e.account_id
+                ORDER BY e2.id
+                LIMIT 1
+            ) pair ON true
+            LEFT JOIN bank.accounts cp ON cp.id = COALESCE(NULLIF(e.counterparty_id, ''), x.other_id, pair.other_id)
             LEFT JOIN bank.beneficiaries ben
                 ON ben.owner_account = e.account_id
-               AND ben.account_id = COALESCE(NULLIF(e.counterparty_id, ''), x.other_id)
+               AND ben.account_id = COALESCE(NULLIF(e.counterparty_id, ''), x.other_id, pair.other_id)
             WHERE e.account_id = %s AND e.ts <= %s
             ORDER BY e.ts, e.id
             """,

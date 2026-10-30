@@ -33,5 +33,5 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "confirm-transfer"
 - assertVisible: "Giao dịch đang được ngân hàng xem xét"
-- assertVisible: "Giữ 24 giờ là chính sách giả của ngân hàng trong bản demo."
+- assertVisible: "Mô phỏng chính sách tạm giữ 24 giờ của ngân hàng"
 - assertNotVisible: "Tạm dừng để xác minh"

@@ -56,3 +56,23 @@ export function givenName(full: string): string {
   const parts = full.trim().split(/\s+/).filter(Boolean)
   return parts[parts.length - 1] ?? full
 }
+
+const COMPANY_MARK = ["CONG TY", "TNHH", "CHU DAU", "CO PHAN", "CTCP", "CTY "]
+const COMPANY_PREFIX = ["CONG TY TNHH MTV", "CONG TY CO PHAN", "CONG TY TNHH", "CONG TY", "CTY TNHH", "CTCP", "CHU DAU TU", "TNHH"]
+
+/** Người: tên gọi. Công ty: bỏ tiền tố pháp lý, tối đa 10 ký tự. */
+export function recentLabel(full: string): string {
+  const ascii = nameAscii(full).replace(/\s+/g, " ").trim()
+  const company = COMPANY_MARK.some((mark) => ascii.includes(mark))
+  if (!company) return [...givenName(full)].slice(0, 10).join("")
+  let rest = ` ${ascii} `
+  for (const prefix of COMPANY_PREFIX) rest = rest.replaceAll(` ${prefix} `, " ")
+  rest = rest.replace(/\s+/g, " ").trim()
+  let label = ""
+  for (const word of rest.split(" ").filter(Boolean)) {
+    const next = label ? `${label} ${word}` : word
+    if (next.length > 10) break
+    label = next
+  }
+  return (label || rest).slice(0, 10).trim()
+}

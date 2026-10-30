@@ -6,7 +6,7 @@ import { FidesGuardianRequest } from "fides-sdk"
 import { useAccount, useChoice, useConfirmGuardian, useGuardianRequests, useHistory, useRegisterGuardian } from "../api/queries"
 import { copy } from "../copy/vi"
 import { displayHolder, payeeName } from "../names"
-import { fullDate, maskAccount, movementTitle, statement, vnd, weekStart, when } from "../format"
+import { fullDate, movementTitle, showAccount, statement, vnd, weekStart, when } from "../format"
 import { personas } from "../personas"
 import { useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -95,7 +95,7 @@ export function HistoryScreen() {
         const inbound = item.direction === "in"
         const who = payeeName(item.counterparty_name, item.counterparty_id)
         const title = movementTitle({ ...item, counterparty_name: who })
-        const party = item.counterparty_id ? `${copy.bankName} · ${maskAccount(item.counterparty_id)}` : ""
+        const party = item.counterparty_id ? `${copy.bankName} · ${showAccount(item.counterparty_id)}` : ""
         return (
           <View key={`${item.tx_id}-${item.direction}`} style={{ gap: 8 }}>
             {showDay ? <Text style={{ color: colors.deep, fontWeight: "700" }}>{day}</Text> : null}
