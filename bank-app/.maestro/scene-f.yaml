@@ -1,4 +1,4 @@
-# Scene E — expected level 2. Có sự đồng ý của người thân, mục đích cơ quan nhà nước.
+# Scene F — mục đích cơ quan nhà nước. Mức 2, người thân xác nhận.
 appId: com.hainamtran.saobank
 ---
 - launchApp
@@ -31,7 +31,7 @@ appId: com.hainamtran.saobank
     id: "new-account-open"
 - tapOn:
     id: "new-account"
-- inputText: "ZMED000000000001"
+- inputText: "ZMED220000000001"
 - hideKeyboard:
     optional: true
 - tapOn:
@@ -39,7 +39,7 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "amount"
 - eraseText: 12
-- inputText: "21000000"
+- inputText: "22000000"
 - hideKeyboard:
     optional: true
 - tapOn: "Xác nhận giao dịch"
@@ -47,6 +47,10 @@ appId: com.hainamtran.saobank
     element: "Cơ quan nhà nước / công an yêu cầu chuyển"
     direction: DOWN
 - tapOn: "Cơ quan nhà nước / công an yêu cầu chuyển"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
 - tapOn:
     id: "confirm-transfer"
 - assertVisible: "Tạm dừng để xác minh"
@@ -55,6 +59,6 @@ appId: com.hainamtran.saobank
 - extendedWaitUntil:
     visible: ".*Huỳnh Thị Mận.*"
     timeout: 10000
-- tapOn: ".*21.000.000.*"
+- tapOn: ".*22.000.000.*"
 - tapOn: "Tôi xác nhận, cho chuyển"
 - assertVisible: "Đã cho chuyển"

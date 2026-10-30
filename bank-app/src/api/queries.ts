@@ -87,7 +87,7 @@ export function useTransfer() {
       call: components["schemas"]["CallContext"]
       behaviour_features: components["schemas"]["BehaviourFeatures"]
       transfer_purpose: components["schemas"]["TransferPurpose"]
-      device: components["schemas"]["Device"] & { state: "unknown" }
+      device: components["schemas"]["Device"] & components["schemas"]["DeviceIntegrity"]
       experiment?: components["schemas"]["ExperimentAssignment"]
     }) => {
       const key = await transferKey(input.from, input.to, input.amount)

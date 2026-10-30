@@ -1,0 +1,34 @@
+# Scene A — cuộc gọi đang diễn ra và quét QR tới cửa hàng. Mức 0 hoặc 1.
+appId: com.hainamtran.saobank
+---
+- launchApp
+- tapOn: ".*Trương Gia Thịnh.*"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "BVC BANK"
+- tapOn:
+    id: "call-stranger"
+- tapOn: "Chuyển tiền"
+- tapOn:
+    id: "scan-shop-qr"
+- tapOn:
+    id: "amount"
+- eraseText: 12
+- inputText: "60000"
+- hideKeyboard:
+    optional: true
+- tapOn: "Xác nhận giao dịch"
+- scrollUntilVisible:
+    element: "Mua hàng, dịch vụ"
+    direction: DOWN
+- tapOn: "Mua hàng, dịch vụ"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
+- tapOn:
+    id: "confirm-transfer"
+- assertVisible: ".*Quét mã QR.*"
+- assertNotVisible: "Tạm dừng để xác minh"
+- assertNotVisible: "Giao dịch đang được ngân hàng xem xét"

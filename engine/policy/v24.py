@@ -552,7 +552,7 @@ def _match(rule: dict, signals: dict[str, Signal], flags: dict[str, str], baseli
     return present_ok and absent_ok and any_ok, False
 
 
-def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds: list[dict]) -> list[str]:
+def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds: list[dict], behaviour=None, baseline: str = "none") -> list[str]:
     texts: list[str] = []
     fired = {rule["id"] for rule in rules}
 
@@ -561,18 +561,30 @@ def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds:
             texts.append(text)
 
     for rule in rules:
+        if rule.get("contextual_only"):
+            for name in load_policy()["contextual_signals"]:
+                if signals.get(name) and signals[name].status == "present":
+                    add(_reason_text(name, facts, funds))
+            continue
         names = list(rule.get("all_present") or []) + list(rule.get("any_present") or [])
         for name in names:
             if name == "recipient_simo_flag" and "R_SIMO_KNOWN" in fired:
                 continue
-            if signals.get(name) and signals[name].status == "present":
-                add(_reason_text(name, facts, funds))
+            if not signals.get(name) or signals[name].status != "present":
+                continue
+            if name == "behaviour_rare":
+                if BASELINE_RANK.get(baseline, 0) < BASELINE_RANK["medium"]:
+                    continue
+                phrase = ""
+                if behaviour is not None:
+                    phrase = next((item for item in getattr(behaviour, "reasons", []) if item), "")
+                add(phrase or _reason_text(name, facts, funds))
+                continue
+            add(_reason_text(name, facts, funds))
         if rule["id"] == "R_SIMO_KNOWN":
             add(SIMO_INFO_TEXT)
         if rule["id"] == "R_SIMO":
             add(SIMO_TEXT)
-    if signals["behaviour_rare"].status == "present" and _baseline(facts.same_task_sessions) == "low":
-        add("Điểm thao tác thấp nhưng chưa đủ phiên cùng loại để dùng vào mức cảnh báo.")
     return texts
 
 
@@ -596,7 +608,9 @@ def _reason_text(name: str, facts: Facts, funds: list[dict]) -> str:
     if name == "beneficiary_is_new":
         return "Chưa từng chuyển tới người nhận này."
     if name == "entry_paste_or_qr":
-        return "Số tài khoản được dán hoặc quét từ mã."
+        if facts.task_type == "qr":
+            return "Quét mã QR."
+        return "Số tài khoản được dán."
     if name == "purpose_high_risk":
         return "Mục đích chuyển là yêu cầu của cơ quan hoặc phí để nhận tiền."
     if name == "recipient_unusual":
@@ -606,7 +620,7 @@ def _reason_text(name: str, facts: Facts, funds: list[dict]) -> str:
     if name == "model_p_high":
         return "Mẫu chấm điểm cho lệnh này một điểm cao."
     if name == "model_p_cost":
-        return "Điểm mô hình vượt ngưỡng theo số tiền của lệnh này."
+        return "Số tiền lớn và giao dịch khác thường so với lịch sử"
     if name == "behaviour_rare":
         return "Cách thao tác khác với những lần chuyển cùng loại trước đây."
     if name == "screen_capture_active":
@@ -690,15 +704,12 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
     elapsed_ms = (datetime.now(ICT) - started).total_seconds() * 1000
     _note_latency(elapsed_ms)
     ordered = [signals[name] for name in SIGNAL_ORDER]
-    reasons = _reasons(facts, fired, signals, funds)
+    reasons = _reasons(facts, fired, signals, funds, behaviour, baseline)
     behaviour_score = None
     behaviour_p = facts.behaviour_p_rarity
     if behaviour is not None:
         behaviour_score = behaviour.score
         behaviour_p = behaviour.p_rarity
-        for line in behaviour.reasons[:2]:
-            if line and line not in reasons:
-                reasons.append(line)
     return Outcome(
         level=level,
         rules_fired=[rule["id"] for rule in fired],

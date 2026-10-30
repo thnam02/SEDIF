@@ -17,7 +17,7 @@ import psycopg
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from clock import DemoClock
+from clock import ICT, DemoClock
 from engine.common.hashing import account_hash, require_key
 from engine.decide import REASONS
 from engine.policy import actions_for
@@ -28,6 +28,20 @@ log = logging.getLogger("bank")
 DECIDE_TIMEOUT_S = 0.3
 NEW_PAYEE_BANNER = 50_000_000
 PURPOSE_AMOUNT_VND = int(os.environ.get("PURPOSE_AMOUNT_VND", "10000000"))
+# Khớp funds_fresh_hours. Sổ không có cột kênh; lệnh app ghi kênh app.
+FUNDS_HOURS = 72
+FUNDS_KINDS = (
+    "term_deposit_closure",
+    "savings_liquidation",
+    "fast_loan_disbursement",
+    "quick_loan_disbursement",
+    "limit_increase",
+    "limit_raise",
+    "card_cash_advance",
+    "credit_card_cash_advance",
+)
+# Danh sách demo, gắn nhãn. Không phải hồ sơ đường dây thật.
+DEMO_MULE_ACCOUNTS = frozenset({"ZMULEDEMO0000001"})
 RESET_AT = datetime.fromisoformat("2026-09-20T09:00:00+07:00")
 
 CLOCK = DemoClock(speed=float(os.environ.get("DEMO_CLOCK_SPEED", "60")))
@@ -733,6 +747,51 @@ def _next_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:16]}"
 
 
+def ledger_funds(conn, account: str, now: datetime) -> list[dict]:
+    """Sổ của bank-core. App không biết các lệnh này."""
+    start = now - timedelta(hours=FUNDS_HOURS)
+    rows = conn.execute(
+        """
+        SELECT type, ts FROM (
+            SELECT kind AS type, ts FROM bank.products
+            WHERE account_id = %s AND kind = ANY(%s) AND ts >= %s AND ts <= %s
+            UNION ALL
+            SELECT tx_type AS type, ts FROM bank.entries
+            WHERE account_id = %s AND tx_type = ANY(%s) AND direction = 'in' AND ts >= %s AND ts <= %s
+        ) events
+        ORDER BY ts
+        """,
+        (account, list(FUNDS_KINDS), start, now, account, list(FUNDS_KINDS), start, now),
+    ).fetchall()
+    events = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        stamp = row["ts"]
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=ICT)
+        at = stamp.isoformat()
+        kind = str(row["type"])
+        key = (kind, at)
+        if key in seen:
+            continue
+        seen.add(key)
+        events.append({"type": kind, "at": at, "channel": "app"})
+    return events
+
+
+def verified_mule(account: str) -> list[dict]:
+    if account not in DEMO_MULE_ACCOUNTS:
+        return []
+    return [
+        {
+            "signal_id": "recipient_bank_confirmed_mule",
+            "status": "present",
+            "source": "core_banking",
+            "active": True,
+        }
+    ]
+
+
 @app.post("/transfer")
 def transfer(
     body: TransferIn,
@@ -765,10 +824,14 @@ def transfer(
         }
         if body.device is not None:
             request["device"] = body.device
-        for field in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment", "recent_funds_events"):
+        for field in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment"):
             sent = _plain(getattr(body, field))
             if sent is not None:
                 request[field] = sent
+        request["recent_funds_events"] = ledger_funds(conn, body.from_account, now)
+        mule = verified_mule(body.to_account)
+        if mule:
+            request["signals"] = mule
         try:
             decided = engine_post("/decide", request, timeout=DECIDE_TIMEOUT_S)
         except EngineUnavailable:

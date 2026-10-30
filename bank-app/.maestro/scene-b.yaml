@@ -1,5 +1,4 @@
-# Scene D — call, savings liquidation, new payee. Live card stayed level 1
-# (model cost), so the three-button screen is not shown.
+# Scene B — cuộc gọi, tất toán sổ, người nhận mới, 120.000.000. Mức 2.
 appId: com.hainamtran.saobank
 ---
 - launchApp
@@ -14,26 +13,12 @@ appId: com.hainamtran.saobank
 - tapOn: "Tất toán trước hạn"
 - tapOn: "Tất toán trước hạn"
 - tapOn: "Về trang chủ"
-- tapOn: ".*Cá nhân.*"
-- tapOn: "Hạn mức chuyển tiền"
-- tapOn:
-    id: "limit-txn"
-- eraseText: 12
-- inputText: "200000000"
-- hideKeyboard:
-    optional: true
-- tapOn: "Cập nhật"
-- extendedWaitUntil:
-    visible: "Đã cập nhật"
-    timeout: 10000
-- tapOn: ".*Trang chủ.*"
-- tapOn: ".*Trang chủ.*"
 - tapOn: "Chuyển tiền"
 - tapOn:
     id: "new-account-open"
 - tapOn:
     id: "new-account"
-- inputText: "ZLAN120000000001"
+- inputText: "ZLANB30000000001"
 - hideKeyboard:
     optional: true
 - tapOn:
@@ -49,8 +34,13 @@ appId: com.hainamtran.saobank
     element: "Mua hàng, dịch vụ"
     direction: DOWN
 - tapOn: "Mua hàng, dịch vụ"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
 - tapOn:
     id: "confirm-transfer"
-- assertVisible: "Đang trong cuộc gọi"
-- assertVisible: ".*Điểm mô hình vượt ngưỡng theo số tiền của lệnh này.*"
-- assertNotVisible: "Tạm dừng để xác minh"
+- assertVisible: "Tạm dừng để xác minh"
+- assertVisible: ".*cuộc gọi.*"
+- assertVisible: ".*tất toán.*"
+- assertVisible: ".*người nhận.*"

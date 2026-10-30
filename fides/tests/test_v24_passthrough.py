@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -450,3 +451,62 @@ def test_guardian_is_notified_only_after_consent(bank):
                 )
             conn.execute("UPDATE bank.accounts SET has_guardian = %s WHERE id = %s", (bool(flag["has_guardian"]) if flag else False, SENDER))
             conn.commit()
+
+
+def test_ledger_closure_active_call_and_new_payee_is_level_2(bank):
+    from engine.policy.v24 import evaluate, facts_from_row
+
+    module, client, _seen = bank
+    original = module.engine_post
+    captured: list[dict] = []
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        if path == "/decide":
+            captured.append(body)
+        return original(path, body, timeout)
+
+    module.engine_post = engine_post
+    before = _balance(SENDER)
+    product_id = None
+    try:
+        closed = client.post("/savings/liquidate", json={"account_id": SENDER, "amount": 10000})
+        assert closed.status_code == 200, closed.text
+        product_id = closed.json()["id"]
+        response = client.post(
+            "/transfer",
+            json={
+                "from_account": SENDER,
+                "to_account": "ZLEDGER000000001",
+                "amount": 1000,
+                "purpose_text": "pytest-ledger-closure",
+                "task_type": "new_typed",
+                "call": CALL,
+                "transfer_purpose": "purchase",
+                "device": {"state": "unknown"},
+                "recent_funds_events": [{"type": "not_a_ledger_event", "at": "2026-09-20T00:00:00+07:00", "channel": "app"}],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert captured, "không thấy /decide"
+        body = captured[-1]
+        kinds = [item["type"] for item in body["recent_funds_events"]]
+        assert "savings_liquidation" in kinds
+        assert "not_a_ledger_event" not in kinds
+        assert body["call"]["state"] == "active"
+        decided = datetime.fromisoformat(body["ts"])
+        facts = facts_from_row(body, {"new_payee": 1, "segment": "thường"}, 0.0, decided, None)
+        out = evaluate(facts)
+        assert out.level == 2
+        assert "R_CALL_FUNDS_NEWPAYEE" in out.rules_fired
+        card = {item.signal_id: item for item in out.signals}
+        assert card["has_call"].status == "present" and card["has_call"].source == "sdk"
+        assert card["recent_funds_event"].status == "present" and card["recent_funds_event"].source == "core_banking"
+        assert card["beneficiary_is_new"].status == "present" and card["beneficiary_is_new"].source == "core_banking"
+    finally:
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-ledger-closure",))
+        if product_id:
+            with psycopg.connect(DATABASE) as conn:
+                conn.execute("DELETE FROM bank.entries WHERE tx_id = %s", (product_id,))
+                conn.execute("DELETE FROM bank.products WHERE id = %s", (product_id,))
+                conn.commit()

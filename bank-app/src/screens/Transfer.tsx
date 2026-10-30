@@ -6,6 +6,7 @@ import { FidesCallNotice, FidesSession, sessionRecorder, useAccountInput } from 
 
 import { BANK_URL } from "../api/client"
 import { useBeneficiaries, useChoice, usePurposePolicy, useTransfer } from "../api/queries"
+import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
@@ -39,6 +40,20 @@ export function RecipientScreen() {
     <Screen call>
       <Header title={copy.recipient} />
       <Button testID="new-account-open" outline label={copy.newRecipient} onPress={() => router.push("/(main)/transfer/new")} />
+      {DEMO ? (
+        <Pressable
+          testID="scan-shop-qr"
+          accessibilityRole="button"
+          onPress={() => {
+            sessionRecorder.note({ type: "qr_scan" })
+            setPayee("A0119434", "CONG TY TNHH THANH CONG")
+            router.push("/(main)/transfer/amount")
+          }}
+          style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>Quét mã QR cửa hàng</Text>
+        </Pressable>
+      ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: "#F8FAFC", paddingHorizontal: 12, paddingVertical: 12 }}>
         <Search size={17} color="#94A3B8" />
         <TextInput value={query} onChangeText={setQuery} placeholder={copy.search} style={{ flex: 1, color: colors.navy, fontSize: type.body }} />
@@ -177,6 +192,11 @@ export function ConfirmScreen() {
   const amount = useBank((state) => state.amount)
   const note = useBank((state) => state.note)
   const setOutcome = useBank((state) => state.setOutcome)
+  const devCapture = useBank((state) => state.devCapture)
+  const setDevCapture = useBank((state) => state.setDevCapture)
+  const devGuided = useBank((state) => state.devGuided)
+  const setDevGuided = useBank((state) => state.setDevGuided)
+  const setStrangerCall = useBank((state) => state.setStrangerCall)
   const transfer = useTransfer()
   const saved = useBeneficiaries(accountId)
   const policy = usePurposePolicy()
@@ -213,6 +233,19 @@ export function ConfirmScreen() {
           ))}
         </View>
       ) : null}
+      {DEMO ? (
+        <View style={{ gap: 8 }}>
+          <Pressable testID="dev-active-capture" accessibilityRole="button" onPress={() => setDevCapture(!devCapture)} style={{ minHeight: 44, justifyContent: "center" }}>
+            <Text style={{ color: devCapture ? colors.warn : colors.deep, fontWeight: "700" }}>Giả lập demo: màn hình đang bị ghi</Text>
+          </Pressable>
+          <Pressable testID="dev-guided" accessibilityRole="button" onPress={() => setDevGuided(!devGuided)} style={{ minHeight: 44, justifyContent: "center" }}>
+            <Text style={{ color: devGuided ? colors.warn : colors.deep, fontWeight: "700" }}>Phiên có hướng dẫn (demo)</Text>
+          </Pressable>
+          <Pressable testID="call-end" accessibilityRole="button" onPress={() => { FidesSession.setSimulatedCall(false, false); setStrangerCall(false) }} style={{ minHeight: 44, justifyContent: "center" }}>
+            <Text style={{ color: colors.deep, fontWeight: "700" }}>Kết thúc cuộc gọi giả lập</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {banner ? <Text testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{banner}</Text> : null}
       {banner ? <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} /> : (
       <Button
@@ -222,8 +255,9 @@ export function ConfirmScreen() {
           if (waiting || (askPurpose && !purpose) || transfer.isPending) return
           const call = FidesSession.callBlock()
           const session = sessionRecorder.end()
-          const device = { ...FidesSession.collectSignals(), state: "unknown" as const }
-          rememberSession({ task_type: session.task_type, call, behaviour_features: session.behaviour_features })
+          const behaviour = devGuided ? GUIDED_FEATURES : session.behaviour_features
+          const device = { ...FidesSession.collectSignals(), state: (devCapture ? "active_capture" : "unknown") as "active_capture" | "unknown" }
+          rememberSession({ task_type: session.task_type, call, behaviour_features: behaviour })
           const experiment = session.experiment
           if (experiment && session.raw_events) {
             void uploadExperiment({
@@ -232,7 +266,7 @@ export function ConfirmScreen() {
               session_index: experiment.session_index,
               task_type: session.task_type,
               call,
-              behaviour_features: session.behaviour_features,
+              behaviour_features: behaviour,
               raw_events: session.raw_events,
             }).catch(() => undefined)
           }
@@ -244,7 +278,7 @@ export function ConfirmScreen() {
               note,
               task_type: session.task_type,
               call,
-              behaviour_features: session.behaviour_features,
+              behaviour_features: behaviour,
               transfer_purpose: askPurpose && purpose ? purpose : "not_asked",
               device,
               experiment: session.experiment,

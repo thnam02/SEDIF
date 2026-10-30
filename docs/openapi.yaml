@@ -1074,13 +1074,13 @@ components:
         - debt_salary
         - other
         - not_asked
-      description: Mục đích khách chọn, hoặc not_asked khi app chưa hỏi. Engine chưa đọc.
+      description: Mục đích khách chọn, hoặc not_asked khi app chưa hỏi. Engine đọc.
     DeviceIntegrity:
       type: object
       description: >
         Toàn vẹn thiết bị gửi kèm khối device trên /decide.
         additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input.
-        Engine chưa đọc state và integrity_verdict_at.
+        Engine đọc state. integrity_verdict_at vẫn chưa đọc.
       properties:
         state:
           type: string
@@ -1094,7 +1094,7 @@ components:
     RecentFundsEvent:
       type: object
       additionalProperties: false
-      description: Sự kiện tiền gần đây từ core banking. Engine chưa đọc.
+      description: Sự kiện tiền trong 72 giờ từ sổ của bank-core. App không gửi. Engine đọc.
       required: [type, at, channel]
       properties:
         type:

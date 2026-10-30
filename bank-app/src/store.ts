@@ -30,6 +30,8 @@ type BankState = {
   largeText: boolean
   strangerCall: boolean
   guardianDesk: boolean
+  devCapture: boolean
+  devGuided: boolean
   toAccount: string
   toName: string
   amount: number
@@ -39,6 +41,8 @@ type BankState = {
   setLargeText: (value: boolean) => void
   setStrangerCall: (value: boolean) => void
   setGuardianDesk: (value: boolean) => void
+  setDevCapture: (value: boolean) => void
+  setDevGuided: (value: boolean) => void
   setPayee: (account: string, name: string) => void
   setAmount: (amount: number) => void
   setNote: (note: string) => void
@@ -52,15 +56,19 @@ export const useBank = create<BankState>((set) => ({
   largeText: false,
   strangerCall: false,
   guardianDesk: false,
+  devCapture: false,
+  devGuided: false,
   toAccount: "",
   toName: "",
   amount: 500_000,
   note: "",
   outcome: null,
-  choosePersona: (customerId, accountId, role) => set({ customerId, accountId, role, outcome: null, guardianDesk: false }),
+  choosePersona: (customerId, accountId, role) => set({ customerId, accountId, role, outcome: null, guardianDesk: false, devCapture: false, devGuided: false }),
   setLargeText: (largeText) => set({ largeText }),
   setStrangerCall: (strangerCall) => set({ strangerCall }),
   setGuardianDesk: (guardianDesk) => set({ guardianDesk }),
+  setDevCapture: (devCapture) => set({ devCapture }),
+  setDevGuided: (devGuided) => set({ devGuided }),
   setPayee: (toAccount, toName) => set({ toAccount, toName }),
   setAmount: (amount) => set({ amount }),
   setNote: (note) => set({ note }),

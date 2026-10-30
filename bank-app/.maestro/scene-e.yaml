@@ -1,0 +1,29 @@
+# Scene E — người nhận nằm trong danh sách mule demo, có gắn nhãn. Mức 3.
+appId: com.hainamtran.saobank
+---
+- launchApp
+- tapOn: ".*Trương Gia Thịnh.*"
+- tapOn: "Chuyển tiền"
+- tapOn:
+    id: "new-account-open"
+- tapOn:
+    id: "new-account"
+- inputText: "ZMULEDEMO0000001"
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: "new-account-go"
+- tapOn: "Xác nhận giao dịch"
+- scrollUntilVisible:
+    element: "Khác"
+    direction: DOWN
+- tapOn: "Khác"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
+- tapOn:
+    id: "confirm-transfer"
+- assertVisible: "Giao dịch đang được ngân hàng xem xét"
+- assertVisible: "Giữ 24 giờ là chính sách giả của ngân hàng trong bản demo."
+- assertNotVisible: "Tạm dừng để xác minh"

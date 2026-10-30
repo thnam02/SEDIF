@@ -76,6 +76,17 @@ def test_policy_file_records_provenance():
     assert policy["thresholds"]["model_p_high"]["value"] == 0.8125
 
 
+def test_customer_lines_name_the_entry_and_the_amount():
+    pasted = evaluate(_facts(task_type="new_pasted", call_state="none", p_fraud=0.0, new_payee=False, funds_events=[]))
+    assert pasted.reasons_vi == ["Số tài khoản được dán."]
+    scanned = evaluate(_facts(task_type="qr", call_state="active", p_fraud=0.0, new_payee=False, funds_events=[]))
+    assert "Quét mã QR." in scanned.reasons_vi
+    assert "Số tài khoản được dán." not in scanned.reasons_vi
+    costly = evaluate(_facts(amount=120_000_000, p_fraud=0.5, call_state="none", task_type="saved_payee", new_payee=False, funds_events=[]))
+    assert "Số tiền lớn và giao dịch khác thường so với lịch sử" in costly.reasons_vi
+    assert "Điểm mô hình vượt ngưỡng theo số tiền của lệnh này." not in costly.reasons_vi
+
+
 def test_call_and_qr_to_known_shop_stays_at_most_banner():
     out = evaluate(
         _facts(

@@ -1,0 +1,51 @@
+# Scene B — cuộc gọi kết thúc giữa phiên, vẫn mức 2.
+appId: com.hainamtran.saobank
+---
+- launchApp
+- tapOn: ".*Huỳnh Thị Mận.*"
+- repeat:
+    times: 7
+    commands:
+      - tapOn: "BVC BANK"
+- tapOn:
+    id: "call-stranger"
+- tapOn: "Tiết kiệm"
+- tapOn: "Tất toán trước hạn"
+- tapOn: "Tất toán trước hạn"
+- tapOn: "Về trang chủ"
+- tapOn: "Chuyển tiền"
+- tapOn:
+    id: "new-account-open"
+- tapOn:
+    id: "new-account"
+- inputText: "ZLANB30000000002"
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: "new-account-go"
+- tapOn:
+    id: "amount"
+- eraseText: 12
+- inputText: "120000000"
+- hideKeyboard:
+    optional: true
+- tapOn: "Xác nhận giao dịch"
+- scrollUntilVisible:
+    element: "Kết thúc cuộc gọi giả lập"
+    direction: DOWN
+- tapOn:
+    id: "call-end"
+- scrollUntilVisible:
+    element: "Mua hàng, dịch vụ"
+    direction: UP
+- tapOn: "Mua hàng, dịch vụ"
+- scrollUntilVisible:
+    element:
+      id: "confirm-transfer"
+    direction: DOWN
+- tapOn:
+    id: "confirm-transfer"
+- assertVisible: "Tạm dừng để xác minh"
+- assertVisible: ".*vừa kết thúc.*"
+- assertVisible: ".*tất toán.*"
+- assertVisible: ".*người nhận.*"

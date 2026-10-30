@@ -228,9 +228,24 @@ def test_evidence_card_keeps_the_score_when_the_baseline_is_low():
     assert card["behaviour_score"] == 1.25
     assert card["p_rarity"] == 0.01
     assert card["baseline_quality"] == "low"
-    assert card["reasons_vi"][-2:] == ["dừng lâu hơn thường lệ", "rời app 2 lần"]
+    shown = " ".join(card["reasons_vi"])
+    assert "dừng lâu hơn thường lệ" not in shown
+    assert "rời app 2 lần" not in shown
     rare = next(item for item in out.signals if item.signal_id == "behaviour_rare")
     assert rare.status == "unknown"
+    ready = evaluate(
+        _facts(
+            call_state="active",
+            new_payee=True,
+            behaviour_p_rarity=0.01,
+            same_task_sessions=10,
+            p_fraud=0.0,
+            funds_events=[],
+        ),
+        behaviour=Card(),
+    )
+    assert ready.baseline_quality == "high"
+    assert "dừng lâu hơn thường lệ" in ready.reasons_vi
 
 
 def test_chronological_baseline_and_level_gate():

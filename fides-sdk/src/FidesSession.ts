@@ -173,6 +173,16 @@ export const FidesSession = {
 
   /** Khối call của hợp đồng 2.4. none chỉ khi nền tảng đã quan sát được. */
   callBlock(): CallBlock {
+    if (simulation === null && startedAtSession !== null && (callEndedDuring || endedInSession)) {
+      return deriveCallBlock({
+        observability: "supported_observed",
+        transport: "unknown",
+        activeAtStart: callActiveAtStart,
+        startedDuring: callStartedDuring,
+        endedDuring: true,
+        activeNow: false,
+      })
+    }
     const state = this.callState()
     const platform = platformOs()
     return deriveCallBlock({

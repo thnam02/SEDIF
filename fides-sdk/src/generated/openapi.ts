@@ -35,7 +35,7 @@ export interface paths {
         put?: never;
         /**
          * Chấm một lệnh chuyển
-         * @description device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo. task_type, call, behaviour_features, transfer_purpose, state trên device, recent_funds_events và experiment là hợp đồng 2.4. Engine chưa đọc chúng. behaviour_features chỉ là số tổng hợp trên máy, không có mốc thời gian thô.
+         * @description device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo. task_type, call, behaviour_features, transfer_purpose, state trên device, recent_funds_events và experiment là hợp đồng 2.4. Engine đọc chúng. recent_funds_events do bank-core gắn từ sổ, không phải từ app. behaviour_features chỉ là số tổng hợp trên máy, không có mốc thời gian thô.
          */
         post: operations["decide"];
         delete?: never;
@@ -435,7 +435,7 @@ export interface components {
             freshness_s: number;
         };
         /**
-         * @description Cách khách chọn người nhận. Hợp đồng 2.4, engine chưa đọc.
+         * @description Cách khách chọn người nhận. Hợp đồng 2.4, engine đọc.
          * @enum {string}
          */
         TaskType: "saved_payee" | "new_typed" | "new_pasted" | "qr";
@@ -448,7 +448,7 @@ export interface components {
             /** @enum {string} */
             transport: "cellular" | "voip" | "unknown";
         };
-        /** @description Số tổng hợp tính trên máy. Không gửi mốc thời gian thô. Hợp đồng 2.4, engine chưa đọc. */
+        /** @description Số tổng hợp tính trên máy. Không gửi mốc thời gian thô. Hợp đồng 2.4, engine đọc. */
         BehaviourFeatures: {
             median_gap_ms: number;
             p90_gap_ms: number;
@@ -463,18 +463,18 @@ export interface components {
             session_duration_ms: number;
         };
         /**
-         * @description Mục đích khách chọn, hoặc not_asked khi app chưa hỏi. Engine chưa đọc.
+         * @description Mục đích khách chọn, hoặc not_asked khi app chưa hỏi. Engine đọc.
          * @enum {string}
          */
         TransferPurpose: "authority_request" | "fee_to_receive" | "investment" | "refund_request" | "purchase" | "family_friends" | "debt_salary" | "other" | "not_asked";
-        /** @description Toàn vẹn thiết bị gửi kèm khối device trên /decide. additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input. Engine chưa đọc state và integrity_verdict_at. */
+        /** @description Toàn vẹn thiết bị gửi kèm khối device trên /decide. additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input. Engine đọc state. integrity_verdict_at vẫn chưa đọc. */
         DeviceIntegrity: {
             /** @enum {string} */
             state?: "capability_detected" | "active_capture" | "verified_compromise" | "unknown" | "none";
             /** @description RFC3339. Thời điểm phán quyết toàn vẹn. null khi chưa có. */
             integrity_verdict_at?: string | null;
         };
-        /** @description Sự kiện tiền gần đây từ core banking. Engine chưa đọc. */
+        /** @description Sự kiện tiền trong 72 giờ từ sổ của bank-core. App không gửi. Engine đọc. */
         RecentFundsEvent: {
             type: string;
             /**
