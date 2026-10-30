@@ -119,6 +119,7 @@ class Facts:
     payee_age_days: float | None = None
     distinct_senders_7d: float | None = None
     passthrough_24h: float | None = None
+    merchant_verified: bool | None = None
     simo_listed: bool | None = None
     prior_payments: int | None = None
     first_days_before_listing: float | None = None
@@ -327,7 +328,11 @@ def build_signals(facts: Facts, now: datetime) -> tuple[dict[str, Signal], dict[
         "recipient_bank_confirmed_mule": _signal("recipient_bank_confirmed_mule", mule, "verified", "core_banking", observed, now),
         "recipient_le_confirmed_case": _signal("recipient_le_confirmed_case", case, "verified", "core_banking", observed, now),
     }
-    flags = {"simo_info_rule": _info_rule(facts, signals)}
+    flags = {
+        "simo_info_rule": _info_rule(facts, signals),
+        "simo_with_context": _any_present(signals, load_policy()["simo_context"]),
+        "merchant_verified": _tri(facts.merchant_verified),
+    }
     return signals, flags, funds
 
 
@@ -337,19 +342,43 @@ def _funds_observed(funds: list[dict], now: datetime) -> datetime:
     return min(_parse(item["at"]) for item in funds)
 
 
-def _unusual(facts: Facts) -> str:
-    age_hit = send_hit = pass_hit = None
-    if facts.payee_age_days is not None:
-        age_hit = facts.payee_age_days < float(threshold("recipient_age_days_below"))
-    if facts.distinct_senders_7d is not None:
-        send_hit = facts.distinct_senders_7d > float(threshold("distinct_senders_7d_above"))
-    if facts.passthrough_24h is not None:
-        pass_hit = facts.passthrough_24h > float(threshold("passthrough_24h_above"))
-    known = [item for item in (age_hit, send_hit, pass_hit) if item is not None]
-    if any(known):
+def _known_hit(value: float | None, hit: bool) -> str:
+    if value is None:
+        return "unknown"
+    return "present" if hit else "absent"
+
+
+def _any_present(signals: dict[str, Signal], names: list[str]) -> str:
+    """Có mặt khi một tín hiệu đã quan sát là present. unknown không nâng mức."""
+    if any(signals[name].status == "present" for name in names if name in signals):
         return "present"
-    if len(known) == 3:
+    return "absent"
+
+
+def _unusual(facts: Facts) -> str:
+    """passthrough vượt ngưỡng và (nhiều người gửi hoặc tài khoản còn mới)."""
+    passed = _known_hit(
+        facts.passthrough_24h,
+        facts.passthrough_24h is not None and facts.passthrough_24h > float(threshold("passthrough_24h_above")),
+    )
+    age = _known_hit(
+        facts.payee_age_days,
+        facts.payee_age_days is not None and facts.payee_age_days < float(threshold("recipient_age_days_below")),
+    )
+    senders = _known_hit(
+        facts.distinct_senders_7d,
+        facts.distinct_senders_7d is not None and facts.distinct_senders_7d > float(threshold("distinct_senders_7d_above")),
+    )
+    if age == "present" or senders == "present":
+        branch = "present"
+    elif age == "absent" and senders == "absent":
+        branch = "absent"
+    else:
+        branch = "unknown"
+    if passed == "absent" or branch == "absent":
         return "absent"
+    if passed == "present" and branch == "present":
+        return "present"
     return "unknown"
 
 
@@ -462,6 +491,7 @@ def _expire(doc: dict, now: datetime) -> None:
             doc["floor"] = 0
             doc["payee"] = ""
             doc["funds"] = []
+            doc["scope"] = ""
             doc["opened_at"] = ""
             doc["expires_at"] = ""
     cutoff = now - timedelta(hours=hours)
@@ -478,6 +508,8 @@ def _joins(doc: dict, facts: Facts, signals: dict[str, Signal], funds: list[dict
         return False
     if facts.payee and facts.payee == doc.get("payee"):
         return True
+    if doc.get("scope") == "payee":
+        return False
     if signals["beneficiary_is_new"].status == "present" or signals["recipient_unusual"].status == "present":
         return True
     return bool(set(_funds_keys(funds)) & set(doc.get("funds") or []))
@@ -610,11 +642,13 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None) -> Out
     level = max(own, episode_floor, customer_floor)
     in_episode = joined
     if own >= 2 and not joined:
+        broad = _any_present(signals, policy["episode_context"]) == "present"
         doc["episode_id"] = f"ep-{facts.sender[:12]}-{int(clock.timestamp() * 1000)}-{facts.payee[:8]}"
         doc["opened_at"] = _stamp(clock)
         doc["expires_at"] = _stamp(clock + timedelta(hours=float(threshold("episode_hours"))))
         doc["payee"] = facts.payee
-        doc["funds"] = _funds_keys(funds)
+        doc["funds"] = _funds_keys(funds) if broad else []
+        doc["scope"] = "broad" if broad else "payee"
         doc["floor"] = level
         in_episode = True
     elif joined:
@@ -717,6 +751,7 @@ def facts_from_row(body: dict, row: dict, probability: float, decided: datetime,
         payee_age_days=_opt_float(row, "payee_account_age_days"),
         distinct_senders_7d=_opt_float(row, "distinct_senders_7d"),
         passthrough_24h=_opt_float(row, "passthrough_24h"),
+        merchant_verified=_opt_bool(row, "merchant_verified"),
         simo_listed=_opt_bool(row, "simo_listed"),
         prior_payments=None if _opt_float(row, "payee_transfers_before_listing") is None else int(_opt_float(row, "payee_transfers_before_listing")),
         first_days_before_listing=_opt_float(row, "payee_first_days_before_listing"),

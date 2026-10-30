@@ -120,6 +120,7 @@ def _facts(row: pd.Series, probability: float) -> Facts:
         payee_age_days=_opt(row.get("payee_account_age_days")),
         distinct_senders_7d=_opt(row.get("distinct_senders_7d")),
         passthrough_24h=_opt(row.get("passthrough_24h")),
+        merchant_verified=None if _opt(row.get("merchant_verified")) is None else bool(int(_opt(row.get("merchant_verified")))),
         simo_listed=bool(row["simo_listed"]),
         prior_payments=int(row["payee_transfers_before_listing"]),
         first_days_before_listing=float(row["payee_first_days_before_listing"]),
@@ -227,7 +228,7 @@ def main() -> None:
     population = population.loc[population["session_id"].astype(str).isin(bundle["test_ids"])].copy()
     population["session_id"] = population["session_id"].astype(str)
     population = population.drop_duplicates("session_id")
-    meta = frames["test"][["session_id", "start_ts", "in_call", "call_ended_in_session", "acct_input"]].copy()
+    meta = frames["test"][["session_id", "start_ts", "in_call", "call_ended_in_session", "acct_input", "merchant_verified"]].copy()
     meta["session_id"] = meta["session_id"].astype(str)
     work = population.merge(meta, on="session_id", how="left")
     work = work.merge(_identities(set(work["session_id"])), on="session_id", how="left")

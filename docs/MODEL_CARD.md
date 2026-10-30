@@ -33,6 +33,8 @@ Tiền 3.250.266.440 VND, 92,0% trần 3.531.704.180. Recall@1% 60,81%. MH hợp
 
 ## Giới hạn
 
+`a_w` và `new_payees_24h` trên đường online tính theo tài khoản của phiên, cùng cách với khung huấn luyện single_bank. Gộp theo khách hàng là việc sau và cần huấn luyện lại trước khi bật.
+
 Hiệu chỉnh isotonic tạo bậc điểm. Kết quả nhạy với τ_hi quanh 0,81–0,82: một bậc làm investment và deposit mất khoảng 7 điểm ≥Medium.
 
 Vay bạn Medium ~22%. 86/385 phiên vay bạn có đúng hai họ, toàn bộ là entry+payee (50) hoặc call+payee (36). 81 phiên còn Medium vì thiếu passthrough, 4 vì tuổi dưới 365 và thiếu passthrough, 1 bị tắt vì đủ bình thường. Luật ≥2 họ đặt các phiên còn lại ở Medium trước khi τ_hi chạy.

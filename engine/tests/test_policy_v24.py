@@ -126,9 +126,10 @@ def test_simo_info_rule_does_not_lower_a_verified_mule():
     assert known.level == 1
     assert "R_SIMO_KNOWN" in known.rules_fired
     assert "R_SIMO" not in known.rules_fired
-    plain = evaluate(_facts(simo_listed=True, prior_payments=0, first_days_before_listing=0))
-    assert plain.level == 2
-    assert "R_SIMO" in plain.rules_fired
+    plain = evaluate(_facts(simo_listed=True, prior_payments=0, first_days_before_listing=0, p_fraud=0.0))
+    assert plain.level == 1
+    assert "R_SIMO_ALONE" in plain.rules_fired
+    assert "R_SIMO" not in plain.rules_fired
     mule = evaluate(
         _facts(
             simo_listed=True,
@@ -148,6 +149,138 @@ def test_simo_info_rule_does_not_lower_a_verified_mule():
     assert mule.intervention == "security_workflow"
     assert "R_VERIFIED_RECIPIENT" in mule.rules_fired
     assert "R_SIMO_KNOWN" in mule.rules_fired
+
+
+def test_simo_with_active_call_is_level_2():
+    out = evaluate(
+        _facts(
+            simo_listed=True,
+            prior_payments=0,
+            first_days_before_listing=0,
+            call_state="active",
+            p_fraud=0.0,
+        )
+    )
+    assert out.level == 2
+    assert "R_SIMO" in out.rules_fired
+    assert "R_SIMO_ALONE" not in out.rules_fired
+    assert "R_SIMO_KNOWN" not in out.rules_fired
+
+
+def test_merchant_with_many_senders_and_no_passthrough_is_not_unusual():
+    blocked = evaluate(
+        _facts(
+            new_payee=True,
+            task_type="new_typed",
+            distinct_senders_7d=20,
+            passthrough_24h=0.1,
+            payee_age_days=800,
+            merchant_verified=True,
+            p_fraud=0.0,
+            call_state="none",
+        )
+    )
+    assert "R_RECIPIENT_UNUSUAL" not in blocked.rules_fired
+    assert blocked.level < 2
+    senders = evaluate(
+        _facts(
+            new_payee=True,
+            task_type="new_typed",
+            distinct_senders_7d=7,
+            passthrough_24h=0.96,
+            payee_age_days=800,
+            merchant_verified=False,
+            p_fraud=0.0,
+            call_state="none",
+            funds_events=[],
+            transfer_purpose="purchase",
+            device_state="none",
+        )
+    )
+    assert senders.level == 2
+    assert "R_RECIPIENT_UNUSUAL" in senders.rules_fired
+    young = evaluate(
+        _facts(
+            new_payee=True,
+            task_type="new_typed",
+            distinct_senders_7d=1,
+            passthrough_24h=0.96,
+            payee_age_days=10,
+            merchant_verified=False,
+            p_fraud=0.0,
+            call_state="none",
+            funds_events=[],
+        )
+    )
+    assert young.level == 2
+    assert "R_RECIPIENT_UNUSUAL" in young.rules_fired
+
+
+def test_recipient_only_holds_the_same_payee_and_not_the_next():
+    state = MemoryState()
+    sender = "7" * 64
+    first_payee = "8" * 64
+    opened = evaluate(
+        _facts(
+            sender=sender,
+            payee=first_payee,
+            ts=_at(9),
+            new_payee=True,
+            task_type="new_typed",
+            passthrough_24h=0.96,
+            distinct_senders_7d=7,
+            payee_age_days=800,
+            merchant_verified=False,
+            call_state="none",
+            funds_events=[],
+            transfer_purpose="purchase",
+            device_state="none",
+            p_fraud=0.0,
+        ),
+        state,
+    )
+    assert opened.level == 2
+    assert "R_RECIPIENT_UNUSUAL" in opened.rules_fired
+    same = evaluate(
+        _facts(
+            sender=sender,
+            payee=first_payee,
+            ts=_at(10),
+            new_payee=False,
+            task_type="saved_payee",
+            call_state="none",
+            funds_events=[],
+            transfer_purpose="purchase",
+            p_fraud=0.0,
+            passthrough_24h=0.1,
+            distinct_senders_7d=1,
+            payee_age_days=800,
+            merchant_verified=False,
+        ),
+        state,
+    )
+    assert same.level == 2
+    assert same.episode_id == opened.episode_id
+    other = evaluate(
+        _facts(
+            sender=sender,
+            payee="6" * 64,
+            ts=_at(11),
+            new_payee=True,
+            task_type="new_typed",
+            call_state="none",
+            funds_events=[],
+            transfer_purpose="purchase",
+            p_fraud=0.0,
+            passthrough_24h=0.1,
+            distinct_senders_7d=1,
+            payee_age_days=800,
+            merchant_verified=False,
+        ),
+        state,
+    )
+    assert other.level < 2
+    assert other.episode_id == ""
 
 
 def test_simo_unknown_history_is_not_treated_as_absent():

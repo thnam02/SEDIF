@@ -94,6 +94,20 @@ call_rules:
   - R_CALL_FUNDS_NEWPAYEE
   - R_BEHAVIOUR_GUIDED
 
+episode_context:
+  - has_call
+  - purpose_high_risk
+  - behaviour_rare
+  - screen_capture_active
+  - recent_funds_event
+
+simo_context:
+  - has_call
+  - entry_paste_or_qr
+  - purpose_high_risk
+  - behaviour_rare
+  - recipient_unusual
+
 rules:
   - id: R_CALL_FUNDS_NEWPAYEE
     level: 2
@@ -105,10 +119,15 @@ rules:
   - id: R_RECIPIENT_UNUSUAL
     level: 2
     all_present: [recipient_unusual, beneficiary_is_new]
+    all_absent: [merchant_verified]
   - id: R_SIMO
     level: 2
-    all_present: [recipient_simo_flag]
+    all_present: [recipient_simo_flag, simo_with_context]
     all_absent: [simo_info_rule]
+  - id: R_SIMO_ALONE
+    level: 1
+    all_present: [recipient_simo_flag]
+    all_absent: [simo_info_rule, simo_with_context]
   - id: R_SIMO_KNOWN
     level: 1
     all_present: [recipient_simo_flag, simo_info_rule]

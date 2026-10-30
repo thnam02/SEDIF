@@ -558,8 +558,9 @@ class OnlineStore:
         row["pasted"] = 1 if pasted else 0
         if login is not None and decision["ts"] >= int(login):
             row["seconds_since_login"] = (decision["ts"] - int(login)) / 1_000_000
-        row["a_w"] = self._window_amount(sender, as_of, str(sender_meta.get("customer") or ""))
-        row["new_payees_24h"] = self._new_payees(sender, as_of, str(sender_meta.get("customer") or ""))
+        # Cùng khung huấn luyện: một tài khoản của phiên, không gộp theo khách.
+        row["a_w"] = self._window_amount(sender, as_of, "")
+        row["new_payees_24h"] = self._new_payees(sender, as_of, "")
         customer = str(sender_meta.get("customer") or "")
         first = client.hget(f"f:fstc:{customer}", decision["payee"]) if customer else client.hget(f"f:fst:{sender}", decision["payee"])
         if decision["seq"] < 0:
@@ -628,7 +629,7 @@ class OnlineStore:
                 break
 
     def index_customers(self) -> None:
-        """Lập tập tài khoản theo khách từ meta đã có, để a_w gộp như khung network."""
+        """Lập tập tài khoản theo khách từ meta đã có. a_w không đọc tập này."""
         cursor = 0
         while True:
             cursor, keys = self.redis.scan(cursor, match="f:meta:*", count=500)
