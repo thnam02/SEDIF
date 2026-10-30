@@ -3,6 +3,7 @@ description: >
   Luật và ngưỡng của /decide. Mức cuối là mức cao nhất trong các luật đã khớp.
   Không có luật đếm số tín hiệu. unknown không bao giờ bị coi là absent.
   Tín hiệu ngữ cảnh là trần: không bao giờ đưa mức lên trên 1. Không phải sàn.
+  Chỉ cuộc gọi và người nhận mới nâng lên 1, và chỉ khi chưa có luật mức 2.
 
 thresholds:
   model_p_high:
@@ -119,6 +120,7 @@ contextual_signals:
 
 call_rules:
   - R_CALL_FUNDS_NEWPAYEE
+  - R_CALL_NEWPAYEE
   - R_BEHAVIOUR_GUIDED
 
 episode_context:
@@ -188,7 +190,8 @@ rules:
     level: 3
     all_present: [verified_compromise]
     customer_level: true
-  # Trần, không phải sàn. Tín hiệu ngữ cảnh không đưa mức lên trên 1.
-  - id: R_CONTEXTUAL_ONLY
+  # Trần, không phải sàn. Không chạy khi đã có luật mức 2.
+  - id: R_CALL_NEWPAYEE
     level: 1
-    contextual_only: true
+    all_present: [has_call, beneficiary_is_new]
+    needs_call: true

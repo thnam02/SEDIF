@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO)]
 
-from engine.policy.v24 import Facts, MemoryState, cost_tau, evaluate, load_policy
+from engine.policy.v24 import CALL_NEWPAYEE_TEXT, Facts, MemoryState, cost_tau, evaluate, load_policy
 
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 SENDER = "a" * 64
@@ -76,15 +76,51 @@ def test_policy_file_records_provenance():
     assert policy["thresholds"]["model_p_high"]["value"] == 0.8125
 
 
-def test_customer_lines_name_the_entry_and_the_amount():
+def _signal(out, name: str):
+    return next(item for item in out.signals if item.signal_id == name)
+
+
+def test_customer_lines_keep_context_on_the_card_without_raising_the_level():
     pasted = evaluate(_facts(task_type="new_pasted", call_state="none", p_fraud=0.0, new_payee=False, funds_events=[]))
-    assert pasted.reasons_vi == ["Số tài khoản được dán."]
+    assert pasted.level == 0
+    assert pasted.reasons_vi == []
+    assert _signal(pasted, "entry_paste_or_qr").status == "present"
     scanned = evaluate(_facts(task_type="qr", call_state="active", p_fraud=0.0, new_payee=False, funds_events=[]))
-    assert "Quét mã QR." in scanned.reasons_vi
-    assert "Số tài khoản được dán." not in scanned.reasons_vi
+    assert scanned.level == 0
+    assert "Quét mã QR." not in scanned.reasons_vi
+    assert _signal(scanned, "entry_paste_or_qr").status == "present"
+    assert _signal(scanned, "has_call").status == "present"
     costly = evaluate(_facts(amount=120_000_000, p_fraud=0.5, call_state="none", task_type="saved_payee", new_payee=False, funds_events=[]))
     assert "Số tiền lớn và giao dịch khác thường so với lịch sử" in costly.reasons_vi
     assert "Điểm mô hình vượt ngưỡng theo số tiền của lệnh này." not in costly.reasons_vi
+
+
+def test_call_and_new_payee_is_level_1_and_other_context_stays_at_0(caplog):
+    quiet = dict(p_fraud=0.0, funds_events=[], task_type="new_typed")
+    alone = evaluate(_facts(new_payee=True, call_state="none", **quiet))
+    assert alone.level == 0
+    assert "R_CALL_NEWPAYEE" not in alone.rules_fired
+    assert _signal(alone, "beneficiary_is_new").status == "present"
+    pasted = evaluate(_facts(new_payee=True, call_state="none", task_type="new_pasted", p_fraud=0.0, funds_events=[]))
+    assert pasted.level == 0
+    assert _signal(pasted, "entry_paste_or_qr").status == "present"
+    assert _signal(pasted, "beneficiary_is_new").status == "present"
+    saved = evaluate(_facts(new_payee=False, call_state="active", task_type="saved_payee", p_fraud=0.0, funds_events=[]))
+    assert saved.level == 0
+    assert _signal(saved, "has_call").status == "present"
+    called = evaluate(_facts(new_payee=True, call_state="active", **quiet))
+    assert called.level == 1
+    assert called.rules_fired == ["R_CALL_NEWPAYEE"]
+    assert called.reasons_vi == [CALL_NEWPAYEE_TEXT]
+    ended = evaluate(_facts(new_payee=True, call_state="ended_in_session", **quiet))
+    assert ended.level == 1
+    assert "R_CALL_NEWPAYEE" in ended.rules_fired
+    assert ended.reasons_vi == [CALL_NEWPAYEE_TEXT]
+    caplog.set_level(logging.INFO, logger="engine.policy")
+    unknown = evaluate(_facts(new_payee=True, call_state="unknown", **quiet))
+    assert unknown.level == 0
+    assert "R_CALL_NEWPAYEE" not in unknown.rules_fired
+    assert any("R_CALL_NEWPAYEE" in record.message and "unknown" in record.message for record in caplog.records)
 
 
 def test_call_and_qr_to_known_shop_stays_at_most_banner():

@@ -59,6 +59,10 @@ appId: com.hainamtran.saobank
 - extendedWaitUntil:
     visible: ".*Huỳnh Thị Mận.*"
     timeout: 10000
+- scrollUntilVisible:
+    element: ".*23.000.000.*"
+    direction: DOWN
+    timeout: 20000
 - tapOn: ".*23.000.000.*"
 - tapOn: "Tôi xác nhận, cho chuyển"
 - assertVisible: "Đã cho chuyển"

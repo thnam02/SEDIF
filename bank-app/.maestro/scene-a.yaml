@@ -1,4 +1,4 @@
-# Scene A — Lê Kim Trân. Cuộc gọi và quét QR tới cửa hàng. Mức 0 hoặc 1.
+# Scene A — Lê Kim Trân. Cuộc gọi và quét QR tới cửa hàng mới. Mức 1.
 appId: com.hainamtran.saobank
 ---
 - launchApp
@@ -29,6 +29,6 @@ appId: com.hainamtran.saobank
     direction: DOWN
 - tapOn:
     id: "confirm-transfer"
-- assertVisible: ".*Quét mã QR.*"
+- assertVisible: ".*Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới.*"
 - assertNotVisible: "Tạm dừng để xác minh"
 - assertNotVisible: "Giao dịch đang được ngân hàng xem xét"

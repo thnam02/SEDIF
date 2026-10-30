@@ -25,6 +25,7 @@ INTERVENTION = {0: "none", 1: "banner", 2: "three_button", 3: "security_workflow
 BASELINE_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
 SIMO_TEXT = REASONS[5][2]
 SIMO_INFO_TEXT = REASONS[6][2]
+CALL_NEWPAYEE_TEXT = "Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới"
 VERIFIED_SOURCES = {
     "recipient_bank_confirmed_mule": {"core_banking"},
     "recipient_le_confirmed_case": {"core_banking"},
@@ -532,8 +533,6 @@ def _joins(doc: dict, facts: Facts, signals: dict[str, Signal], funds: list[dict
 
 
 def _match(rule: dict, signals: dict[str, Signal], flags: dict[str, str], baseline: str, fired: set[str]) -> tuple[bool, bool]:
-    if rule.get("contextual_only"):
-        return False, False
     for name in rule.get("unless_fired") or []:
         if name in fired:
             return False, False
@@ -561,10 +560,8 @@ def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds:
             texts.append(text)
 
     for rule in rules:
-        if rule.get("contextual_only"):
-            for name in load_policy()["contextual_signals"]:
-                if signals.get(name) and signals[name].status == "present":
-                    add(_reason_text(name, facts, funds))
+        if rule["id"] == "R_CALL_NEWPAYEE":
+            add(CALL_NEWPAYEE_TEXT)
             continue
         names = list(rule.get("all_present") or []) + list(rule.get("any_present") or [])
         for name in names:
@@ -649,8 +646,9 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
     joined = _joins(doc, facts, signals, funds, clock)
     fired: list[dict] = []
     fired_ids: set[str] = set()
+    call_new = next(rule for rule in policy["rules"] if rule["id"] == "R_CALL_NEWPAYEE")
     for rule in policy["rules"]:
-        if rule.get("contextual_only"):
+        if rule["id"] == "R_CALL_NEWPAYEE":
             continue
         matched, blocked = _match(rule, signals, flags, baseline, fired_ids)
         if blocked:
@@ -659,12 +657,13 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
             fired.append(rule)
             fired_ids.add(rule["id"])
     rule_level = max((int(rule["level"]) for rule in fired), default=0)
-    # Trần, không phải sàn: tín hiệu ngữ cảnh không đưa mức lên trên 1.
-    contextual = [signals[name] for name in policy["contextual_signals"] if signals[name].status == "present"]
-    if contextual and rule_level < 2:
-        contextual_rule = next(rule for rule in policy["rules"] if rule.get("contextual_only"))
-        fired.append(contextual_rule)
-        fired_ids.add(contextual_rule["id"])
+    # Trần, không phải sàn: cuộc gọi và người nhận mới không đưa mức lên trên 1.
+    matched, blocked = _match(call_new, signals, flags, baseline, fired_ids)
+    if blocked:
+        log.info("%s not fired: unknown", call_new["id"])
+    if matched and rule_level < 2:
+        fired.append(call_new)
+        fired_ids.add(call_new["id"])
         rule_level = max(rule_level, 1)
     episode_floor = int(doc.get("floor") or 0) if joined else 0
     customer_floor = int(doc.get("customer_floor") or 0)

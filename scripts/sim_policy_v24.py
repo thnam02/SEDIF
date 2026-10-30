@@ -30,7 +30,7 @@ from features.store import TRANSFER_TYPES
 LEVELS = ("none", "banner", "medium", "high")
 LEVEL1_RULES = (
     "R_MODEL_COST",
-    "R_CONTEXTUAL_ONLY",
+    "R_CALL_NEWPAYEE",
     "R_SIMO_ALONE",
     "R_DEVICE_CAPABILITY",
     "R_BEHAVIOUR_ONLY",
@@ -200,7 +200,7 @@ def _level1_table(chosen: pd.DataFrame, n_legit: int) -> None:
         fired_pct = 100 * fired_n / n_legit if n_legit else float("nan")
         sole_pct = 100 * sole_n / n_legit if n_legit else float("nan")
         print(f"  {name:<28} {fired_n:8d} {sole_n:8d} {fired_pct:11.2f}% {sole_pct:11.2f}%", flush=True)
-    print("  sole = the only level-1 rule from this list on that legit session. No rule was changed.", flush=True)
+    print("  sole = the only level-1 rule from this list on that legit session.", flush=True)
 
 
 def _unusual_table(work: pd.DataFrame) -> None:
@@ -295,7 +295,9 @@ def main() -> None:
     print("simulation only", flush=True)
     print(f"n {total}  tiền tránh được {saved:,.0f} VND ({100 * rate:.1f}% của {damage:,.0f})", flush=True)
     print(f"recall ≥ level 2 {100 * recall:.2f}%", flush=True)
+    fraud_ge1 = float(ge1[fraud].mean()) if fraud.any() else float("nan")
     print(f"legit ≥ level 1 {100 * legit_ge1:.2f}%", flush=True)
+    print(f"fraud ≥ level 1 {100 * fraud_ge1:.2f}%", flush=True)
     print(f"legit ≥ level 2 {100 * legit:.2f}%", flush=True)
     mix = " ".join(f"{name} {100 * float((level[fraud] == name).mean()):.1f}%" for name in LEVELS)
     print(f"fraud levels {mix}", flush=True)
