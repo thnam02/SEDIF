@@ -16,6 +16,7 @@ type Outcome = {
   payee: string
   payeeName: string
   amount: number
+  experiment?: boolean
 }
 
 type BankState = {

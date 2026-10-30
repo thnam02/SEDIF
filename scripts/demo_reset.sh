@@ -34,8 +34,10 @@ CREATE TABLE IF NOT EXISTS bank.experiment_sessions (
     call jsonb NOT NULL,
     behaviour_features jsonb NOT NULL,
     raw_events jsonb,
-    created_at timestamptz NOT NULL
+    created_at timestamptz NOT NULL,
+    decision jsonb
 );
+ALTER TABLE bank.experiment_sessions ADD COLUMN IF NOT EXISTS decision jsonb;
 TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
          bank.guardians, bank.beneficiaries, bank.accounts, bank.idempotency, bank.call_notices,
          bank.experiment_sessions;

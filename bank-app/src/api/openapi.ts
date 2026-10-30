@@ -654,13 +654,15 @@ export interface components {
             /** @description Câu hiện cho khách. simo_listed dùng câu cảnh báo tài khoản đã bị báo cáo. */
             text: string;
         };
-        /** @description Thẻ bằng chứng v2.4. Engine chưa trả khối này. */
+        /** @description Thẻ bằng chứng v2.4. */
         EvidenceCard: {
             signals: components["schemas"]["Signal"][];
             reasons_vi: string[];
             /** @enum {string} */
             baseline_quality: "low" | "medium" | "high" | "none";
             episode_id: string;
+            behaviour_score?: number | null;
+            p_rarity?: number | null;
         };
         /**
          * @description Kiểu màn hình v2.4. Chưa gắn vào màn hình đang chạy.
@@ -794,6 +796,11 @@ export interface components {
             actions: string[];
             reasons: components["schemas"]["Reason"][];
             families_hit?: ("call" | "entry" | "payee" | "mobilization" | "long_term")[];
+            /** Có khi lệnh mang khối experiment. */
+            rules_fired?: string[];
+            evidence_card?: components["schemas"]["EvidenceCard"];
+            /** @enum {number} */
+            engine_level?: 0 | 1 | 2 | 3;
         };
         TransferResponse: {
             transfer_id: string;

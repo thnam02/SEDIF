@@ -60,15 +60,21 @@ def _balance(account: str) -> int:
     return int(row[0])
 
 
-def _restore_transfer(sender: str, balance: int) -> None:
+def _restore_transfer(sender: str, balance: int, purposes: tuple[str, ...] = ("pytest-v24",)) -> None:
     with psycopg.connect(DATABASE) as conn:
-        rows = conn.execute("SELECT id FROM bank.transfers WHERE purpose_text = %s", ("pytest-v24",)).fetchall()
+        rows = conn.execute("SELECT id FROM bank.transfers WHERE purpose_text = ANY(%s)", (list(purposes),)).fetchall()
         ids = [row[0] for row in rows]
         if ids:
             conn.execute("DELETE FROM bank.entries WHERE tx_id = ANY(%s)", (ids,))
             conn.execute("DELETE FROM bank.guardian_requests WHERE transfer_id = ANY(%s)", (ids,))
             conn.execute("DELETE FROM bank.transfers WHERE id = ANY(%s)", (ids,))
         conn.execute("UPDATE bank.accounts SET balance = %s WHERE id = %s", (balance, sender))
+        conn.commit()
+
+
+def _set_balance(account: str, balance: int) -> None:
+    with psycopg.connect(DATABASE) as conn:
+        conn.execute("UPDATE bank.accounts SET balance = %s WHERE id = %s", (balance, account))
         conn.commit()
 
 
@@ -105,6 +111,7 @@ def bank():
 def test_decide_receives_v24_fields_unchanged(bank):
     _module, client, seen = bank
     before = _balance(SENDER)
+    payee_before = _balance(PAYEE)
     payload = {
         "from_account": SENDER,
         "to_account": PAYEE,
@@ -131,6 +138,8 @@ def test_decide_receives_v24_fields_unchanged(bank):
         assert forwarded["experiment"] == payload["experiment"]
     finally:
         _restore_transfer(SENDER, before)
+        _set_balance(PAYEE, payee_before)
+        _drop_experiment(EXPERIMENT["participant_id"])
 
 
 def test_experiment_session_is_written(bank):
@@ -206,4 +215,115 @@ def test_experiment_session_stores_hashed_accounts(bank):
         assert len(events[0]["account_id"]) == 64
         assert events[1]["screen"] == "confirm"
     finally:
+        _drop_experiment(participant)
+
+
+def test_export_row_hashes_account_ids():
+    from importlib.util import module_from_spec, spec_from_file_location
+
+    spec = spec_from_file_location("export_experiment", REPO / "scripts" / "export_experiment.py")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    row = module.export_row(
+        {
+            "participant_id": SENDER,
+            "condition": "control",
+            "session_index": 1,
+            "task_type": "new_typed",
+            "call": CALL,
+            "behaviour_features": {"account_id": "ZVAY000000000001", "median_gap_ms": 10},
+            "decision": {
+                "level": 2,
+                "rules_fired": ["R_BEHAVIOUR_GUIDED"],
+                "evidence_card": {"behaviour_score": 0.4, "p_rarity": 0.03, "baseline_quality": "high"},
+            },
+        }
+    )
+    encoded = json.dumps(row)
+    assert row["participant"] == account_hash(SENDER)
+    assert SENDER not in encoded
+    assert "ZVAY000000000001" not in encoded
+    assert row["call_state"] == "active"
+    assert row["behaviour_score"] == 0.4
+    assert row["p_rarity"] == 0.03
+    assert row["baseline_quality"] == "high"
+    assert row["level"] == 2
+    assert row["rules_fired"] == '["R_BEHAVIOUR_GUIDED"]'
+
+
+def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
+    module, client, seen = bank
+    original = module.engine_post
+    participant = "p-pytest-exp-complete"
+    before = _balance(SENDER)
+    payee_before = _balance(PAYEE)
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        seen.append((path, body))
+        if path == "/decide":
+            return {
+                "level": 2,
+                "rules_fired": ["R_BEHAVIOUR_GUIDED"],
+                "evidence_card": {
+                    "signals": [],
+                    "reasons_vi": ["dừng lâu hơn thường lệ"],
+                    "baseline_quality": "medium",
+                    "episode_id": "",
+                    "behaviour_score": 1.2,
+                    "p_rarity": 0.02,
+                },
+                "funds_status": "held",
+                "hold_until": "2026-09-21T10:00:00+07:00",
+                "countdown_until": None,
+                "actions": ["verify"],
+                "reasons": [{"code": "v24_0", "text": "khác thường"}],
+                "families_hit": [],
+            }
+        return {}
+
+    module.engine_post = engine_post
+    shared = {
+        "from_account": SENDER,
+        "to_account": PAYEE,
+        "amount": 1000,
+        "task_type": "new_pasted",
+        "call": CALL,
+        "behaviour_features": FEATURES,
+        "transfer_purpose": "not_asked",
+        "device": DEVICE,
+    }
+    try:
+        response = client.post(
+            "/transfer",
+            json={**shared, "purpose_text": "pytest-exp", "experiment": {**EXPERIMENT, "participant_id": participant}},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "done"
+        assert body["funds_status"] == "released"
+        assert body["decision"]["level"] == "medium"
+        assert body["decision"]["engine_level"] == 2
+        assert body["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
+        assert body["decision"]["evidence_card"]["behaviour_score"] == 1.2
+        assert body["decision"]["evidence_card"]["p_rarity"] == 0.02
+        with psycopg.connect(DATABASE, row_factory=psycopg.rows.dict_row) as conn:
+            stored = conn.execute(
+                "SELECT decision FROM bank.experiment_sessions WHERE participant_id = %s",
+                (participant,),
+            ).fetchone()
+        assert stored is not None
+        assert stored["decision"]["level"] == 2
+        assert stored["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
+        assert stored["decision"]["evidence_card"]["baseline_quality"] == "medium"
+        plain = client.post("/transfer", json={**shared, "purpose_text": "pytest-exp-plain"})
+        assert plain.status_code == 200, plain.text
+        held = plain.json()
+        assert held["status"] == "needs_verification"
+        assert held["funds_status"] == "held"
+        assert "rules_fired" not in held["decision"]
+        assert "evidence_card" not in held["decision"]
+    finally:
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-v24", "pytest-exp", "pytest-exp-plain"))
+        _set_balance(PAYEE, payee_before)
         _drop_experiment(participant)

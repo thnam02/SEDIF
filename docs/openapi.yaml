@@ -1710,6 +1710,17 @@ components:
           items:
             type: string
             enum: [call, entry, payee, mobilization, long_term]
+        rules_fired:
+          type: array
+          items:
+            type: string
+          description: Có khi lệnh mang khối experiment. Production không thêm trường này.
+        evidence_card:
+          $ref: "#/components/schemas/EvidenceCard"
+        engine_level:
+          type: integer
+          enum: [0, 1, 2, 3]
+          description: Mức số từ /decide. Chỉ có khi experiment.
     TransferResponse:
       type: object
       required: [transfer_id, status, funds_status, hold_until, decision]

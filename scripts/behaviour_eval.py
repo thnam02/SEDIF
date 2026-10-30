@@ -21,10 +21,10 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO)]
 
 from engine.features.behaviour import (
+    COUNTS,
     PRIMARY,
     draw_features,
     empirical_p,
-    load_reference,
     population_stats,
     score_features,
     settings,
@@ -45,11 +45,8 @@ LEGIT = {
     "pause_to_action_ratio": ("mul", 1.05),
     "p90_gap_ms": ("mul", 1.05),
 }
-RECOVERY = {
-    "median_gap_ms": ("mul", 1.3),
-    "p90_gap_ms": ("mul", 1.3),
-    "background_count": ("add", 1),
-}
+GAP_SHIFTS = (0.10, 0.20, 0.30, 0.50)
+_TIMED = ("median_gap_ms", "p90_gap_ms", "review_dwell_ms")
 ALIASES = {
     "baseline": "baseline",
     "normal": "normal_call",
@@ -175,22 +172,69 @@ def legit_share(rows: list[dict]) -> tuple[int, int]:
     return len(hit), len(chosen)
 
 
+def draw_person(rng: random.Random) -> dict:
+    """Tốc độ và tần suất rời app riêng từng người. sd 0,4 trên log của khoảng dừng và dwell."""
+    return {
+        "speed": math.exp(rng.gauss(0.0, 0.4)),
+        "pause": math.exp(rng.gauss(0.0, 0.4)),
+        "background_rate": math.exp(rng.gauss(math.log(1.5), 0.55)),
+        "background_ms": math.exp(rng.gauss(math.log(1500.0), 0.3)),
+    }
+
+
+def _poisson(rng: random.Random, rate: float) -> int:
+    if rate <= 0:
+        return 0
+    limit = math.exp(-rate)
+    count = 0
+    product = 1.0
+    while product > limit:
+        count += 1
+        product *= rng.random()
+    return count - 1
+
+
+def _apply_shift(features: dict, shift: dict | None) -> None:
+    for name, spec in (shift or {}).items():
+        if name not in features:
+            continue
+        kind, amount = spec
+        updated = features[name] * float(amount) if kind == "mul" else features[name] + float(amount)
+        if name in COUNTS:
+            features[name] = float(max(0, int(round(updated))))
+        else:
+            features[name] = max(0.0, float(updated))
+
+
+def realize(rng: random.Random, person: dict, shift: dict | None = None) -> dict:
+    features = draw_features(rng, "new_typed")
+    for name in _TIMED:
+        features[name] *= person["speed"]
+    features["pause_to_action_ratio"] *= person["pause"]
+    switches = _poisson(rng, person["background_rate"])
+    features["background_count"] = float(switches)
+    features["background_total_ms"] = float(switches) * person["background_ms"]
+    _apply_shift(features, shift)
+    return features
+
+
 def synthetic_people(count: int = 40, seed: int = 42) -> list[dict]:
     rng = random.Random(seed)
     sessions = []
     for index in range(count):
-        person = f"P{index:03d}"
+        person_id = f"P{index:03d}"
+        traits = draw_person(rng)
         cursor = 0
 
         def add(condition: str, shift: dict | None) -> None:
             nonlocal cursor
             sessions.append(
                 {
-                    "participant_id": person,
+                    "participant_id": person_id,
                     "condition": condition,
                     "session_index": cursor,
                     "task_type": "new_typed",
-                    "features": draw_features(rng, "new_typed", shift),
+                    "features": realize(rng, traits, shift),
                     "call": condition != "baseline",
                     "new_payee": condition != "baseline",
                 }
@@ -288,23 +332,63 @@ def analyse(sessions: list[dict], label: str) -> None:
     )
 
 
-def recovery(people: int = 80) -> None:
-    loaded = load_reference("new_typed")
-    if not loaded:
-        print("recovery test (synthetic): reference missing")
-        return
+def _rarity(features: dict, history: list[dict], population: dict, reference: list[float], cfg: dict) -> float | None:
+    scored = score_features(features, history, population, cfg["directions"], cfg["prior"], cfg["floor"])
+    return empirical_p(scored.score, reference)
+
+
+def recovery(people: int = 80, calibration: int = 40) -> None:
+    """Đường phát hiện. Reference là phiên không dịch của nhóm hiệu chỉnh, cùng giao thức."""
     cfg = settings()
     rng = random.Random(7)
-    hit = 0
+    calibration_rows = []
+    for index in range(calibration):
+        traits = draw_person(rng)
+        for session_index in range(10):
+            calibration_rows.append(
+                {
+                    "participant_id": f"C{index:03d}",
+                    "condition": "baseline",
+                    "session_index": session_index,
+                    "task_type": "new_typed",
+                    "features": realize(rng, traits),
+                }
+            )
+    population = population_of(calibration_rows).get("new_typed") or {}
+    fitted = walk(calibration_rows, {"new_typed": population}, cfg["directions"], cfg, None)
+    reference = [row["S"] for row in fitted if row["n"] >= 6]
+    probes = []
     for _ in range(people):
-        history = [draw_features(rng, "new_typed") for _ in range(6)]
-        shifted = draw_features(rng, "new_typed", RECOVERY)
-        scored = score_features(shifted, history, loaded["population"], cfg["directions"], cfg["prior"], cfg["floor"])
-        rarity = empirical_p(scored.score, loaded["scores"])
-        if rarity is not None and rarity <= 0.05 and len(history) >= 3:
-            hit += 1
-    print(f"recovery test (synthetic): shift +30% gaps, +1 background detected {hit / people:.3f} ({hit}/{people})")
-    print("recovery reference: synthetic, demo only")
+        traits = draw_person(rng)
+        history = [realize(rng, traits) for _ in range(6)]
+        plain = realize(rng, traits)
+        probes.append((history, plain))
+    false_alarms = 0
+    for history, plain in probes:
+        rarity = _rarity(plain, history, population, reference, cfg)
+        if rarity is not None and rarity <= 0.05:
+            false_alarms += 1
+    false_rate = false_alarms / people
+    print("recovery curve (synthetic, between-person heterogeneity)")
+    print(f"recovery reference sessions {len(reference)} (unshifted, n>=6, chronological personal baseline)")
+    print(f"false-alarm sessions {people} unshifted probes from the same participants")
+    for gap in GAP_SHIFTS:
+        for extra in (0, 1):
+            detected = 0
+            for history, plain in probes:
+                moved = dict(plain)
+                moved["median_gap_ms"] = plain["median_gap_ms"] * (1.0 + gap)
+                moved["p90_gap_ms"] = plain["p90_gap_ms"] * (1.0 + gap)
+                if extra:
+                    moved["background_count"] = float(plain["background_count"] + 1)
+                rarity = _rarity(moved, history, population, reference, cfg)
+                if rarity is not None and rarity <= 0.05:
+                    detected += 1
+            print(
+                f"gap +{int(gap * 100)}% background +{extra} "
+                f"detection {detected / people:.3f} ({detected}/{people}) "
+                f"false-alarm {false_rate:.3f} ({false_alarms}/{people})"
+            )
 
 
 def _t_crit(df: int) -> float:
@@ -354,6 +438,7 @@ def main() -> None:
     else:
         why = reason or f"rows {len(real)} conditions {sorted(conditions)}"
         print(f"behaviour_eval data: synthetic ({why})")
+        print("heterogeneity: log-normal sd 0.4 on gaps, dwell, and pause_to_action_ratio; personal background-switch rate")
         analyse(synthetic_people(), "synthetic")
     recovery()
     power()

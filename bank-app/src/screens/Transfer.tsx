@@ -202,16 +202,17 @@ export function ConfirmScreen() {
           const session = sessionRecorder.end()
           const device = { ...FidesSession.collectSignals(), state: "unknown" as const }
           rememberSession({ task_type: session.task_type, call, behaviour_features: session.behaviour_features })
-          if (session.experiment && session.raw_events) {
+          const experiment = session.experiment
+          if (experiment && session.raw_events) {
             void uploadExperiment({
-              participant_id: session.experiment.participant_id,
-              condition: session.experiment.condition,
-              session_index: session.experiment.session_index,
+              participant_id: experiment.participant_id,
+              condition: experiment.condition,
+              session_index: experiment.session_index,
               task_type: session.task_type,
               call,
               behaviour_features: session.behaviour_features,
               raw_events: session.raw_events,
-            })
+            }).catch(() => undefined)
           }
           transfer.mutate(
             {
@@ -228,20 +229,30 @@ export function ConfirmScreen() {
             },
             {
               onSuccess: (result) => {
+                if (experiment) {
+                  console.log(JSON.stringify({
+                    experiment,
+                    level: result.decision.level,
+                    engine_level: result.decision.engine_level ?? null,
+                    rules_fired: result.decision.rules_fired ?? [],
+                    evidence_card: result.decision.evidence_card ?? null,
+                  }))
+                }
                 setOutcome({
                   transferId: result.transfer_id,
-                  status: result.status,
+                  status: experiment ? "done" : result.status,
                   level: result.decision.level,
                   actions: result.decision.actions,
                   reasons: result.decision.reasons,
                   familiesHit: result.decision.families_hit ?? [],
-                  funds_status: result.funds_status,
+                  funds_status: experiment ? "released" : result.funds_status,
                   gate: "none",
-                  hold_until: result.hold_until,
+                  hold_until: experiment ? null : result.hold_until,
                   countdown_until: null,
                   payee: toAccount,
                   payeeName: toName,
                   amount,
+                  experiment: Boolean(experiment),
                 })
                 router.replace("/(main)/transfer/result")
               },
@@ -262,6 +273,16 @@ export function ResultScreen() {
   const type = useType()
   const largeText = useBank((state) => state.largeText)
   if (!outcome) return <Screen call><Header title={copy.success} /></Screen>
+  if (outcome.experiment) {
+    return (
+      <Screen call>
+        <View style={{ alignItems: "center", gap: 20, paddingVertical: 40 }}>
+          <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700", textAlign: "center" }}>{copy.experimentRecorded}</Text>
+          <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
+        </View>
+      </Screen>
+    )
+  }
   if (outcome.status !== "done") {
     return (
       <Screen call>

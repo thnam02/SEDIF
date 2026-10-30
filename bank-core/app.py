@@ -149,6 +149,10 @@ def _plain(value):
     return value
 
 
+def _ensure_experiment_column(conn) -> None:
+    conn.execute("ALTER TABLE bank.experiment_sessions ADD COLUMN IF NOT EXISTS decision jsonb")
+
+
 def touch_session(account: str, device: dict | None, now: datetime) -> str:
     session = f"demo-{account}"
     hashed = account_hash(account)
@@ -753,10 +757,10 @@ def transfer(
         }
         if body.device is not None:
             request["device"] = body.device
-        for key in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment", "recent_funds_events"):
-            sent = _plain(getattr(body, key))
+        for field in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment", "recent_funds_events"):
+            sent = _plain(getattr(body, field))
             if sent is not None:
-                request[key] = sent
+                request[field] = sent
         try:
             decided = engine_post("/decide", request, timeout=DECIDE_TIMEOUT_S)
         except EngineUnavailable:
@@ -764,8 +768,19 @@ def transfer(
             decision_id = None
         level = legacy_level(decided["level"])
         funds = decided["funds_status"]
+        experiment = body.experiment
+        if experiment is not None:
+            record = {
+                "experiment": _plain(experiment),
+                "level": decided.get("level"),
+                "rules_fired": list(decided.get("rules_fired") or []),
+                "evidence_card": decided.get("evidence_card") or {},
+            }
+            log.info("experiment decision %s", json.dumps(record, ensure_ascii=False))
+            funds = "released"
+            decided["hold_until"] = None
         hung = False
-        status = status_of(level, funds, hung)
+        status = "done" if experiment is not None else status_of(level, funds, hung)
         conn.execute(
             """
             INSERT INTO bank.transfers
@@ -795,7 +810,9 @@ def transfer(
         stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer_id,)).fetchone()
         if funds == "released":
             release_payee(conn, stored, now)
-        if level == "medium" and balance["has_guardian"]:
+        if experiment is not None:
+            _save_experiment_decision(conn, body, decided, now)
+        if level == "medium" and balance["has_guardian"] and experiment is None:
             conn.execute(
                 """
                 INSERT INTO bank.guardian_requests (id, account_id, transfer_id, level, funds_status, status)
@@ -809,12 +826,7 @@ def transfer(
         "status": status,
         "funds_status": funds,
         "hold_until": decided.get("hold_until"),
-        "decision": {
-            "level": level,
-            "actions": decided.get("actions") or [],
-            "reasons": decided.get("reasons") or [],
-            "families_hit": decided.get("families_hit") or [],
-        },
+        "decision": _decision_payload(level, decided, experiment is not None),
     }
     if key:
         with connect() as conn:
@@ -833,29 +845,107 @@ def transfer(
     return result
 
 
+def _decision_payload(level: str, decided: dict, experiment: bool) -> dict:
+    payload = {
+        "level": level,
+        "actions": decided.get("actions") or [],
+        "reasons": decided.get("reasons") or [],
+        "families_hit": decided.get("families_hit") or [],
+    }
+    if experiment:
+        payload["rules_fired"] = list(decided.get("rules_fired") or [])
+        payload["evidence_card"] = decided.get("evidence_card") or {}
+        payload["engine_level"] = decided.get("level")
+    return payload
+
+
+def _save_experiment_decision(conn, body: TransferIn, decided: dict, now: datetime) -> None:
+    experiment = body.experiment
+    if experiment is None:
+        return
+    _ensure_experiment_column(conn)
+    stored = {
+        "level": decided.get("level"),
+        "rules_fired": list(decided.get("rules_fired") or []),
+        "evidence_card": decided.get("evidence_card") or {},
+        "experiment": _plain(experiment),
+    }
+    payload = json.dumps(hash_accounts(stored), ensure_ascii=False)
+    found = conn.execute(
+        """
+        UPDATE bank.experiment_sessions
+        SET decision = %s::jsonb
+        WHERE participant_id = %s AND condition = %s AND session_index = %s
+        RETURNING id
+        """,
+        (payload, experiment.participant_id, experiment.condition, experiment.session_index),
+    ).fetchone()
+    if found is not None:
+        return
+    call = _plain(body.call) or {"state": "unknown", "observability": "unavailable", "transport": "unknown"}
+    features = _plain(body.behaviour_features) or {}
+    conn.execute(
+        """
+        INSERT INTO bank.experiment_sessions
+        (participant_id, condition, session_index, task_type, call, behaviour_features, raw_events, created_at, decision)
+        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, NULL, %s, %s::jsonb)
+        """,
+        (
+            experiment.participant_id,
+            experiment.condition,
+            experiment.session_index,
+            body.task_type or "new_typed",
+            json.dumps(hash_accounts(call)),
+            json.dumps(hash_accounts(features)),
+            now,
+            payload,
+        ),
+    )
+
+
 @app.post("/experiment/sessions")
 def store_experiment_session(body: ExperimentSessionIn) -> dict:
     now = CLOCK.now()
     raw = hash_accounts(body.raw_events) if body.raw_events is not None else None
+    call = json.dumps(hash_accounts(body.call.model_dump()))
+    features = json.dumps(hash_accounts(body.behaviour_features.model_dump()))
     with connect() as conn:
         conn.execute(SCHEMA)
-        conn.execute(
+        _ensure_experiment_column(conn)
+        found = conn.execute(
             """
-            INSERT INTO bank.experiment_sessions
-            (participant_id, condition, session_index, task_type, call, behaviour_features, raw_events, created_at)
-            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+            SELECT id FROM bank.experiment_sessions
+            WHERE participant_id = %s AND condition = %s AND session_index = %s
             """,
-            (
-                body.participant_id,
-                body.condition,
-                body.session_index,
-                body.task_type,
-                json.dumps(hash_accounts(body.call.model_dump())),
-                json.dumps(hash_accounts(body.behaviour_features.model_dump())),
-                None if raw is None else json.dumps(raw),
-                now,
-            ),
-        )
+            (body.participant_id, body.condition, body.session_index),
+        ).fetchone()
+        if found is None:
+            conn.execute(
+                """
+                INSERT INTO bank.experiment_sessions
+                (participant_id, condition, session_index, task_type, call, behaviour_features, raw_events, created_at)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+                """,
+                (
+                    body.participant_id,
+                    body.condition,
+                    body.session_index,
+                    body.task_type,
+                    call,
+                    features,
+                    None if raw is None else json.dumps(raw),
+                    now,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE bank.experiment_sessions
+                SET task_type = %s, call = %s::jsonb, behaviour_features = %s::jsonb, raw_events = %s::jsonb
+                WHERE id = %s
+                """,
+                (body.task_type, call, features, None if raw is None else json.dumps(raw), found["id"]),
+            )
         conn.commit()
     return {"stored": True}
 

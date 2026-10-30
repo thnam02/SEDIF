@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS bank.experiment_sessions (
     call jsonb NOT NULL,
     behaviour_features jsonb NOT NULL,
     raw_events jsonb,
-    created_at timestamptz NOT NULL
+    created_at timestamptz NOT NULL,
+    decision jsonb
 );
 """
 

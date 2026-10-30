@@ -23,6 +23,7 @@ export const copy = {
   confirm: "Xác nhận giao dịch",
   face: "Xác thực khuôn mặt cho giao dịch trên 10 triệu",
   success: "Chuyển tiền thành công",
+  experimentRecorded: "Đã ghi nhận phiên thử nghiệm",
   code: "Mã giao dịch",
   homeButton: "Về trang chủ",
   savings: "Tiết kiệm",
