@@ -683,8 +683,21 @@ def history(account_id: str, before: str | None = None) -> dict:
             raise HTTPException(404, "không có tài khoản")
         rows = conn.execute(
             """
-            SELECT tx_id, ts, direction, amount, tx_type, purpose_text, status
-            FROM bank.entries WHERE account_id = %s AND ts <= %s ORDER BY ts, id
+            SELECT e.tx_id, e.ts, e.direction, e.amount, e.tx_type, e.purpose_text, e.status,
+                   COALESCE(cp.holder_name, ben.holder_name, x.other_id) AS counterparty_name
+            FROM bank.entries e
+            LEFT JOIN bank.transfers t ON t.id = e.tx_id
+            LEFT JOIN LATERAL (
+                SELECT CASE
+                    WHEN e.direction = 'out' THEN NULLIF(t.to_account, '')
+                    ELSE NULLIF(t.from_account, '')
+                END AS other_id
+            ) x ON true
+            LEFT JOIN bank.accounts cp ON cp.id = x.other_id
+            LEFT JOIN bank.beneficiaries ben
+                ON ben.owner_account = e.account_id AND ben.account_id = x.other_id
+            WHERE e.account_id = %s AND e.ts <= %s
+            ORDER BY e.ts, e.id
             """,
             (account_id, cutoff),
         ).fetchall()
@@ -699,6 +712,7 @@ def history(account_id: str, before: str | None = None) -> dict:
                 "tx_type": row["tx_type"],
                 "purpose_text": row["purpose_text"],
                 "status": row["status"],
+                "counterparty_name": row["counterparty_name"],
             }
             for row in rows
         ],

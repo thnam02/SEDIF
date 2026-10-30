@@ -87,6 +87,7 @@ export function useTransfer() {
       call: components["schemas"]["CallContext"]
       behaviour_features: components["schemas"]["BehaviourFeatures"]
       transfer_purpose: components["schemas"]["TransferPurpose"]
+      entry_detail?: components["schemas"]["EntryDetail"]
       device: components["schemas"]["Device"] & components["schemas"]["DeviceIntegrity"]
       experiment?: components["schemas"]["ExperimentAssignment"]
     }) => {
@@ -103,6 +104,7 @@ export function useTransfer() {
             call: input.call,
             behaviour_features: input.behaviour_features,
             transfer_purpose: input.transfer_purpose,
+            entry_detail: input.entry_detail,
             device: input.device,
             experiment: input.experiment,
           },

@@ -995,6 +995,12 @@ components:
       type: string
       enum: [saved_payee, new_typed, new_pasted, qr]
       description: Cách khách chọn người nhận. Khoá baseline thao tác cùng loại.
+    EntryDetail:
+      type: string
+      enum: [paste, image_capture, image_upload]
+      description: >
+        Cách đưa số người nhận vào ô, khi task_type là new_pasted.
+        Không tham gia chấm điểm. Chỉ hiện trên thẻ bằng chứng.
     CallContext:
       type: object
       additionalProperties: false
@@ -1432,6 +1438,11 @@ components:
           type: number
           nullable: true
           description: (1 + số điểm tham chiếu >= S) / (n + 1). Ngưỡng 0,05 là demo.
+        entry_detail:
+          anyOf:
+            - $ref: "#/components/schemas/EntryDetail"
+            - type: "null"
+          description: Cách dán hoặc lấy số từ ảnh. App gắn khi hiện thẻ. Engine không đọc.
     Intervention:
       type: string
       enum: [none, banner, three_button, security_workflow]
@@ -1659,6 +1670,10 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/TransferStatus"
+        counterparty_name:
+          type: string
+          nullable: true
+          description: Tên hoặc số tài khoản phía bên kia, nếu sổ tra được. Không dùng để chấm điểm.
     Beneficiary:
       type: object
       required: [id, account_id, holder_name, saved_at, times_paid]
@@ -1699,6 +1714,8 @@ components:
           $ref: "#/components/schemas/BehaviourFeatures"
         transfer_purpose:
           $ref: "#/components/schemas/TransferPurpose"
+        entry_detail:
+          $ref: "#/components/schemas/EntryDetail"
         device:
           description: Khối v2.1 cộng state của v2.4. Có thể bỏ cả khối.
           oneOf:

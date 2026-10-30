@@ -17,13 +17,18 @@ appId: com.hainamtran.saobank
     id: "amount"
 - eraseText: 12
 - inputText: "60000"
-- hideKeyboard:
-    optional: true
-- tapOn: "Xác nhận giao dịch"
+- tapOn:
+    id: "amount-dismiss"
 - scrollUntilVisible:
     element: "Mua hàng, dịch vụ"
     direction: DOWN
 - tapOn: "Mua hàng, dịch vụ"
+- scrollUntilVisible:
+    element:
+      id: "continue-transfer"
+    direction: DOWN
+- tapOn:
+    id: "continue-transfer"
 - scrollUntilVisible:
     element:
       id: "confirm-transfer"

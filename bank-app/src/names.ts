@@ -3,7 +3,7 @@ import { personas } from "./personas"
 const MARKS = "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ"
 const ASCII = "aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUUYYYYYD"
 
-function nameAscii(value: string): string {
+export function nameAscii(value: string): string {
   let out = ""
   for (const ch of value) {
     const index = MARKS.indexOf(ch)
@@ -13,6 +13,10 @@ function nameAscii(value: string): string {
 }
 
 const byAscii = new Map(personas.map((person) => [nameAscii(person.full_name), person.full_name]))
+
+export function transferNote(fullName: string): string {
+  return `${nameAscii(fullName)} chuyen tien`
+}
 
 export function displayHolder(holder: string | null | undefined): string {
   if (!holder) return ""

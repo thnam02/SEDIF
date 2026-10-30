@@ -10,15 +10,18 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "new-account"
 - inputText: "ZMULEDEMO0000001"
-- hideKeyboard:
-    optional: true
 - tapOn:
     id: "new-account-go"
-- tapOn: "Xác nhận giao dịch"
 - scrollUntilVisible:
     element: "Khác"
     direction: DOWN
 - tapOn: "Khác"
+- scrollUntilVisible:
+    element:
+      id: "continue-transfer"
+    direction: DOWN
+- tapOn:
+    id: "continue-transfer"
 - scrollUntilVisible:
     element:
       id: "confirm-transfer"

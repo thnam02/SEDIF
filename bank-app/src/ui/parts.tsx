@@ -1,7 +1,7 @@
 import { type ReactNode } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useRouter } from "expo-router"
-import { ArrowLeft } from "lucide-react-native"
+import { ArrowLeft, Bell, Home } from "lucide-react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { FidesCallIndicator, fidesTheme } from "fides-sdk"
 
@@ -20,7 +20,7 @@ export function Screen({ children, call = false }: { children: ReactNode; call?:
   const insets = useSafeAreaInsets()
   return (
     <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="never" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentInsetAdjustmentBehavior="never" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
         {call ? <FidesCallIndicator /> : null}
         {children}
       </ScrollView>
@@ -28,17 +28,28 @@ export function Screen({ children, call = false }: { children: ReactNode; call?:
   )
 }
 
-export function Header({ title }: { title: string }) {
+export function Header({ title, tools = false }: { title: string; tools?: boolean }) {
   const router = useRouter()
   const type = useType()
   return (
-    <View className="flex-row items-center gap-3" style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
       {router.canGoBack() ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={copy.home} onPress={() => router.back()}>
+        <Pressable accessibilityRole="button" accessibilityLabel={copy.back} onPress={() => router.back()}>
           <ArrowLeft size={19} color={colors.deep} />
         </Pressable>
       ) : null}
-      <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{title}</Text>
+      <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700", flex: 1 }}>{title}</Text>
+      {tools ? (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Pressable testID="header-notifications" accessibilityRole="button" onPress={() => router.push("/(main)/history")} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
+            <Bell size={16} color={colors.deep} />
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.aqua, position: "absolute", top: 6, right: 6 }} />
+          </Pressable>
+          <Pressable testID="header-home" accessibilityRole="button" accessibilityLabel={copy.home} onPress={() => router.replace("/(main)/(tabs)")} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
+            <Home size={16} color={colors.deep} />
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   )
 }
@@ -47,15 +58,17 @@ export function Card({ children }: { children: ReactNode }) {
   return <View className="flex-col gap-3 rounded-2xl bg-mint p-4" style={{ gap: 12, borderRadius: 16, backgroundColor: colors.mint, padding: 16 }}>{children}</View>
 }
 
-export function Button({ label, onPress, outline = false, testID }: { label: string; onPress?: () => void; outline?: boolean; testID?: string }) {
+export function Button({ label, onPress, outline = false, testID, disabled = false }: { label: string; onPress?: () => void; outline?: boolean; testID?: string; disabled?: boolean }) {
   const type = useType()
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      onPress={onPress}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={disabled ? undefined : onPress}
       className="min-h-11 items-center justify-center rounded-xl px-4"
-      style={{ minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 12, paddingHorizontal: 16, backgroundColor: outline ? colors.white : colors.deep, borderWidth: outline ? 1 : 0, borderColor: colors.deep }}
+      style={{ minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 12, paddingHorizontal: 16, backgroundColor: outline ? colors.white : colors.deep, borderWidth: outline ? 1 : 0, borderColor: colors.deep, opacity: disabled ? 0.4 : 1 }}
     >
       <Text style={{ color: outline ? colors.deep : colors.white, fontSize: type.body, fontWeight: "600" }}>{label}</Text>
     </Pressable>

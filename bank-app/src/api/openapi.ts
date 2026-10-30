@@ -663,7 +663,11 @@ export interface components {
             episode_id: string;
             behaviour_score?: number | null;
             p_rarity?: number | null;
+            /** @description Cách dán hoặc lấy số từ ảnh. App gắn khi hiện thẻ. */
+            entry_detail?: components["schemas"]["EntryDetail"] | null;
         };
+        /** @enum {string} */
+        EntryDetail: "paste" | "image_capture" | "image_upload";
         /**
          * @description Kiểu màn hình v2.4. Chưa gắn vào màn hình đang chạy.
          * @enum {string}
@@ -766,6 +770,8 @@ export interface components {
             tx_type: components["schemas"]["TxType"];
             purpose_text?: string;
             status: components["schemas"]["TransferStatus"];
+            /** @description Tên hoặc số tài khoản phía bên kia, nếu sổ tra được. */
+            counterparty_name?: string | null;
         };
         Beneficiary: {
             id: string;
@@ -786,6 +792,8 @@ export interface components {
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];
+            /** @description Cách dán hoặc lấy số từ ảnh. Không tham gia chấm điểm. */
+            entry_detail?: components["schemas"]["EntryDetail"];
             /** @description Khối v2.1 cộng state của v2.4. Có thể bỏ cả khối. */
             device?: (components["schemas"]["Device"] & components["schemas"]["DeviceIntegrity"]) | null;
             experiment?: components["schemas"]["ExperimentAssignment"];
