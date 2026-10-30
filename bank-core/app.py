@@ -46,6 +46,21 @@ DEMO_MULE_ACCOUNTS = frozenset({"ZMULEDEMO0000001"})
 RESET_AT = datetime.fromisoformat("2026-09-20T09:00:00+07:00")
 
 CLOCK = DemoClock(speed=float(os.environ.get("DEMO_CLOCK_SPEED", "60")))
+# Người nhận chỉ có trong các cảnh demo. Không phải khách thật.
+DEMO_PAYEES = {
+    "A0119434": "Công ty TNHH Thành Công",
+    "ZCAP400000000001": "Đặng Quốc Bảo",
+    "ZGUIDE4000000001": "Ngô Thanh Hà",
+    "ZMULEDEMO0000001": "Trịnh Văn Khôi",
+    "ZMED230000000001": "Lý Minh Châu",
+    "ZMED220000000001": "Lý Hồng Nhung",
+    "ZMED000000000001": "Lý Hồng Nhung",
+    "ZLANB40000000001": "Phạm Thu Ngân",
+    "ZLANB40000000002": "Mai Phương Thảo",
+    "ZLAN120000000001": "Phạm Thu Ngân",
+    "ZANH000000000099": "Võ Anh Thư",
+    "ZVAY000000000001": "Bùi Hải Yến",
+}
 SKIP: set[str] = set()
 SESSIONS: set[str] = set()
 FEED: list[tuple[datetime, dict]] = []
@@ -295,13 +310,13 @@ def debit(conn, account: str, amount: int, now: datetime) -> None:
     conn.execute("UPDATE bank.accounts SET balance = balance - %s WHERE id = %s", (amount, account))
 
 
-def entry(conn, account: str, tx_id: str, ts, direction: str, amount: int, tx_type: str, purpose: str, status: str) -> None:
+def entry(conn, account: str, tx_id: str, ts, direction: str, amount: int, tx_type: str, purpose: str, status: str, counterparty: str | None = None) -> None:
     conn.execute(
         """
-        INSERT INTO bank.entries (account_id, tx_id, ts, direction, amount, tx_type, purpose_text, status)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO bank.entries (account_id, tx_id, ts, direction, amount, tx_type, purpose_text, status, counterparty_id)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
-        (account, tx_id, ts, direction, amount, tx_type, purpose, status),
+        (account, tx_id, ts, direction, amount, tx_type, purpose, status, counterparty or None),
     )
 
 
@@ -311,7 +326,7 @@ def release_payee(conn, transfer: dict, now: datetime) -> None:
     owned = conn.execute("SELECT 1 FROM bank.accounts WHERE id = %s", (transfer["to_account"],)).fetchone()
     if owned:
         credit(conn, transfer["to_account"], int(transfer["amount"]))
-        entry(conn, transfer["to_account"], transfer["id"], now, "in", int(transfer["amount"]), "transfer", transfer["purpose_text"], "done")
+        entry(conn, transfer["to_account"], transfer["id"], now, "in", int(transfer["amount"]), "transfer", transfer["purpose_text"], "done", transfer["from_account"])
     balance = conn.execute("SELECT balance FROM bank.accounts WHERE id = %s", (transfer["from_account"],)).fetchone()
     session = f"demo-{transfer['from_account']}"
     post_ledger(
@@ -517,6 +532,89 @@ def ensure_fund_channel(conn) -> None:
     conn.execute("ALTER TABLE bank.entries ADD COLUMN IF NOT EXISTS channel text")
 
 
+def seed_demo_payees(conn) -> None:
+    """Tên cho số tài khoản chỉ xuất hiện trong demo. Không đè khách có trong sổ mô phỏng."""
+    for account_id, name in DEMO_PAYEES.items():
+        conn.execute(
+            """
+            INSERT INTO bank.accounts
+            (id, customer_id, holder_name, segment, balance, status, has_guardian, account_type, bank_id, limit_per_txn, limit_per_day)
+            VALUES (%s, NULL, %s, 'thường', 0, 'open', false, 'personal', 'B01', 0, 0)
+            ON CONFLICT (id) DO UPDATE SET holder_name = EXCLUDED.holder_name
+            WHERE bank.accounts.customer_id IS NULL
+            """,
+            (account_id, name),
+        )
+
+
+def correct_epoch_stamps(conn) -> None:
+    """Đồng hồ demo từng đứng ở 00:00 ngày đặt lại. Các dòng đó là buổi sáng demo, 09:00."""
+    epoch = datetime(2026, 9, 20, tzinfo=ICT)
+    conn.execute("UPDATE bank.entries SET ts = %s WHERE ts = %s", (RESET_AT, epoch))
+    conn.execute("UPDATE bank.transfers SET created_at = %s WHERE created_at = %s", (RESET_AT, epoch))
+    conn.execute("UPDATE bank.products SET ts = %s WHERE ts = %s", (RESET_AT, epoch))
+
+
+def backfill_counterparties(conn) -> None:
+    """Gắn số tài khoản bên kia vào sổ, để lịch sử hiện tên thay vì mã giao dịch."""
+    conn.execute("ALTER TABLE bank.entries ADD COLUMN IF NOT EXISTS counterparty_id text")
+    conn.execute("CREATE TABLE IF NOT EXISTS bank.meta (key text PRIMARY KEY, value text)")
+    conn.execute(
+        """
+        UPDATE bank.entries e
+        SET counterparty_id = CASE
+            WHEN e.direction = 'out' THEN NULLIF(t.to_account, '')
+            ELSE NULLIF(t.from_account, '')
+        END
+        FROM bank.transfers t
+        WHERE t.id = e.tx_id AND (e.counterparty_id IS NULL OR e.counterparty_id = '')
+        """
+    )
+    if conn.execute("SELECT 1 FROM bank.meta WHERE key = 'parties_v1'").fetchone():
+        return
+    from load import OBSERVED
+
+    path = OBSERVED / "transactions.parquet"
+    if not path.exists():
+        return
+    wanted = {
+        row["tx_id"]
+        for row in conn.execute(
+            """
+            SELECT DISTINCT tx_id FROM bank.entries
+            WHERE (counterparty_id IS NULL OR counterparty_id = '')
+              AND tx_type IN ('transfer', 'own_transfer', 'own_transfer_drain', 'passthrough_in', 'passthrough_out')
+            """
+        ).fetchall()
+    }
+    if not wanted:
+        conn.execute("INSERT INTO bank.meta (key, value) VALUES ('parties_v1', '1') ON CONFLICT (key) DO NOTHING")
+        return
+    frame = pd.read_parquet(path, columns=["tx_id", "from_account", "to_account"])
+    frame["tx_id"] = frame["tx_id"].astype(str)
+    frame = frame.loc[frame["tx_id"].isin(wanted)]
+    pairs = [
+        (str(row.to_account), str(row.from_account), str(row.tx_id))
+        for row in frame.itertuples(index=False)
+        if str(row.to_account) not in {"", "nan", "None"}
+    ]
+    if pairs:
+        conn.execute("CREATE TEMP TABLE party_fill (to_account text, from_account text, tx_id text) ON COMMIT DROP")
+        with conn.cursor() as cur:
+            with cur.copy("COPY party_fill (to_account, from_account, tx_id) FROM STDIN") as stream:
+                for row in pairs:
+                    stream.write_row(row)
+        conn.execute(
+            """
+            UPDATE bank.entries e
+            SET counterparty_id = CASE WHEN e.direction = 'out' THEN p.to_account ELSE p.from_account END
+            FROM party_fill p
+            WHERE e.tx_id = p.tx_id AND (e.counterparty_id IS NULL OR e.counterparty_id = '')
+            """
+        )
+    conn.execute("INSERT INTO bank.meta (key, value) VALUES ('parties_v1', '1') ON CONFLICT (key) DO NOTHING")
+
+
 def seed_branch_closure(conn) -> None:
     """Một tất toán tại quầy, gắn nhãn demo. Không nằm trên tài khoản các cảnh Maestro."""
     ensure_fund_channel(conn)
@@ -543,7 +641,12 @@ def boot() -> None:
         else:
             load_reset(conn)
         seed_branch_closure(conn)
+        seed_demo_payees(conn)
+        correct_epoch_stamps(conn)
+        backfill_counterparties(conn)
         conn.commit()
+    if CLOCK.now() <= datetime(2026, 9, 20, tzinfo=ICT):
+        CLOCK.seek(RESET_AT)
     if os.environ.get("DEMO_REPLAY", "1") == "1" and not _REPLAY_STARTED:
         threading.Thread(target=_build_feed, daemon=True).start()
         threading.Thread(target=_play, daemon=True).start()
@@ -684,7 +787,8 @@ def history(account_id: str, before: str | None = None) -> dict:
         rows = conn.execute(
             """
             SELECT e.tx_id, e.ts, e.direction, e.amount, e.tx_type, e.purpose_text, e.status,
-                   COALESCE(cp.holder_name, ben.holder_name, x.other_id) AS counterparty_name
+                   COALESCE(NULLIF(e.counterparty_id, ''), x.other_id) AS counterparty_id,
+                   COALESCE(NULLIF(cp.holder_name, ''), NULLIF(ben.holder_name, '')) AS counterparty_name
             FROM bank.entries e
             LEFT JOIN bank.transfers t ON t.id = e.tx_id
             LEFT JOIN LATERAL (
@@ -693,9 +797,10 @@ def history(account_id: str, before: str | None = None) -> dict:
                     ELSE NULLIF(t.from_account, '')
                 END AS other_id
             ) x ON true
-            LEFT JOIN bank.accounts cp ON cp.id = x.other_id
+            LEFT JOIN bank.accounts cp ON cp.id = COALESCE(NULLIF(e.counterparty_id, ''), x.other_id)
             LEFT JOIN bank.beneficiaries ben
-                ON ben.owner_account = e.account_id AND ben.account_id = x.other_id
+                ON ben.owner_account = e.account_id
+               AND ben.account_id = COALESCE(NULLIF(e.counterparty_id, ''), x.other_id)
             WHERE e.account_id = %s AND e.ts <= %s
             ORDER BY e.ts, e.id
             """,
@@ -712,6 +817,7 @@ def history(account_id: str, before: str | None = None) -> dict:
                 "tx_type": row["tx_type"],
                 "purpose_text": row["purpose_text"],
                 "status": row["status"],
+                "counterparty_id": row["counterparty_id"],
                 "counterparty_name": row["counterparty_name"],
             }
             for row in rows
@@ -916,7 +1022,7 @@ def transfer(
                 now,
             ),
         )
-        entry(conn, body.from_account, transfer_id, now, "out", body.amount, "transfer", body.purpose_text or "", status)
+        entry(conn, body.from_account, transfer_id, now, "out", body.amount, "transfer", body.purpose_text or "", status, body.to_account)
         stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer_id,)).fetchone()
         if funds == "released":
             release_payee(conn, stored, now)

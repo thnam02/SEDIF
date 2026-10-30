@@ -17,6 +17,11 @@ export function vnd(amount: number): string {
   return `${grouped(amount)} đ`
 }
 
+export function maskAccount(id: string): string {
+  const tail = id.replace(/\s/g, "").slice(-4)
+  return tail ? `•••• ${tail}` : ""
+}
+
 function part(iso: string, type: Intl.DateTimeFormatPartTypes, options: Intl.DateTimeFormatOptions): string {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: ICT, ...options }).formatToParts(new Date(iso))
   return parts.find((item) => item.type === type)?.value ?? ""

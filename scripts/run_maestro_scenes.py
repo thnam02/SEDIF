@@ -48,6 +48,7 @@ def isolate(accounts: tuple[str, ...]) -> None:
             redis("DEL", key_for(user, task))
     listed = ",".join(f"'{account}'" for account in accounts)
     unfinished = "('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup')"
+    # Lệnh chưa xong đã trừ số dư lúc ghi sổ. Xoá dòng mà không hoàn tiền thì cảnh sau hết số dư.
     subprocess.run(
         [
             "docker",
@@ -62,6 +63,19 @@ def isolate(accounts: tuple[str, ...]) -> None:
             "-v",
             "ON_ERROR_STOP=1",
             "-c",
+            f"UPDATE bank.accounts a SET balance = a.balance + s.amount FROM ("
+            f"SELECT from_account, SUM(amount) AS amount FROM bank.transfers "
+            f"WHERE from_account IN ({listed}) AND status IN {unfinished} GROUP BY from_account"
+            f") s WHERE a.id = s.from_account;"
+            f"UPDATE bank.accounts a SET balance = a.balance + s.amount FROM ("
+            f"SELECT e.account_id, SUM(e.amount) AS amount FROM bank.entries e "
+            f"WHERE e.account_id IN ({listed}) AND e.direction = 'out' AND e.tx_id LIKE 'X-%' "
+            f"AND NOT EXISTS (SELECT 1 FROM bank.transfers t WHERE t.id = e.tx_id) GROUP BY e.account_id"
+            f") s WHERE a.id = s.account_id;"
+            f"DELETE FROM bank.entries e WHERE e.account_id IN ({listed}) AND e.tx_id LIKE 'X-%' "
+            f"AND NOT EXISTS (SELECT 1 FROM bank.transfers t WHERE t.id = e.tx_id);"
+            f"DELETE FROM bank.entries WHERE tx_id IN ("
+            f"SELECT id FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished});"
             f"DELETE FROM bank.guardian_requests WHERE account_id IN ({listed});"
             f"DELETE FROM bank.idempotency WHERE transfer_id IN ("
             f"SELECT id FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished});"

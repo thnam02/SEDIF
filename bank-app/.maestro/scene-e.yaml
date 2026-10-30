@@ -13,8 +13,12 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "new-account-go"
 - scrollUntilVisible:
-    element: "Khác"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Khác"
 - scrollUntilVisible:
     element:

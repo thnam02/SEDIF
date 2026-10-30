@@ -29,8 +29,12 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "amount-dismiss"
 - scrollUntilVisible:
-    element: "Mua hàng, dịch vụ"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Mua hàng, dịch vụ"
 - scrollUntilVisible:
     element:
@@ -38,9 +42,8 @@ appId: com.hainamtran.saobank
     direction: DOWN
 - tapOn:
     id: "continue-transfer"
-- scrollUntilVisible:
-    element: "Kết thúc cuộc gọi giả lập"
-    direction: DOWN
+- tapOn:
+    id: "demo-drawer"
 - tapOn:
     id: "call-end"
 - scrollUntilVisible:

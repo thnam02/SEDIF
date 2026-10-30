@@ -13,8 +13,12 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "new-account-go"
 - scrollUntilVisible:
-    element: "Khác"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Khác"
 - scrollUntilVisible:
     element:
@@ -22,9 +26,8 @@ appId: com.hainamtran.saobank
     direction: DOWN
 - tapOn:
     id: "continue-transfer"
-- scrollUntilVisible:
-    element: "Giả lập demo: màn hình đang bị ghi"
-    direction: DOWN
+- tapOn:
+    id: "demo-drawer"
 - tapOn:
     id: "dev-active-capture"
 - scrollUntilVisible:

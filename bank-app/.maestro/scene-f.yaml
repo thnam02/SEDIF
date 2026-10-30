@@ -42,8 +42,12 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "amount-dismiss"
 - scrollUntilVisible:
-    element: "Cơ quan nhà nước / công an yêu cầu chuyển"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Cơ quan nhà nước / công an yêu cầu chuyển"
 - scrollUntilVisible:
     element:

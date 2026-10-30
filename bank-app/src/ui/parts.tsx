@@ -1,12 +1,13 @@
 import { type ReactNode } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useRouter } from "expo-router"
-import { ArrowLeft, Bell, Home } from "lucide-react-native"
+import { ArrowLeft, Bell, Home, ShieldCheck } from "lucide-react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { FidesCallIndicator, fidesTheme } from "fides-sdk"
 
 import { copy } from "../copy/vi"
-import { useBank } from "../store"
+import { openDemoDrawer } from "../dev/DemoDrawer"
+import { DEMO, useBank } from "../store"
 
 export const colors = fidesTheme.colors
 
@@ -16,19 +17,22 @@ export function useType() {
   return { title: 24 * scale, body: 14 * scale, small: 12 * scale }
 }
 
-export function Screen({ children, call = false }: { children: ReactNode; call?: boolean }) {
+export function Screen({ children, call = false, footer }: { children: ReactNode; call?: boolean; footer?: ReactNode }) {
   const insets = useSafeAreaInsets()
   return (
     <View style={{ flex: 1, backgroundColor: colors.white, paddingTop: insets.top }}>
-      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentInsetAdjustmentBehavior="never" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentInsetAdjustmentBehavior="never" contentContainerStyle={{ gap: 20, paddingHorizontal: 20, paddingTop: 24, paddingBottom: footer ? 240 : insets.bottom + 24 }}>
         {call ? <FidesCallIndicator /> : null}
         {children}
       </ScrollView>
+      {footer ? <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 12, backgroundColor: colors.white }}>{footer}</View> : null}
     </View>
   )
 }
 
-export function Header({ title, tools = false }: { title: string; tools?: boolean }) {
+const round = { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center" as const, justifyContent: "center" as const }
+
+export function Header({ title, subtitle, tools = false }: { title: string; subtitle?: string; tools?: boolean }) {
   const router = useRouter()
   const type = useType()
   return (
@@ -38,14 +42,22 @@ export function Header({ title, tools = false }: { title: string; tools?: boolea
           <ArrowLeft size={19} color={colors.deep} />
         </Pressable>
       ) : null}
-      <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700", flex: 1 }}>{title}</Text>
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{title}</Text>
+        {subtitle ? <Text style={{ color: "#64748B", fontSize: type.small }}>{subtitle}</Text> : null}
+      </View>
       {tools ? (
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Pressable testID="header-notifications" accessibilityRole="button" onPress={() => router.push("/(main)/history")} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
+          {DEMO ? (
+            <Pressable testID="demo-drawer" accessibilityRole="button" accessibilityLabel="Phiên FIDES" onPress={openDemoDrawer} onLongPress={openDemoDrawer} style={round}>
+              <ShieldCheck size={16} color={colors.deep} />
+            </Pressable>
+          ) : null}
+          <Pressable testID="header-notifications" accessibilityRole="button" onPress={() => router.push("/(main)/history")} style={round}>
             <Bell size={16} color={colors.deep} />
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.aqua, position: "absolute", top: 6, right: 6 }} />
           </Pressable>
-          <Pressable testID="header-home" accessibilityRole="button" accessibilityLabel={copy.home} onPress={() => router.replace("/(main)/(tabs)")} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
+          <Pressable testID="header-home" accessibilityRole="button" accessibilityLabel={copy.home} onPress={() => router.replace("/(main)/(tabs)")} style={round}>
             <Home size={16} color={colors.deep} />
           </Pressable>
         </View>

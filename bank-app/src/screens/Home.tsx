@@ -5,8 +5,8 @@ import { ArrowRight, Bell, ChevronDown, ChevronUp, CreditCard, Eye, EyeOff, Hand
 
 import { useAccount, useHistory } from "../api/queries"
 import { copy } from "../copy/vi"
-import { movementTitle, statement, vnd, when } from "../format"
-import { displayHolder } from "../names"
+import { maskAccount, movementTitle, statement, vnd, when } from "../format"
+import { payeeName } from "../names"
 import { personas } from "../personas"
 import { DEMO, useBank } from "../store"
 import { JudgePanel } from "../judge/JudgePanel"
@@ -60,13 +60,13 @@ export function HomeScreen() {
           const Icon = quickIcons[index] ?? ArrowRight
           const route = ["/(main)/transfer/recipient", "/(main)/topup", "/(main)/savings", "/(main)/(tabs)/loans"][index] ?? "/(main)/(tabs)"
           return (
-            <Pressable key={name} testID={`quick-${index}`} accessibilityRole="button" onPress={() => router.push(route)} style={{ flex: 1, alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: colors.mint, padding: 12 }}>
+            <Pressable key={name} testID={`quick-${index}`} accessibilityRole="button" onPress={() => router.push(route)} style={{ flex: 1, alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: colors.mint, paddingVertical: 12, paddingHorizontal: 4 }}>
               <Icon size={18} color={colors.deep} />
-              <Text style={{ color: colors.deep, fontSize: 11, textAlign: "center" }}>{name}</Text>
+              <Text numberOfLines={2} style={{ color: colors.deep, fontSize: 11, lineHeight: 14, textAlign: "center", minHeight: 28 }}>{name}</Text>
             </Pressable>
           )
         })}
-        <Pressable testID="quick-more" accessibilityRole="button" onPress={() => setMore(!more)} style={{ width: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: colors.mint }}>
+        <Pressable testID="quick-more" accessibilityRole="button" onPress={() => setMore(!more)} style={{ width: 48, flexShrink: 0, alignSelf: "stretch", alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: colors.mint }}>
           {more ? <ChevronUp size={18} color={colors.deep} /> : <ChevronDown size={18} color={colors.deep} />}
         </Pressable>
       </View>
@@ -159,10 +159,15 @@ function RecentList({ accountId }: { accountId: string | null }) {
       {recent.map((item) => {
         const stamp = when(item.ts)
         const inbound = item.direction === "in"
-        const title = movementTitle({ ...item, counterparty_name: displayHolder(item.counterparty_name) })
+        const who = payeeName(item.counterparty_name, item.counterparty_id)
+        const title = movementTitle({ ...item, counterparty_name: who })
+        const party = item.counterparty_id ? `${copy.bankName} · ${maskAccount(item.counterparty_id)}` : ""
         return (
           <View key={`${item.tx_id}-${item.direction}`} testID="recent-tx" style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12, gap: 12 }}>
-            <Text style={{ color: colors.navy, fontWeight: "600", fontSize: type.body, flex: 1 }}>{title}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.navy, fontWeight: "600", fontSize: type.body }}>{title}</Text>
+              {party ? <Text style={{ color: "#64748B", fontSize: type.small }}>{party}</Text> : null}
+            </View>
             <View>
               <Text style={{ color: inbound ? "#2E7D32" : colors.navy, fontWeight: "700", textAlign: "right" }}>{inbound ? "+" : "−"}{vnd(item.amount)}</Text>
               <Text style={{ color: "#94A3B8", fontSize: type.small, textAlign: "right" }}>{stamp.time}</Text>

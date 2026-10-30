@@ -6,6 +6,7 @@ import { FidesSession } from "fides-sdk"
 import { BANK_URL } from "../api/client"
 import { copy } from "../copy/vi"
 import { DEMO } from "../store"
+import { openDemoDrawer } from "../dev/DemoDrawer"
 import { colors } from "../ui/parts"
 import { CallSimulator } from "./CallSimulator"
 
@@ -45,6 +46,7 @@ export function JudgePanel() {
               setOpen(true)
             }
           }}
+          onLongPress={openDemoDrawer}
           style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
         >
           <ShieldCheck size={25} color={colors.deep} />

@@ -20,8 +20,12 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "amount-dismiss"
 - scrollUntilVisible:
-    element: "Mua hàng, dịch vụ"
+    element:
+      id: "purpose-open"
     direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "purpose-open"
 - tapOn: "Mua hàng, dịch vụ"
 - scrollUntilVisible:
     element:

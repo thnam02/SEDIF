@@ -1670,10 +1670,14 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/TransferStatus"
+        counterparty_id:
+          type: string
+          nullable: true
+          description: Số tài khoản phía bên kia, nếu sổ tra được. Không dùng để chấm điểm.
         counterparty_name:
           type: string
           nullable: true
-          description: Tên hoặc số tài khoản phía bên kia, nếu sổ tra được. Không dùng để chấm điểm.
+          description: Tên phía bên kia. Không trả số tài khoản. Không dùng để chấm điểm.
     Beneficiary:
       type: object
       required: [id, account_id, holder_name, saved_at, times_paid]
