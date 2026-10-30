@@ -492,6 +492,8 @@ def test_ledger_closure_active_call_and_new_payee_is_level_2(bank):
         kinds = [item["type"] for item in body["recent_funds_events"]]
         assert "savings_liquidation" in kinds
         assert "not_a_ledger_event" not in kinds
+        posted = [item for item in body["recent_funds_events"] if item["type"] == "savings_liquidation"]
+        assert any(item["channel"] == "app" for item in posted)
         assert body["call"]["state"] == "active"
         decided = datetime.fromisoformat(body["ts"])
         facts = facts_from_row(body, {"new_payee": 1, "segment": "thường"}, 0.0, decided, None)
@@ -510,3 +512,75 @@ def test_ledger_closure_active_call_and_new_payee_is_level_2(bank):
                 conn.execute("DELETE FROM bank.entries WHERE tx_id = %s", (product_id,))
                 conn.execute("DELETE FROM bank.products WHERE id = %s", (product_id,))
                 conn.commit()
+
+
+def test_ledger_channel_unknown_does_not_count_and_branch_does(bank):
+    from engine.policy.v24 import evaluate, facts_from_row
+
+    module, client, _seen = bank
+    original = module.engine_post
+    captured: list[dict] = []
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        if path == "/decide":
+            captured.append(body)
+        return original(path, body, timeout)
+
+    module.engine_post = engine_post
+    before = _balance(SENDER)
+    ids = ("P-pytest-channel-unknown", "P-pytest-channel-branch")
+    try:
+        with psycopg.connect(DATABASE) as conn:
+            module.ensure_fund_channel(conn)
+            conn.execute(
+                "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,1,'savings_liquidation',%s,NULL)",
+                (ids[0], SENDER, datetime.fromisoformat("2026-09-19T12:00:00+07:00")),
+            )
+            conn.execute(
+                "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,1,'savings_liquidation',%s,'branch')",
+                (ids[1], SENDER, datetime.fromisoformat("2026-09-19T13:00:00+07:00")),
+            )
+            conn.commit()
+        response = client.post(
+            "/transfer",
+            json={
+                "from_account": SENDER,
+                "to_account": "ZLEDGER000000002",
+                "amount": 1000,
+                "purpose_text": "pytest-ledger-channel",
+                "task_type": "new_typed",
+                "call": CALL,
+                "transfer_purpose": "purchase",
+                "device": {"state": "unknown"},
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = captured[-1]
+        noon = datetime.fromisoformat("2026-09-19T12:00:00+07:00")
+        one = datetime.fromisoformat("2026-09-19T13:00:00+07:00")
+
+        def at(item: dict) -> datetime:
+            return datetime.fromisoformat(item["at"])
+
+        unknown = next(item for item in body["recent_funds_events"] if at(item) == noon)
+        branch = next(item for item in body["recent_funds_events"] if at(item) == one)
+        assert unknown["channel"] == "unknown"
+        assert branch["channel"] == "branch"
+        decided = datetime.fromisoformat(body["ts"])
+        quiet = dict(body)
+        quiet["recent_funds_events"] = [unknown]
+        loud = dict(body)
+        loud["recent_funds_events"] = [branch]
+        row = {"new_payee": 1, "segment": "thường"}
+        missed = evaluate(facts_from_row(quiet, row, 0.0, decided, None))
+        kept = evaluate(facts_from_row(loud, row, 0.0, decided, None))
+        assert "R_CALL_FUNDS_NEWPAYEE" not in missed.rules_fired
+        assert missed.level < 2
+        assert "R_CALL_FUNDS_NEWPAYEE" in kept.rules_fired
+        assert kept.level == 2
+    finally:
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-ledger-channel",))
+        with psycopg.connect(DATABASE) as conn:
+            conn.execute("DELETE FROM bank.products WHERE id = ANY(%s)", (list(ids),))
+            conn.commit()

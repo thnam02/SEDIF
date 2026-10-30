@@ -1,4 +1,4 @@
-"""Ghi 10 phiên new_typed đã đủ hạn cho tài khoản demo A0002119. Chỉ một khoá Redis, không flush."""
+"""Chỉ Trương Gia Thịnh (A0002119, cảnh C) có baseline. Các tài khoản demo khác bị xoá khoá beh, không flush."""
 
 from __future__ import annotations
 
@@ -14,7 +14,23 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO)]
 
 from engine.common.hashing import account_hash, reset_key_cache
-from engine.features.behaviour import key_for
+from engine.features.behaviour import TASKS, key_for
+
+# Mọi tài khoản của bốn khách demo. Chỉ A0002119 được giữ baseline new_typed.
+DEMO_ACCOUNTS = (
+    "A0000623",
+    "A0050272",
+    "A0072556",
+    "A0077690",
+    "A0002119",
+    "A0002845",
+    "A0051289",
+    "A0072782",
+    "A0078375",
+    "A0097589",
+    "A0031239",
+)
+SCENE_C = "A0002119"
 
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 ORDINARY = {
@@ -35,7 +51,7 @@ ORDINARY = {
 def main() -> None:
     os.environ.setdefault("FIDES_HMAC_KEY", "fides-demo-hmac")
     reset_key_cache()
-    user = account_hash("A0002119")
+    kept = account_hash(SCENE_C)
     start = datetime(2026, 9, 1, tzinfo=ICT)
     records = []
     for index in range(10):
@@ -43,12 +59,22 @@ def main() -> None:
         ts = int(stamp.timestamp() * 1_000_000)
         records.append({"ts": ts, "eligible_at": ts, "features": dict(ORDINARY)})
     payload = json.dumps({"records": records}, ensure_ascii=False)
-    key = key_for(user, "new_typed")
-    subprocess.run(
-        ["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15", "SET", key, payload],
-        check=True,
-    )
-    print(key, "sessions", len(records))
+    for account in DEMO_ACCOUNTS:
+        user = account_hash(account)
+        for task in TASKS:
+            key = key_for(user, task)
+            if account == SCENE_C and task == "new_typed":
+                subprocess.run(
+                    ["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15", "SET", key, payload],
+                    check=True,
+                )
+                print("kept", key, "sessions", len(records))
+                continue
+            subprocess.run(
+                ["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15", "DEL", key],
+                check=True,
+            )
+    print("baseline only", kept)
 
 
 if __name__ == "__main__":

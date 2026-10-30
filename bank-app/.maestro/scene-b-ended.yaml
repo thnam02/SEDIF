@@ -18,7 +18,7 @@ appId: com.hainamtran.saobank
     id: "new-account-open"
 - tapOn:
     id: "new-account"
-- inputText: "ZLANB30000000002"
+- inputText: "ZLANB40000000002"
 - hideKeyboard:
     optional: true
 - tapOn:

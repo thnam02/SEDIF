@@ -28,8 +28,9 @@ log = logging.getLogger("bank")
 DECIDE_TIMEOUT_S = 0.3
 NEW_PAYEE_BANNER = 50_000_000
 PURPOSE_AMOUNT_VND = int(os.environ.get("PURPOSE_AMOUNT_VND", "10000000"))
-# Khớp funds_fresh_hours. Sổ không có cột kênh; lệnh app ghi kênh app.
+# Khớp funds_fresh_hours. Kênh lấy từ sổ: app, branch, hoặc unknown khi sổ không ghi.
 FUNDS_HOURS = 72
+BRANCH_CLOSURE_ID = "P-demo-branch-closure"
 FUNDS_KINDS = (
     "term_deposit_closure",
     "savings_liquidation",
@@ -504,6 +505,31 @@ def _play() -> None:
             continue
 
 
+def _fund_channel(value) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"app", "branch"}:
+        return text
+    return "unknown"
+
+
+def ensure_fund_channel(conn) -> None:
+    conn.execute("ALTER TABLE bank.products ADD COLUMN IF NOT EXISTS channel text")
+    conn.execute("ALTER TABLE bank.entries ADD COLUMN IF NOT EXISTS channel text")
+
+
+def seed_branch_closure(conn) -> None:
+    """Một tất toán tại quầy, gắn nhãn demo. Không nằm trên tài khoản các cảnh Maestro."""
+    ensure_fund_channel(conn)
+    conn.execute(
+        """
+        INSERT INTO bank.products (id, account_id, amount, kind, ts, channel)
+        VALUES (%s, 'A0119955', 1000000, 'savings_liquidation', %s, 'branch')
+        ON CONFLICT (id) DO NOTHING
+        """,
+        (BRANCH_CLOSURE_ID, datetime.fromisoformat("2026-09-20T08:00:00+07:00")),
+    )
+
+
 def boot() -> None:
     """Không nạp lại sổ. BANK_RESEED=1 mới nạp, và sinh reset_id mới chỉ ở phía ngân hàng."""
     global LEDGER_MISMATCH, _REPLAY_STARTED
@@ -513,11 +539,11 @@ def boot() -> None:
             SESSIONS.clear()
             load(conn)
             remember_reset(conn, str(uuid.uuid4()))
-            conn.commit()
             LEDGER_MISMATCH = True
         else:
             load_reset(conn)
-            conn.commit()
+        seed_branch_closure(conn)
+        conn.commit()
     if os.environ.get("DEMO_REPLAY", "1") == "1" and not _REPLAY_STARTED:
         threading.Thread(target=_build_feed, daemon=True).start()
         threading.Thread(target=_play, daemon=True).start()
@@ -752,31 +778,30 @@ def ledger_funds(conn, account: str, now: datetime) -> list[dict]:
     start = now - timedelta(hours=FUNDS_HOURS)
     rows = conn.execute(
         """
-        SELECT type, ts FROM (
-            SELECT kind AS type, ts FROM bank.products
+        SELECT type, ts, channel FROM (
+            SELECT kind AS type, ts, channel FROM bank.products
             WHERE account_id = %s AND kind = ANY(%s) AND ts >= %s AND ts <= %s
             UNION ALL
-            SELECT tx_type AS type, ts FROM bank.entries
+            SELECT tx_type AS type, ts, channel FROM bank.entries
             WHERE account_id = %s AND tx_type = ANY(%s) AND direction = 'in' AND ts >= %s AND ts <= %s
         ) events
         ORDER BY ts
         """,
         (account, list(FUNDS_KINDS), start, now, account, list(FUNDS_KINDS), start, now),
     ).fetchall()
-    events = []
-    seen: set[tuple[str, str]] = set()
+    events: dict[tuple[str, str], dict] = {}
     for row in rows:
         stamp = row["ts"]
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=ICT)
         at = stamp.isoformat()
         kind = str(row["type"])
+        channel = _fund_channel(row["channel"])
         key = (kind, at)
-        if key in seen:
-            continue
-        seen.add(key)
-        events.append({"type": kind, "at": at, "channel": "app"})
-    return events
+        current = events.get(key)
+        if current is None or (current["channel"] == "unknown" and channel != "unknown"):
+            events[key] = {"type": kind, "at": at, "channel": channel}
+    return list(events.values())
 
 
 def verified_mule(account: str) -> list[dict]:
@@ -1080,7 +1105,7 @@ def _product(body: ProductIn, kind: str, tx_type: str) -> dict:
         credit(conn, body.account_id, body.amount)
         entry(conn, body.account_id, product_id, now, "in", body.amount, tx_type, kind, "done")
         conn.execute(
-            "INSERT INTO bank.products (id, account_id, amount, kind, ts) VALUES (%s,%s,%s,%s,%s)",
+            "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,%s,%s,%s,'app')",
             (product_id, body.account_id, body.amount, kind, now),
         )
         conn.commit()
@@ -1123,7 +1148,7 @@ def limit(body: LimitIn) -> dict:
             raise HTTPException(404, "không có tài khoản")
         change_id = f"L-{uuid.uuid4().hex[:16]}"
         conn.execute(
-            "INSERT INTO bank.products (id, account_id, amount, kind, ts) VALUES (%s,%s,%s,'limit_raise',%s)",
+            "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,%s,'limit_raise',%s,'app')",
             (change_id, body.account_id, body.limit_per_txn, now),
         )
         conn.commit()

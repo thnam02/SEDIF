@@ -1,8 +1,8 @@
-# Scene A — cuộc gọi đang diễn ra và quét QR tới cửa hàng. Mức 0 hoặc 1.
+# Scene A — Lê Kim Trân. Cuộc gọi và quét QR tới cửa hàng. Mức 0 hoặc 1.
 appId: com.hainamtran.saobank
 ---
 - launchApp
-- tapOn: ".*Trương Gia Thịnh.*"
+- tapOn: ".*Lê Kim Trân.*"
 - repeat:
     times: 7
     commands:

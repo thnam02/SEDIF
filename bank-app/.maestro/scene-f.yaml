@@ -31,7 +31,7 @@ appId: com.hainamtran.saobank
     id: "new-account-open"
 - tapOn:
     id: "new-account"
-- inputText: "ZMED220000000001"
+- inputText: "ZMED230000000001"
 - hideKeyboard:
     optional: true
 - tapOn:
@@ -39,7 +39,7 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "amount"
 - eraseText: 12
-- inputText: "22000000"
+- inputText: "23000000"
 - hideKeyboard:
     optional: true
 - tapOn: "Xác nhận giao dịch"
@@ -59,6 +59,6 @@ appId: com.hainamtran.saobank
 - extendedWaitUntil:
     visible: ".*Huỳnh Thị Mận.*"
     timeout: 10000
-- tapOn: ".*22.000.000.*"
+- tapOn: ".*23.000.000.*"
 - tapOn: "Tôi xác nhận, cho chuyển"
 - assertVisible: "Đã cho chuyển"

@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS bank.entries (
     amount bigint NOT NULL,
     tx_type text NOT NULL,
     purpose_text text,
-    status text NOT NULL
+    status text NOT NULL,
+    channel text
 );
 CREATE TABLE IF NOT EXISTS bank.guardians (
     account_id text PRIMARY KEY,
@@ -90,7 +91,8 @@ CREATE TABLE IF NOT EXISTS bank.products (
     account_id text NOT NULL,
     amount bigint NOT NULL,
     kind text NOT NULL,
-    ts timestamptz NOT NULL
+    ts timestamptz NOT NULL,
+    channel text
 );
 CREATE TABLE IF NOT EXISTS bank.idempotency (
     key text PRIMARY KEY,

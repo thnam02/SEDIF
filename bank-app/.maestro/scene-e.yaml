@@ -1,8 +1,8 @@
-# Scene E — người nhận nằm trong danh sách mule demo, có gắn nhãn. Mức 3.
+# Scene E — Hoàng Văn Tâm. Người nhận nằm trong danh sách mule demo, có gắn nhãn. Mức 3.
 appId: com.hainamtran.saobank
 ---
 - launchApp
-- tapOn: ".*Trương Gia Thịnh.*"
+- tapOn: ".*Hoàng Văn Tâm.*"
 - tapOn: "Chuyển tiền"
 - tapOn:
     id: "new-account-open"

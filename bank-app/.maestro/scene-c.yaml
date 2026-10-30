@@ -1,4 +1,4 @@
-# Scene C — 10 phiên nền đã nạp, phiên có hướng dẫn, cuộc gọi, người nhận gõ mới. Mức 2.
+# Scene C — chỉ Trương Gia Thịnh có 10 phiên nền. Cuộc gọi, người nhận gõ mới. Mức 2.
 appId: com.hainamtran.saobank
 ---
 - launchApp
@@ -14,7 +14,7 @@ appId: com.hainamtran.saobank
     id: "new-account-open"
 - tapOn:
     id: "new-account"
-- inputText: "ZGUIDE0000000001"
+- inputText: "ZGUIDE4000000001"
 - hideKeyboard:
     optional: true
 - tapOn:
