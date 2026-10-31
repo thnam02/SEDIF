@@ -207,10 +207,38 @@ if missing:
 for account_id, (balance, opening, net) in sorted(seen.items()):
     if balance != opening + net:
         bad.append(f"{account_id}: số dư {balance} khác đầu kỳ {opening} + sổ {net}")
+    if opening < 0:
+        bad.append(f"{account_id}: đầu kỳ {opening} < 0")
 if "A0072556" in seen:
     balance, opening, net = seen["A0072556"]
-    if opening + net != 15_000_000:
-        bad.append(f"A0072556: đầu kỳ + sổ = {opening + net}, cần 15000000")
+    if not 2_000_000 <= opening <= 4_000_000:
+        bad.append(f"A0072556: đầu kỳ {opening} không nằm trong 2–4 triệu")
+    if balance >= 120_000_000:
+        bad.append(f"A0072556: số dư {balance} đã đủ 120 triệu trước khi tất toán")
+entry_sql = f"""
+SELECT account_id, direction, amount
+FROM bank.entries
+WHERE account_id IN ({quoted})
+ORDER BY account_id, ts, id;
+"""
+entries = subprocess.run(
+    ["psql", os.environ["DATABASE_URL"], "-v", "ON_ERROR_STOP=1", "-t", "-A", "-F", "|", "-c", entry_sql],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if entries.returncode != 0:
+    sys.stderr.write(entries.stderr or entries.stdout)
+    sys.exit(1)
+running = {account_id: opening for account_id, (_balance, opening, _net) in seen.items()}
+for line in entries.stdout.splitlines():
+    if not line.strip():
+        continue
+    account_id, direction, amount_text = line.split("|")
+    amount = int(amount_text)
+    running[account_id] = running[account_id] + (amount if direction == "in" else -amount)
+    if running[account_id] < 0:
+        bad.append(f"{account_id}: số dư chạy {running[account_id]} < 0")
 book_sql = """
 SELECT id, status, account_type, balance
 FROM bank.accounts

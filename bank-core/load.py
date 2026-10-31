@@ -13,11 +13,11 @@ PERSONAS = ROOT / "docs" / "personas.json"
 CUT = pd.Timestamp("2026-09-20T00:00:00+07:00")
 HUYNH_ACCOUNT = "A0072556"
 HUYNH_SAVINGS = "A0077690"
-# Lương hưu trên tài khoản thanh toán. 120 triệu không đi được nếu chưa tất toán.
-PENSION_BALANCE = 15_000_000
+# Đầu kỳ dương, nhỏ. Số dư cuối = đầu kỳ + sổ (khoảng 29 triệu), chưa đủ 120 triệu.
+HUYNH_OPENING = 3_000_000
 SAVINGS_PRINCIPAL = 150_000_000
-# Màn hình chọn tài khoản cá nhân số dư cao nhất. Sổ kia phải thấp hơn lương hưu
-# vì hạn mức 120 triệu chỉ được nâng trên A0072556.
+# Màn hình chọn tài khoản cá nhân số dư cao nhất. Sổ kia phải thấp hơn A0072556
+# vì hạn mức 120 triệu chỉ được nâng trên tài khoản đó.
 OTHER_PERSONAL_CAP = 14_000_000
 
 
@@ -181,16 +181,32 @@ def _set_opening(conn, account_id: str, target: int) -> None:
     )
 
 
+def _set_opening_amount(conn, account_id: str, opening: int) -> int:
+    """Giữ đầu kỳ đúng số đã cho. Số dư cuối là đầu kỳ cộng sổ, không bị ép về một mốc."""
+    found = _ledger_net(conn, account_id)
+    if found is None:
+        return 0
+    _previous, net = found
+    balance = opening + net
+    conn.execute(
+        "UPDATE bank.accounts SET opening_balance = %s, balance = %s WHERE id = %s",
+        (opening, balance, account_id),
+    )
+    return balance
+
+
 def _pension_story(conn) -> None:
     """Cảnh B: tất toán sổ tiết kiệm là cách duy nhất để đủ 120 triệu.
 
     Parquet quan sát được là nguồn lịch sử giao dịch. A0072556 có trong
     accounts.parquet (đầu kỳ 66.023.530, sổ trước 20/9 để số dư khoảng 92 triệu)
     và sổ A0077690 mở từ 2018 với đúng 48.091.787, không một dòng sổ.
-    load() ghi đè hai số đó cho cảnh demo: Postgres sau load() là số app và
-    engine đọc khi chuyển tiền. Không ghi dòng tiền vào trong cửa sổ 72 giờ.
+    load() ghi đè hai số đó cho cảnh demo: đầu kỳ thanh toán là 3 triệu, dương,
+    nên số dư chạy trên Tra cứu không âm; số dư cuối khoảng 29 triệu, chưa đủ
+    120 triệu. Postgres sau load() là số app và engine đọc khi chuyển tiền.
+    Không ghi dòng tiền vào trong cửa sổ 72 giờ.
     """
-    _set_opening(conn, HUYNH_ACCOUNT, PENSION_BALANCE)
+    checking = _set_opening_amount(conn, HUYNH_ACCOUNT, HUYNH_OPENING)
     _set_opening(conn, HUYNH_SAVINGS, SAVINGS_PRINCIPAL)
     conn.execute(
         """
@@ -208,7 +224,7 @@ def _pension_story(conn) -> None:
           AND id <> %s
           AND balance >= %s
         """,
-        (HUYNH_ACCOUNT, HUYNH_ACCOUNT, PENSION_BALANCE),
+        (HUYNH_ACCOUNT, HUYNH_ACCOUNT, checking),
     ).fetchall()
     for row in others:
         _set_opening(conn, row["id"], OTHER_PERSONAL_CAP)
