@@ -9,6 +9,8 @@ REDIS_PORT=${REDIS_PORT:-6379}
 REDIS_HOST=${REDIS_HOST:-127.0.0.1}
 REDIS_MODE=${REDIS_MODE:-host}
 API_KEY=${FIDES_API_KEY:-fides-demo-key}
+FIDES_HMAC_KEY=${FIDES_HMAC_KEY:-fides-demo-hmac}
+export REDIS_URL REDIS_PORT REDIS_HOST FIDES_HMAC_KEY
 DB=${REDIS_URL##*/}
 
 curl -sf -X POST "$BANK/clock/pause" >/dev/null
@@ -213,4 +215,7 @@ if bad:
     sys.stderr.write("sổ không khớp số dư đầu kỳ:\n" + "\n".join(bad) + "\n")
     sys.exit(1)
 PY
+# Purge ở trên xoá mọi beh:v24. Chỉ Trương, task new_typed, được gieo lại cho cảnh C.
+python3 "$ROOT/scripts/seed_demo_baseline.py"
+python3 "$ROOT/scripts/seed_demo_baseline.py" --check
 echo ready

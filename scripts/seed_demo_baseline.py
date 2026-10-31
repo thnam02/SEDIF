@@ -14,7 +14,23 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO)]
 
 from engine.common.hashing import account_hash, reset_key_cache
-from engine.features.behaviour import TASKS, key_for
+
+TASKS = ("saved_payee", "new_typed", "new_pasted", "qr")
+
+
+def key_for(user: str, task: str) -> str:
+    return f"beh:v24:{user}:{task}"
+
+
+def quality_name(sessions: int) -> str:
+    count = int(sessions)
+    if count >= 8:
+        return "high"
+    if count >= 3:
+        return "medium"
+    if count > 0:
+        return "low"
+    return "none"
 
 # Mọi tài khoản của bốn khách demo. Chỉ A0002119 được giữ baseline new_typed.
 DEMO_ACCOUNTS = (
@@ -48,7 +64,25 @@ ORDINARY = {
 }
 
 
-def main() -> None:
+def redis_cmd() -> list[str]:
+    """Cùng Redis với demo_reset. Không có REDIS_HOST thì vào compose qua docker."""
+    host = os.environ.get("REDIS_HOST", "").strip()
+    if not host:
+        return ["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15"]
+    port = os.environ.get("REDIS_PORT", "6379")
+    url = os.environ.get("REDIS_URL", "")
+    db = url.rstrip("/").rsplit("/", 1)[-1] if "/" in url else "15"
+    if not db.isdigit():
+        db = "15"
+    return ["redis-cli", "-h", host, "-p", port, "-n", db]
+
+
+def redis(*args: str) -> str:
+    done = subprocess.run([*redis_cmd(), *args], check=True, capture_output=True, text=True)
+    return done.stdout
+
+
+def seed() -> str:
     os.environ.setdefault("FIDES_HMAC_KEY", "fides-demo-hmac")
     reset_key_cache()
     kept = account_hash(SCENE_C)
@@ -64,17 +98,46 @@ def main() -> None:
         for task in TASKS:
             key = key_for(user, task)
             if account == SCENE_C and task == "new_typed":
-                subprocess.run(
-                    ["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15", "SET", key, payload],
-                    check=True,
-                )
+                redis("SET", key, payload)
                 print("kept", key, "sessions", len(records))
                 continue
-            subprocess.run(
-                ["docker", "exec", "-i", "sedif-redis-1", "redis-cli", "-n", "15", "DEL", key],
-                check=True,
-            )
+            redis("DEL", key)
     print("baseline only", kept)
+    return kept
+
+
+def check() -> None:
+    """Cảnh C cần baseline new_typed của Trương, đủ medium, trước ngày demo."""
+    os.environ.setdefault("FIDES_HMAC_KEY", "fides-demo-hmac")
+    reset_key_cache()
+    cut = int(datetime(2026, 9, 21, tzinfo=ICT).timestamp() * 1_000_000)
+    raw = redis("--raw", "GET", key_for(account_hash(SCENE_C), "new_typed"))
+    if not raw.strip():
+        raise SystemExit("thiếu baseline new_typed của A0002119")
+    records = json.loads(raw).get("records") or []
+    prior = [
+        row
+        for row in records
+        if int(row.get("ts") or 0) < cut and int(row.get("eligible_at") or 0) <= cut
+    ]
+    quality = quality_name(len(prior))
+    if len(prior) < 3 or quality not in {"medium", "high"}:
+        raise SystemExit(f"A0002119 new_typed: {len(prior)} phiên, chất lượng {quality}")
+    for account in DEMO_ACCOUNTS:
+        for task in TASKS:
+            if account == SCENE_C and task == "new_typed":
+                continue
+            extra = redis("--raw", "GET", key_for(account_hash(account), task)).strip()
+            if extra:
+                raise SystemExit(f"baseline thừa {account} {task}")
+    print(f"baseline A0002119 new_typed {len(prior)} {quality}")
+
+
+def main() -> None:
+    if "--check" in sys.argv:
+        check()
+        return
+    seed()
 
 
 if __name__ == "__main__":
