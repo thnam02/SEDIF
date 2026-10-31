@@ -1301,29 +1301,45 @@ def respond(transfer_id: str, body: RespondIn) -> dict:
 
 
 def _product(body: ProductIn, kind: str, tx_type: str) -> dict:
+    """Một lệnh tất toán cho cùng tài khoản, loại và số tiền. Lần gọi sau trả về dòng đã có."""
     now = CLOCK.now()
     touch_session(body.account_id, body.device, now)
+    fresh = False
     with connect() as conn:
-        product_id = f"P-{uuid.uuid4().hex[:16]}"
-        credit(conn, body.account_id, body.amount)
-        entry(conn, body.account_id, product_id, now, "in", body.amount, tx_type, kind, "done")
-        conn.execute(
-            "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,%s,%s,%s,'app')",
-            (product_id, body.account_id, body.amount, kind, now),
+        found = conn.execute(
+            """
+            SELECT tx_id FROM bank.entries
+            WHERE account_id = %s AND tx_type = %s AND direction = 'in' AND amount = %s AND left(tx_id, 2) = 'P-'
+            ORDER BY ts DESC
+            LIMIT 1
+            """,
+            (body.account_id, tx_type, body.amount),
+        ).fetchone()
+        if found:
+            product_id = found["tx_id"]
+        else:
+            fresh = True
+            product_id = f"P-{uuid.uuid4().hex[:16]}"
+            credit(conn, body.account_id, body.amount)
+            entry(conn, body.account_id, product_id, now, "in", body.amount, tx_type, kind, "done")
+            conn.execute(
+                "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,%s,%s,%s,'app')",
+                (product_id, body.account_id, body.amount, kind, now),
+            )
+            conn.commit()
+    if fresh:
+        post_ledger(
+            {
+                "event_id": f"product:{product_id}",
+                "type": "product",
+                "ts": now.isoformat(),
+                "account_hash": account_hash(body.account_id),
+                "product_type": tx_type,
+                "tx_type": tx_type,
+                "amount": body.amount,
+                "session_id": f"demo-{body.account_id}",
+            }
         )
-        conn.commit()
-    post_ledger(
-        {
-            "event_id": f"product:{product_id}",
-            "type": "product",
-            "ts": now.isoformat(),
-            "account_hash": account_hash(body.account_id),
-            "product_type": tx_type,
-            "tx_type": tx_type,
-            "amount": body.amount,
-            "session_id": f"demo-{body.account_id}",
-        }
-    )
     return {"id": product_id, "status": "done"}
 
 

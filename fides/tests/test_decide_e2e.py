@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -105,7 +106,41 @@ def _official_test_levels(frames, bundle) -> dict[str, str]:
     return dict(zip(population.loc[on_test, "session_id"].astype(str), level[on_test]))
 
 
-def test_decide_http_matches_seed45():
+def _lan_address() -> str:
+    for iface in ("en0", "en1"):
+        probe = subprocess.run(["ipconfig", "getifaddr", iface], capture_output=True, text=True)
+        if probe.returncode == 0 and probe.stdout.strip():
+            return probe.stdout.strip()
+    raise RuntimeError("no LAN address for the compose database")
+
+
+def _demo_reset() -> None:
+    ip = _lan_address()
+    env = os.environ.copy()
+    env.update(
+        {
+            "BANK_URL": "http://127.0.0.1:8082",
+            "ENGINE_URL": "http://127.0.0.1:8081",
+            "DATABASE_URL": f"postgresql://fides:fides@{ip}:5432/fides",
+            "REDIS_MODE": "docker",
+            "REDIS_HOST": ip,
+            "REDIS_PORT": "6379",
+            "REDIS_URL": f"redis://{ip}:6379/15",
+        }
+    )
+    done = subprocess.run(["/bin/sh", str(REPO / "scripts" / "demo_reset.sh")], check=False, env=env)
+    if done.returncode != 0:
+        raise RuntimeError(f"demo_reset.sh exited {done.returncode}")
+
+
+def test_decide_http_matches_seed45() -> None:
+    try:
+        _decide_http_matches_seed45()
+    finally:
+        _demo_reset()
+
+
+def _decide_http_matches_seed45():
     reset_key_cache()
     import redis
 

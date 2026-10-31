@@ -10,7 +10,11 @@ const PERIODS: Record<StatsPeriodId, { months: number; grain: "week" | "month" }
   "1y": { months: 12, grain: "month" },
 }
 
-export type StatsTx = { ts: string; direction: string; amount: number }
+export type StatsTx = { ts: string; direction: string; amount: number; status?: string }
+
+function settled(status: string | undefined): boolean {
+  return (status ?? "done") === "done"
+}
 
 export type StatsBucket = {
   startMs: number
@@ -117,6 +121,7 @@ export function buildStats(entries: StatsTx[], period: StatsPeriodId, now = new 
   for (const entry of entries) {
     const at = Date.parse(entry.ts)
     if (!Number.isFinite(at) || at < range.startMs || at > range.endMs) continue
+    if (!settled(entry.status)) continue
     let index = 0
     for (let cursor = 0; cursor < buckets.length; cursor += 1) {
       if ((buckets[cursor]?.startMs ?? 0) <= at) index = cursor

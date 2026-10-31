@@ -5,8 +5,8 @@ import { ArrowRight, Bell, CreditCard, Eye, EyeOff, HandCoins, Menu, PiggyBank, 
 
 import { useAccount, useHistory } from "../api/queries"
 import { copy } from "../copy/vi"
-import { movementTitle, presentHistory, showAccount, statement, vnd, when } from "../format"
-import { payeeName } from "../names"
+import { presentHistory, statement, vnd } from "../format"
+import { LedgerRow } from "../ui/LedgerRow"
 import { personas } from "../personas"
 import { DEMO, useBank } from "../store"
 import { JudgePanel } from "../judge/JudgePanel"
@@ -145,26 +145,9 @@ function RecentList({ accountId }: { accountId: string | null }) {
           <Text style={{ color: colors.deep, fontWeight: "700", fontSize: type.small }}>{copy.seeAll}</Text>
         </Pressable>
       </View>
-      {recent.map((item) => {
-        const stamp = when(item.ts)
-        const inbound = item.direction === "in"
-        const who = payeeName(item.counterparty_name, item.counterparty_id)
-        const title = movementTitle({ ...item, counterparty_name: who })
-        const party = item.counterparty_id ? `${copy.bankName} · ${showAccount(item.counterparty_id)}` : ""
-        return (
-          <View key={`${item.tx_id}-${item.direction}`} testID="recent-tx" style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12, gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.navy, fontWeight: "600", fontSize: type.body }}>{title}</Text>
-              {party ? <Text style={{ color: "#64748B", fontSize: type.small }}>{party}</Text> : null}
-            </View>
-            <View>
-              <Text style={{ color: inbound ? "#2E7D32" : colors.navy, fontWeight: "700", textAlign: "right" }}>{inbound ? "+" : "−"}{vnd(item.amount)}</Text>
-              <Text style={{ color: "#94A3B8", fontSize: type.small, textAlign: "right" }}>{stamp.time}</Text>
-              <Text style={{ color: "#94A3B8", fontSize: type.small, textAlign: "right" }}>{stamp.date}</Text>
-            </View>
-          </View>
-        )
-      })}
+      {recent.map((item) => (
+        <LedgerRow key={`${item.tx_id}-${item.direction}`} item={item} testID="recent-tx" />
+      ))}
     </View>
   )
 }

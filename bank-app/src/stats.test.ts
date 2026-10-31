@@ -40,6 +40,19 @@ test("compact amounts and an empty period stay within the bucket cap", () => {
   }
 })
 
+test("a held transfer is not completed outflow", () => {
+  const entries: StatsTx[] = [
+    { ts: localIso(now), direction: "out", amount: 120_000_000, status: "held" },
+    { ts: localIso(now), direction: "out", amount: 10_000, status: "done" },
+    { ts: localIso(now), direction: "in", amount: 5_000 },
+  ]
+  const report = buildStats(entries, "1m", now)
+  assert.equal(report.outgoing, 10_000)
+  assert.equal(report.incoming, 5_000)
+  assert.equal(report.count, 2)
+  assert.equal(report.buckets.reduce((sum, bucket) => sum + bucket.outgoing, 0), 10_000)
+})
+
 test("one transaction lands in a single bucket", () => {
   const entries = [{ ts: localIso(now), direction: "in" as const, amount: 500_000 }]
   for (const period of periods) {

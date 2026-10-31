@@ -131,32 +131,67 @@ def isolate(accounts: tuple[str, ...]) -> None:
             f"DELETE FROM bank.idempotency WHERE transfer_id IN ("
             f"SELECT id FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished});"
             f"DELETE FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished};"
+            f"UPDATE bank.accounts a SET balance = a.balance - s.amount FROM ("
+            f"SELECT account_id, SUM(amount) AS amount FROM bank.entries "
+            f"WHERE account_id IN ({listed}) AND direction = 'in' AND left(tx_id, 2) = 'P-' "
+            f"GROUP BY account_id) s WHERE a.id = s.account_id;"
+            f"DELETE FROM bank.entries WHERE account_id IN ({listed}) AND left(tx_id, 2) = 'P-';"
             f"DELETE FROM bank.products WHERE account_id IN ({listed}) AND channel IN ('app','branch') AND id <> 'P-demo-branch-closure';",
         ],
         check=True,
     )
 
 
+def lan_address() -> str:
+    for iface in ("en0", "en1"):
+        probe = subprocess.run(["ipconfig", "getifaddr", iface], capture_output=True, text=True)
+        if probe.returncode == 0 and probe.stdout.strip():
+            return probe.stdout.strip()
+    raise RuntimeError("no LAN address for the compose database")
+
+
+def demo_reset() -> None:
+    ip = lan_address()
+    env = os.environ.copy()
+    env.update(
+        {
+            "BANK_URL": "http://127.0.0.1:8082",
+            "ENGINE_URL": "http://127.0.0.1:8081",
+            "DATABASE_URL": f"postgresql://fides:fides@{ip}:5432/fides",
+            "REDIS_MODE": "docker",
+            "REDIS_HOST": ip,
+            "REDIS_PORT": "6379",
+            "REDIS_URL": f"redis://{ip}:6379/15",
+        }
+    )
+    print("demo_reset", flush=True)
+    subprocess.run(["/bin/sh", str(REPO / "scripts" / "demo_reset.sh")], check=True, env=env)
+
+
 def main() -> None:
-    subprocess.run([sys.executable, str(REPO / "scripts" / "seed_demo_baseline.py")], check=True)
-    failed = []
-    for name, accounts in ORDER:
-        print(f"isolate {name} {','.join(accounts)}", flush=True)
-        isolate(accounts)
-        result = subprocess.run(
-            [
-                str(Path.home() / ".maestro" / "bin" / "maestro"),
-                "--device",
-                DEVICE,
-                "test",
-                f".maestro/{name}",
-            ],
-            cwd=REPO / "bank-app",
-        )
-        if result.returncode != 0:
-            failed.append(name)
+    failed: list[str] = []
+    try:
+        subprocess.run([sys.executable, str(REPO / "scripts" / "seed_demo_baseline.py")], check=True)
+        for name, accounts in ORDER:
+            print(f"isolate {name} {','.join(accounts)}", flush=True)
+            isolate(accounts)
+            result = subprocess.run(
+                [
+                    str(Path.home() / ".maestro" / "bin" / "maestro"),
+                    "--device",
+                    DEVICE,
+                    "test",
+                    f".maestro/{name}",
+                ],
+                cwd=REPO / "bank-app",
+            )
+            if result.returncode != 0:
+                failed.append(name)
+    finally:
+        if failed:
+            print("failed", " ".join(failed), flush=True)
+        demo_reset()
     if failed:
-        print("failed", " ".join(failed), flush=True)
         raise SystemExit(1)
     print("scenes passed in reverse order", flush=True)
 

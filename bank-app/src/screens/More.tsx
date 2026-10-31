@@ -6,7 +6,8 @@ import { FidesGuardianRequest } from "fides-sdk"
 import { useAccount, useChoice, useConfirmGuardian, useGuardianRequests, useHistory, useRegisterGuardian } from "../api/queries"
 import { copy } from "../copy/vi"
 import { displayHolder, payeeName } from "../names"
-import { fullDate, movementTitle, presentHistory, showAccount, statement, vnd, when } from "../format"
+import { fullDate, isHeld, movementTitle, presentHistory, statement, vnd } from "../format"
+import { LedgerRow } from "../ui/LedgerRow"
 import { axisVnd, buildStats, compactVnd, type StatsPeriodId } from "../stats"
 import { personas } from "../personas"
 import { useBank } from "../store"
@@ -125,7 +126,7 @@ export function HistoryScreen() {
   const rows = statement(presentHistory(history.data?.entries ?? []), account.data?.balance ?? 0).filter((item) => {
     if (filter === "in" && item.direction !== "in") return false
     if (filter === "out" && item.direction !== "out") return false
-    if (filter === "held" && item.status === "done") return false
+    if (filter === "held" && !isHeld(item.status)) return false
     if (!needle) return true
     const label = movementTitle({ ...item, counterparty_name: payeeName(item.counterparty_name, item.counterparty_id) })
     return `${item.purpose_text ?? ""} ${label} ${item.amount}`.toLowerCase().includes(needle)
@@ -152,27 +153,12 @@ export function HistoryScreen() {
       <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.txCount.replace("{n}", String(rows.length))}</Text>
       {rows.length === 0 ? <Text style={{ color: "#64748B" }}>{copy.emptyTx}</Text> : null}
       {rows.map((item) => {
-        const stamp = when(item.ts)
         const showDay = fullDate(item.ts) !== day
         day = fullDate(item.ts)
-        const inbound = item.direction === "in"
-        const who = payeeName(item.counterparty_name, item.counterparty_id)
-        const title = movementTitle({ ...item, counterparty_name: who })
-        const party = item.counterparty_id ? `${copy.bankName} · ${showAccount(item.counterparty_id)}` : ""
         return (
           <View key={`${item.tx_id}-${item.direction}`} style={{ gap: 8 }}>
             {showDay ? <Text style={{ color: colors.deep, fontWeight: "700" }}>{day}</Text> : null}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12, gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.navy, fontWeight: "600", fontSize: type.body }}>{title}</Text>
-                {party ? <Text style={{ color: "#64748B", fontSize: type.small }}>{party}</Text> : null}
-                <Text style={{ color: "#64748B", fontSize: type.small }}>{stamp.time} · {stamp.date}</Text>
-              </View>
-              <View>
-                <Text style={{ color: item.status !== "done" ? colors.warn : inbound ? "#2E7D32" : colors.navy, fontWeight: "700", textAlign: "right" }}>{item.status !== "done" ? copy.held : `${inbound ? "+" : "−"}${vnd(item.amount)}`}</Text>
-                <Text style={{ color: "#64748B", fontSize: type.small, textAlign: "right" }}>{copy.balanceAfter} {vnd(item.balanceAfter)}</Text>
-              </View>
-            </View>
+            <LedgerRow item={item} showBalance />
           </View>
         )
       })}

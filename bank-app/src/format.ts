@@ -116,64 +116,35 @@ function stampOn(day: Date, iso: string): string {
   return `${year}-${month}-${date}T${clockPart(iso, "hour")}:${clockPart(iso, "minute")}:${clockPart(iso, "second")}+07:00`
 }
 
-function hashText(seed: string): number {
-  let hash = 2166136261
-  for (const char of seed) {
-    hash ^= char.charCodeAt(0)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
+/** Ngày neo đồng hồ demo, khớp bank-core DEMO_DAY. */
+export const DEMO_CLOCK = new Date(2026, 8, 21)
+
+const HELD_STATUS = new Set(["held", "needs_verification", "blocked_pending_hangup", "pending_draft"])
+
+export function isHeld(status: string | undefined): boolean {
+  return HELD_STATUS.has(status ?? "")
 }
 
-/** Khoảng cách 1–8 ngày, cùng một hạt cho cùng một mốc. */
-function gapDays(seed: string): number {
-  return 1 + (hashText(seed) % 8)
+function calendarDay(iso: string): Date {
+  const options = { year: "numeric", month: "2-digit", day: "2-digit" } as const
+  const year = Number(part(iso, "year", options))
+  const month = Number(part(iso, "month", options))
+  const date = Number(part(iso, "day", options))
+  return new Date(year, month - 1, date)
 }
 
-/**
- * Đưa ngày sổ cái về khoảng tính từ ngày máy.
- * Mới nhất trong 2 ngày gần đây. Các lệnh cách nhau 1–8 ngày. Giữ giờ phút gốc.
- */
-export function presentHistory<T extends { ts: string; tx_id: string }>(entries: T[], now = new Date()): T[] {
-  if (entries.length === 0) return entries
-  const valid = entries.flatMap((entry, index) => {
-    const ms = Date.parse(entry.ts)
-    return Number.isFinite(ms) ? [{ index, ms }] : []
-  })
-  if (valid.length === 0) return entries
-  valid.sort((left, right) => left.ms - right.ms || left.index - right.index)
-  const newest = valid[valid.length - 1]
-  if (!newest) return entries
-  const newestTs = entries[newest.index]?.ts ?? ""
-  let age = hashText(newestTs) % 2
-  if (Date.parse(stampOn(addDays(localDay(now), -age), newestTs)) > now.getTime()) age = 1
-  const anchor = addDays(localDay(now), -age)
-  const assigned = new Map<number, string>()
-  let offset = 0
-  for (const item of [...valid].reverse()) {
-    const source = entries[item.index]
-    if (!source) continue
-    assigned.set(item.index, stampOn(addDays(anchor, -offset), source.ts))
-    offset += gapDays(source.tx_id)
-  }
-  let previous = Number.NEGATIVE_INFINITY
-  for (const item of valid) {
-    const source = entries[item.index]
-    let ts = assigned.get(item.index)
-    if (!source || !ts) continue
-    let guard = 0
-    while (Date.parse(ts) <= previous && guard < 45) {
-      const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(ts)
-      const day = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : localDay(new Date(ts))
-      ts = stampOn(addDays(day, 1), source.ts)
-      guard += 1
-    }
-    assigned.set(item.index, ts)
-    previous = Date.parse(ts)
-  }
-  return entries.map((entry, index) => {
-    const ts = assigned.get(index)
-    return ts ? { ...entry, ts } : entry
+function wholeDays(from: Date, to: Date): number {
+  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())
+  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate())
+  return Math.round((end - start) / 86_400_000)
+}
+
+/** Dịch mọi dòng cùng một số ngày: ngày máy trừ ngày đồng hồ demo. Giữ giờ và khoảng cách thật. */
+export function presentHistory<T extends { ts: string }>(entries: T[], now = new Date(), clock = DEMO_CLOCK): T[] {
+  const shift = wholeDays(localDay(clock), localDay(now))
+  return entries.map((entry) => {
+    if (!Number.isFinite(Date.parse(entry.ts))) return entry
+    return { ...entry, ts: stampOn(addDays(calendarDay(entry.ts), shift), entry.ts) }
   })
 }
 
