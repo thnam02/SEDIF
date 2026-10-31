@@ -151,8 +151,8 @@ def _fee() -> dict:
         ).fetchone()
     assert int(features["features"]["product_savings_7d"]) >= 1
     assert int(features["features"]["a_w"]) >= int(first_row["features"]["a_w"]) + 50_000_000
-    assert "mobilization" in features["payload"]["families_hit"]
-    assert second["decision"]["level"] == "high", second
+    assert "funds_mobilised" in features["payload"]["signals_present"]
+    assert second["decision"]["level"] == 3, second
     assert second["status"] == "blocked_pending_hangup"
     hung = _request("POST", f"{BANK}/transfer/{second['transfer_id']}/respond", {"hung_up": True})
     anchor = datetime.fromisoformat(_request("GET", f"{BANK}/clock")["ts"])
@@ -167,7 +167,7 @@ def _fee() -> dict:
         "first": first["status"],
         "level": second["decision"]["level"],
         "status": second["status"],
-        "families": features["payload"]["families_hit"],
+        "signals_present": features["payload"]["signals_present"],
         "reasons": [item["code"] for item in second["decision"]["reasons"]],
         "hung": hung["status"],
         "released": released["status"],

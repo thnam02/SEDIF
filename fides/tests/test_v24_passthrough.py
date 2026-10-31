@@ -100,7 +100,7 @@ def bank():
                 "countdown_until": None,
                 "actions": [],
                 "reasons": [],
-                "families_hit": [],
+                "signals_present": [],
             }
         return {}
 
@@ -278,7 +278,7 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
                 "countdown_until": None,
                 "actions": ["verify"],
                 "reasons": [{"code": "v24_0", "text": "khác thường"}],
-                "families_hit": [],
+                "signals_present": [],
             }
         return {}
 
@@ -302,8 +302,7 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
         body = response.json()
         assert body["status"] == "done"
         assert body["funds_status"] == "released"
-        assert body["decision"]["level"] == "medium"
-        assert body["decision"]["engine_level"] == 2
+        assert body["decision"]["level"] == 2
         assert body["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
         assert body["decision"]["evidence_card"]["behaviour_score"] == 1.2
         assert body["decision"]["evidence_card"]["p_rarity"] == 0.02
@@ -321,7 +320,7 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
         held = plain.json()
         assert held["status"] == "needs_verification"
         assert held["funds_status"] == "held"
-        assert held["decision"]["engine_level"] == 2
+        assert held["decision"]["level"] == 2
         assert held["decision"]["intervention"] == "three_button"
         assert held["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
         assert held["decision"]["evidence_card"]["reasons_vi"] == ["dừng lâu hơn thường lệ"]
@@ -358,7 +357,7 @@ def test_choice_pause_holds_a_draft_and_cancel_refunds(bank):
                 "countdown_until": None,
                 "actions": [],
                 "reasons": [],
-                "families_hit": [],
+                "signals_present": [],
             }
         if path.endswith("/choice"):
             return {"decision_id": path.split("/")[2], "choice": body["choice"], "logged": True}
@@ -405,7 +404,7 @@ def test_guardian_is_notified_only_after_consent(bank):
                 "hold_until": None,
                 "actions": [],
                 "reasons": [],
-                "families_hit": [],
+                "signals_present": [],
             }
         return {}
 

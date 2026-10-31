@@ -144,12 +144,12 @@ def test_fee_high_and_mule_warning():
         ).fetchone()
     assert int(features["features"]["product_savings_7d"]) >= 1, features["features"]
     assert int(features["features"]["a_w"]) >= int(first_row["features"]["a_w"]) + 50_000_000, (first_row["features"]["a_w"], features["features"]["a_w"])
-    assert "mobilization" in features["payload"]["families_hit"], features["payload"]
-    assert second["decision"]["level"] == "high", {
+    assert "funds_mobilised" in features["payload"]["signals_present"], features["payload"]
+    assert second["decision"]["level"] == 3, {
         "level": second["decision"]["level"],
         "p": features["p"],
         "reasons": second["decision"]["reasons"],
-        "families": features["payload"]["families_hit"],
+        "signals_present": features["payload"]["signals_present"],
     }
     assert second["status"] == "blocked_pending_hangup"
     held_balance = psycopg.connect(os.environ["DATABASE_URL"]).execute("SELECT balance FROM bank.accounts WHERE id = 'ZHIGH0001'").fetchone()[0]

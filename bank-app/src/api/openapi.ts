@@ -16,6 +16,7 @@ export interface paths {
         /**
          * Ghi một sự kiện, idempotent theo event_id
          * @description Cùng event_id gửi lại trả bản đã lưu. ts là dấu của đồng hồ demo do bank-core ghi, không phải đồng hồ app.
+         *
          */
         post: operations["ingestEvent"];
         delete?: never;
@@ -35,7 +36,8 @@ export interface paths {
         put?: never;
         /**
          * Chấm một lệnh chuyển
-         * @description device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo. task_type, call, behaviour_features, transfer_purpose, state trên device, recent_funds_events và experiment là hợp đồng 2.4. Engine đọc chúng. recent_funds_events do bank-core gắn từ sổ, không phải từ app. behaviour_features chỉ là số tổng hợp trên máy, không có mốc thời gian thô.
+         * @description device có thể vắng. Mọi trường trong device đều được null. Thiếu device thì profile hiệu lực hạ xuống basic. ts do bank-core đóng từ đồng hồ demo. task_type và behaviour_features được engine đọc để chấm tầng thao tác. experiment chọn ghi baseline ngay (thí nghiệm) hay sau 24 giờ. behaviour_features chỉ là số tổng hợp trên máy, không có mốc thời gian thô.
+         *
          */
         post: operations["decide"];
         delete?: never;
@@ -57,6 +59,7 @@ export interface paths {
          * Cập nhật quyết định sau câu trả lời
          * @deprecated
          * @description Deprecated. Sẽ bỏ sau policy v2.4. Lựa chọn mới là POST /decisions/{id}/choice. Không bao giờ hạ level. authority hoặc bank nâng lên high. relative khi khách có giám hộ đặt gate guardian_confirm_requested và giữ level. relative khi không có giám hộ đặt gate short_wait và giữ level. friend, seller, nobody, other giữ level. hung_up khi level là high bắt đầu countdown 10 phút và không huỷ tiền. Cuộc gọi mới reset countdown. proceed sau countdown thì funds_status released. cancel bất cứ lúc nào thì cancelled. guardian_confirm nhả tiền sớm. hold_until của medium là 30 phút, của high là 24 giờ. short_wait là 2 phút. Các mốc này là GIẢ ĐỊNH trong fides-sim/config.yaml.
+         *
          */
         post: operations["respond"];
         delete?: never;
@@ -110,7 +113,8 @@ export interface paths {
         put?: never;
         /**
          * Ghi lựa chọn của khách sau can thiệp
-         * @description pause, cancel hoặc continue. response_ms chỉ ghi cho nghiên cứu, không đưa vào chấm điểm và không đổi level. Endpoint chưa được thực hiện.
+         * @description pause giữ lệnh pending_draft và tiền held. cancel hoàn tiền. continue giải phóng tiền. Engine chỉ ghi response_ms, không đổi level. Bank-core chuyển tiếp rồi áp dụng lên lệnh.
+         *
          */
         post: operations["recordUserChoice"];
         delete?: never;
@@ -216,6 +220,7 @@ export interface paths {
         /**
          * Tạo lệnh chuyển
          * @description App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256 rồi gọi POST /decide. none, info và banner cho đi. Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng: lúc đó chỉ là ghi chú info. medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy. Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai. /decide hết 300 ms hoặc lỗi thì chuyển bình thường và ghi log engine_unavailable. Từ 50 triệu tới người nhận mới thì vẫn hiện banner. Thiếu device thì engine dùng profile basic.
+         *
          */
         post: operations["createTransfer"];
         delete?: never;
@@ -236,6 +241,7 @@ export interface paths {
         /**
          * Lưu một phiên thí nghiệm
          * @description Chỉ khi khách đã đồng ý. raw_events là loại sự kiện và mốc monotonic, không có ký tự đã gõ, số tài khoản, số tiền hay toạ độ. Bank-core băm HMAC mọi mã tài khoản trước khi ghi. raw_events không được gửi vào /decide.
+         *
          */
         post: operations["storeExperimentSession"];
         delete?: never;
@@ -256,6 +262,7 @@ export interface paths {
         /**
          * Trả lời trên một lệnh chuyển
          * @description Không nhận decision_id. Lệnh nằm ở path. Cùng luật với POST /respond của engine.
+         *
          */
         post: operations["respondTransfer"];
         delete?: never;
@@ -338,6 +345,23 @@ export interface paths {
          * @description Ghi event type account_change, change_type limit_raise. Không gọi /decide. Trả done.
          */
         post: operations["changeLimit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ngưỡng hỏi mục đích chuyển khoản */
+        get: operations["bankConfig"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -435,10 +459,16 @@ export interface components {
             freshness_s: number;
         };
         /**
-         * @description Cách khách chọn người nhận. Hợp đồng 2.4, engine đọc.
+         * @description Cách khách chọn người nhận. Khoá baseline thao tác cùng loại.
          * @enum {string}
          */
         TaskType: "saved_payee" | "new_typed" | "new_pasted" | "qr";
+        /**
+         * @description Cách đưa số người nhận vào ô, khi task_type là new_pasted. Không tham gia chấm điểm. Chỉ hiện trên thẻ bằng chứng.
+         *
+         * @enum {string}
+         */
+        EntryDetail: "paste" | "image_capture" | "image_upload";
         /** @description Trạng thái cuộc gọi lúc chấm. Không ghi ai gọi hay ứng dụng nào. */
         CallContext: {
             /** @enum {string} */
@@ -448,7 +478,8 @@ export interface components {
             /** @enum {string} */
             transport: "cellular" | "voip" | "unknown";
         };
-        /** @description Số tổng hợp tính trên máy. Không gửi mốc thời gian thô. Hợp đồng 2.4, engine đọc. */
+        /** @description Số tổng hợp tính trên máy. Không gửi mốc thời gian thô. Engine dùng các số này để chấm tầng thao tác.
+         *      */
         BehaviourFeatures: {
             median_gap_ms: number;
             p90_gap_ms: number;
@@ -467,7 +498,8 @@ export interface components {
          * @enum {string}
          */
         TransferPurpose: "authority_request" | "fee_to_receive" | "investment" | "refund_request" | "purchase" | "family_friends" | "debt_salary" | "other" | "not_asked";
-        /** @description Toàn vẹn thiết bị gửi kèm khối device trên /decide. additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input. Engine đọc state. integrity_verdict_at vẫn chưa đọc. */
+        /** @description Toàn vẹn thiết bị gửi kèm khối device trên /decide. additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input. Engine đọc state. integrity_verdict_at vẫn chưa đọc.
+         *      */
         DeviceIntegrity: {
             /** @enum {string} */
             state?: "capability_detected" | "active_capture" | "verified_compromise" | "unknown" | "none";
@@ -527,6 +559,7 @@ export interface components {
         ChangeType: "limit_raise" | "phone_change";
         /**
          * @description savings và securities là account_type trong sim. Ba tên còn lại là tx_type của lệnh sản phẩm.
+         *
          * @enum {string}
          */
         ProductType: "savings" | "securities" | "savings_liquidation" | "quick_loan_disbursement" | "credit_card_cash_advance";
@@ -637,43 +670,38 @@ export interface components {
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];
-            /** @description Khối v2.1 (in_call, acct_input, ...) cộng state và integrity_verdict_at của v2.4. Có thể bỏ cả khối. */
+            /** @description Khối v2.1 (in_call, acct_input, ...) cộng state và integrity_verdict_at của v2.4. Có thể bỏ cả khối.
+             *      */
             device?: (components["schemas"]["Device"] & components["schemas"]["DeviceIntegrity"]) | null;
             recent_funds_events?: components["schemas"]["RecentFundsEvent"][];
             experiment?: components["schemas"]["ExperimentAssignment"];
-        };
-        /** @description Điểm từ 0 đến 1 của bốn nhóm kịch bản. long_term chỉ xuất hiện trong families_hit. */
-        GroupScores: {
-            call: number;
-            entry: number;
-            payee: number;
-            mobilization: number;
         };
         Reason: {
             code: string;
             /** @description Câu hiện cho khách. simo_listed dùng câu cảnh báo tài khoản đã bị báo cáo. */
             text: string;
         };
-        /** @description Thẻ bằng chứng v2.4. */
+        /** @description Thẻ bằng chứng v2.4. behaviour_score và p_rarity null khi không có behaviour_features. */
         EvidenceCard: {
             signals: components["schemas"]["Signal"][];
             reasons_vi: string[];
             /** @enum {string} */
             baseline_quality: "low" | "medium" | "high" | "none";
             episode_id: string;
+            /** @description Điểm thao tác S của phiên. null khi không có behaviour_features. */
             behaviour_score?: number | null;
+            /** @description (1 + số điểm tham chiếu >= S) / (n + 1). Ngưỡng 0,05 là demo. */
             p_rarity?: number | null;
-            /** @description Cách dán hoặc lấy số từ ảnh. App gắn khi hiện thẻ. */
+            /** @description Cách dán hoặc lấy số từ ảnh. App gắn khi hiện thẻ. Engine không đọc. */
             entry_detail?: components["schemas"]["EntryDetail"] | null;
         };
-        /** @enum {string} */
-        EntryDetail: "paste" | "image_capture" | "image_upload";
         /**
-         * @description Kiểu màn hình v2.4. Chưa gắn vào màn hình đang chạy.
+         * @description Kiểu màn hình v2.4. App dùng trường này cùng level 0–3.
          * @enum {string}
          */
         Intervention: "none" | "banner" | "three_button" | "security_workflow";
-        /** @description Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và intervention. 0 proceed, 1 banner, 2 three-button verification, 3 security workflow (verified evidence only). Engine chưa trả các trường mới. */
+        /** @description Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và intervention. 0 proceed, 1 banner, 2 three-button verification, 3 security workflow (verified evidence only).
+         *      */
         DecideResponse: {
             decision_id: string;
             /**
@@ -687,14 +715,15 @@ export interface components {
             intervention: components["schemas"]["Intervention"];
             actions: string[];
             p_fraud: number;
-            group_scores: components["schemas"]["GroupScores"];
-            families_hit: ("call" | "entry" | "payee" | "mobilization" | "long_term")[];
+            /** @description Tín hiệu chính sách đang present, lấy từ trường trên request và từ sổ đặc trưng. Ví dụ call_active, call_ended, funds_mobilised, new_payee.
+             *      */
+            signals_present: string[];
             reasons: components["schemas"]["Reason"][];
             missing_signals: string[];
             /** @enum {string} */
             profile: "basic" | "standard" | "advanced";
             model_version: string;
-            /** @description Medium cộng 30 phút. High cộng 24 giờ. none và banner là null. */
+            /** @description Mức 2 cộng 30 phút. Mức 3 cộng 24 giờ. Mức 0 và 1 là null. */
             hold_until: string | null;
             /** @description Hung_up ở high cộng 10 phút. Cuộc gọi mới tính lại. Proceed trước mốc này không nhả tiền. */
             countdown_until: string | null;
@@ -703,7 +732,8 @@ export interface components {
         UserChoice: "pause" | "cancel" | "continue";
         UserChoiceRequest: {
             choice: components["schemas"]["UserChoice"];
-            /** @description Mili giây từ lúc hiện can thiệp tới lúc bấm. Chỉ ghi cho nghiên cứu. Không đưa vào chấm điểm. */
+            /** @description Mili giây từ lúc hiện can thiệp tới lúc bấm. Chỉ ghi cho nghiên cứu. Không đưa vào chấm điểm.
+             *      */
             response_ms: number;
         };
         UserChoiceReceipt: {
@@ -772,7 +802,7 @@ export interface components {
             status: components["schemas"]["TransferStatus"];
             /** @description Số tài khoản phía bên kia, nếu sổ tra được. Không dùng để chấm điểm. */
             counterparty_id?: string | null;
-            /** @description Tên phía bên kia. Không trả số tài khoản. */
+            /** @description Tên phía bên kia. Không trả số tài khoản. Không dùng để chấm điểm. */
             counterparty_name?: string | null;
         };
         Beneficiary: {
@@ -794,22 +824,24 @@ export interface components {
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];
-            /** @description Cách dán hoặc lấy số từ ảnh. Không tham gia chấm điểm. */
             entry_detail?: components["schemas"]["EntryDetail"];
             /** @description Khối v2.1 cộng state của v2.4. Có thể bỏ cả khối. */
             device?: (components["schemas"]["Device"] & components["schemas"]["DeviceIntegrity"]) | null;
             experiment?: components["schemas"]["ExperimentAssignment"];
         };
         BankDecision: {
-            /** @enum {string} */
-            level: "none" | "info" | "banner" | "medium" | "high";
+            /**
+             * @description 0 proceed, 1 banner, 2 three-button verification, 3 security workflow.
+             * @enum {integer}
+             */
+            level: 0 | 1 | 2 | 3;
             actions: string[];
             reasons: components["schemas"]["Reason"][];
-            families_hit?: ("call" | "entry" | "payee" | "mobilization" | "long_term")[];
+            /** @description Cùng danh sách trên /decide. */
+            signals_present?: string[];
+            /** @description Luật đã khớp trên /decide. */
             rules_fired?: string[];
             evidence_card?: components["schemas"]["EvidenceCard"];
-            /** @enum {number} */
-            engine_level?: 0 | 1 | 2 | 3;
             intervention?: components["schemas"]["Intervention"];
         };
         TransferResponse: {
@@ -830,8 +862,8 @@ export interface components {
         TransferRespondResponse: {
             transfer_id: string;
             status: components["schemas"]["TransferStatus"];
-            /** @enum {string} */
-            level: "none" | "info" | "banner" | "medium" | "high";
+            /** @enum {integer} */
+            level: 0 | 1 | 2 | 3;
             /** @enum {string} */
             funds_status: "held" | "released" | "cancelled";
             /** @enum {string} */
@@ -858,9 +890,11 @@ export interface components {
         GuardianRequest: {
             account_id: string;
             guardian_phone_hash?: components["schemas"]["Hash"];
+            /** @description Số thô. Bank-core băm HMAC trước khi ghi. Không gửi sang engine. */
             phone?: string;
             relation: string;
-            consent?: boolean;
+            /** @description Phải true. Không có sự đồng ý thì không ghi và không báo. */
+            consent: boolean;
         };
         GuardianResponse: {
             account_id: string;
@@ -871,8 +905,8 @@ export interface components {
             id: string;
             account_id: string;
             transfer_id?: string;
-            /** @enum {string} */
-            level: "none" | "info" | "banner" | "medium" | "high";
+            /** @enum {integer} */
+            level: 0 | 1 | 2 | 3;
             /** @enum {string} */
             funds_status: "held" | "released" | "cancelled";
             amount?: number;
@@ -1441,6 +1475,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductAck"];
+                };
+            };
+        };
+    };
+    bankConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Số tiền vượt ngưỡng này thì app hỏi mục đích, kể cả người nhận đã lưu */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        purpose_amount_vnd: number;
+                    };
                 };
             };
         };

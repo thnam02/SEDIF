@@ -4,7 +4,7 @@ type Decide = components["schemas"]["DecideResponse"]
 type Respond = components["schemas"]["RespondResponse"]
 
 export type FidesDecision = Omit<Pick<Decide, "decision_id" | "level" | "actions" | "reasons" | "hold_until" | "countdown_until">, "level"> &
-  Partial<Pick<Decide, "p_fraud" | "group_scores" | "families_hit" | "missing_signals" | "profile" | "model_version">> &
+  Partial<Pick<Decide, "p_fraud" | "signals_present" | "missing_signals" | "profile" | "model_version">> &
   Partial<Pick<Respond, "funds_status" | "gate">> & {
     level: Respond["level"]
     payee_name?: string

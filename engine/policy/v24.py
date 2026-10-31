@@ -167,6 +167,27 @@ class Outcome:
         return [{"code": f"v24_{index}", "text": text} for index, text in enumerate(self.reasons_vi)]
 
 
+# Tên trên hợp đồng. Luật vẫn đọc mã trong bank_policy.yaml.
+_CONTRACT_SIGNAL = {
+    "has_call": "call_active",
+    "recent_funds_event": "funds_mobilised",
+    "beneficiary_is_new": "new_payee",
+}
+
+
+def signals_present(outcome: Outcome, call_state: str | None = None) -> list[str]:
+    """Tín hiệu chính sách đang present. Gồm cả trường trên request và dòng trong sổ đặc trưng."""
+    names: list[str] = []
+    for signal in outcome.signals:
+        if signal.status != "present":
+            continue
+        if signal.signal_id == "has_call" and call_state == "ended_in_session":
+            names.append("call_ended")
+        else:
+            names.append(_CONTRACT_SIGNAL.get(signal.signal_id, signal.signal_id))
+    return names
+
+
 class MemoryState:
     def __init__(self) -> None:
         self.rows: dict[str, dict] = {}

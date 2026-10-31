@@ -1,4 +1,4 @@
-"""Bank-core. Đóng dấu đồng hồ demo, gọi engine bằng API key, giữ tiền medium/high."""
+"""Bank-core. Đóng dấu đồng hồ demo, gọi engine bằng API key, giữ tiền mức 2 và 3."""
 
 from __future__ import annotations
 
@@ -267,35 +267,41 @@ def _payee_is_new(conn, sender: str, payee: str) -> bool:
     return row is None
 
 
+_ACTION_LEVEL = {0: "none", 1: "banner", 2: "medium", 3: "high"}
+
+
+def numeric_level(level) -> int:
+    """/decide trả 0–3. /respond cũ vẫn trả chữ; cửa ngân hàng đổi về số trước khi trả khách."""
+    if isinstance(level, bool):
+        return 0
+    if isinstance(level, int):
+        return level
+    return {"none": 0, "info": 0, "banner": 1, "medium": 2, "high": 3}.get(str(level), 0)
+
+
 def _fallback(conn, sender: str, payee: str, amount: int) -> dict:
     log.warning("engine_unavailable")
-    level = "banner" if amount >= NEW_PAYEE_BANNER and _payee_is_new(conn, sender, payee) else "none"
-    reasons = [{"code": "new_payee", "text": REASONS[3][2]}] if level == "banner" else []
+    level = 1 if amount >= NEW_PAYEE_BANNER and _payee_is_new(conn, sender, payee) else 0
+    reasons = [{"code": "new_payee", "text": REASONS[3][2]}] if level == 1 else []
     return {
         "level": level,
         "funds_status": "released",
         "hold_until": None,
         "countdown_until": None,
-        "actions": actions_for(level, "thường", False),
+        "actions": actions_for(_ACTION_LEVEL[level], "thường", False),
         "reasons": reasons,
+        "signals_present": ["new_payee"] if level == 1 else [],
     }
 
 
-def legacy_level(level) -> str:
-    """TransferResponse vẫn dùng mức chữ. /decide v2.4 trả 0–3."""
-    if isinstance(level, int) and not isinstance(level, bool):
-        return {0: "none", 1: "banner", 2: "medium", 3: "high"}.get(level, "none")
-    return str(level)
-
-
-def status_of(level: str, funds: str, hung_up: bool) -> str:
+def status_of(level: int, funds: str, hung_up: bool) -> str:
     if funds == "cancelled":
         return "cancelled"
     if funds == "released":
-        return "done" if level in {"none", "info", "banner"} else "released"
-    if level == "high" and not hung_up:
+        return "done" if level <= 1 else "released"
+    if level >= 3 and not hung_up:
         return "blocked_pending_hangup"
-    if level == "medium":
+    if level == 2:
         return "needs_verification"
     return "held"
 
@@ -793,6 +799,7 @@ def demo_reset(body: ResetIn) -> dict:
     FEED_CURSOR = 0
     with connect() as conn:
         load(conn)
+        ensure_scene_capacity(conn)
         remember_reset(conn, body.reset_id)
         conn.commit()
     LEDGER_MISMATCH = False
@@ -1065,7 +1072,7 @@ def transfer(
         except EngineUnavailable:
             decided = _fallback(conn, body.from_account, body.to_account, body.amount)
             decision_id = None
-        level = legacy_level(decided["level"])
+        level = numeric_level(decided["level"])
         funds = decided["funds_status"]
         experiment = body.experiment
         if experiment is not None:
@@ -1094,7 +1101,7 @@ def transfer(
                 body.amount,
                 body.purpose_text,
                 decision_id,
-                level,
+                str(level),
                 funds,
                 status,
                 decided.get("hold_until"),
@@ -1111,13 +1118,13 @@ def transfer(
             release_payee(conn, stored, now)
         if experiment is not None:
             _save_experiment_decision(conn, body, decided, now)
-        if level == "medium" and experiment is None and _guardian_consented(conn, body.from_account):
+        if level == 2 and experiment is None and _guardian_consented(conn, body.from_account):
             conn.execute(
                 """
                 INSERT INTO bank.guardian_requests (id, account_id, transfer_id, level, funds_status, status)
                 VALUES (%s,%s,%s,%s,%s,'open')
                 """,
-                (f"G-{transfer_id}", body.from_account, transfer_id, level, funds),
+                (f"G-{transfer_id}", body.from_account, transfer_id, str(level), funds),
             )
             log.info("guardian notify mock account=%s transfer=%s", body.from_account, transfer_id)
         conn.commit()
@@ -1126,7 +1133,7 @@ def transfer(
         "status": status,
         "funds_status": funds,
         "hold_until": decided.get("hold_until"),
-        "decision": _decision_payload(level, decided, experiment is not None),
+        "decision": _decision_payload(level, decided),
     }
     if key:
         with connect() as conn:
@@ -1145,30 +1152,19 @@ def transfer(
     return result
 
 
-def _engine_level(level: str, decided: dict) -> int:
-    raw = decided.get("level")
-    if isinstance(raw, int) and not isinstance(raw, bool):
-        return raw
-    return {"none": 0, "info": 0, "banner": 1, "medium": 2, "high": 3}.get(level, 0)
-
-
-def _decision_payload(level: str, decided: dict, experiment: bool) -> dict:
-    numeric = _engine_level(level, decided)
-    intervention = decided.get("intervention") or {0: "none", 1: "banner", 2: "three_button", 3: "security_workflow"}[numeric if numeric in {0, 1, 2, 3} else 0]
+def _decision_payload(level: int, decided: dict) -> dict:
+    shown = level if level in {0, 1, 2, 3} else 0
+    intervention = decided.get("intervention") or {0: "none", 1: "banner", 2: "three_button", 3: "security_workflow"}[shown]
     card = decided.get("evidence_card") or {"signals": [], "reasons_vi": [], "baseline_quality": "none", "episode_id": ""}
-    payload = {
-        "level": level,
+    return {
+        "level": shown,
         "actions": decided.get("actions") or [],
         "reasons": decided.get("reasons") or [],
-        "families_hit": decided.get("families_hit") or [],
+        "signals_present": list(decided.get("signals_present") or []),
         "rules_fired": list(decided.get("rules_fired") or []),
         "evidence_card": card,
-        "engine_level": numeric,
         "intervention": intervention,
     }
-    if experiment:
-        payload["engine_level"] = decided.get("level") if isinstance(decided.get("level"), int) else numeric
-    return payload
 
 
 def _save_experiment_decision(conn, body: TransferIn, decided: dict, now: datetime) -> None:
@@ -1275,7 +1271,7 @@ def respond(transfer_id: str, body: RespondIn) -> dict:
         answered = engine_post("/respond", payload)
         previous = transfer["funds_status"]
         funds = answered["funds_status"]
-        level = answered["level"]
+        level = numeric_level(answered["level"])
         hung = bool(transfer["hung_up"] or body.hung_up)
         status = status_of(level, funds, hung)
         apply_funds(conn, transfer, previous, funds, now)
@@ -1285,7 +1281,7 @@ def respond(transfer_id: str, body: RespondIn) -> dict:
             SET level=%s, funds_status=%s, status=%s, hold_until=%s, countdown_until=%s, gate=%s, hung_up=%s
             WHERE id=%s
             """,
-            (level, funds, status, answered.get("hold_until"), answered.get("countdown_until"), answered.get("gate"), hung, transfer_id),
+            (str(level), funds, status, answered.get("hold_until"), answered.get("countdown_until"), answered.get("gate"), hung, transfer_id),
         )
         sync_entry(conn, transfer_id, transfer["from_account"], funds, status)
         conn.commit()
@@ -1481,7 +1477,7 @@ def guardian_requests() -> dict:
                 "id": row["id"],
                 "account_id": row["account_id"],
                 "transfer_id": row["transfer_id"],
-                "level": row["level"],
+                "level": numeric_level(row["level"]),
                 "funds_status": row["funds_status"],
                 "amount": None if row["amount"] is None else int(row["amount"]),
                 "to_account": row["to_account"],
@@ -1502,10 +1498,11 @@ def confirm_guardian(request_id: str) -> dict:
         transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (row["transfer_id"],)).fetchone()
         answered = engine_post("/respond", {"decision_id": transfer["decision_id"], "guardian_confirm": True, "ts": now.isoformat()})
         apply_funds(conn, transfer, transfer["funds_status"], answered["funds_status"], now)
-        released_status = status_of(answered["level"], answered["funds_status"], transfer["hung_up"])
+        level = numeric_level(answered["level"])
+        released_status = status_of(level, answered["funds_status"], transfer["hung_up"])
         conn.execute(
             "UPDATE bank.transfers SET funds_status=%s, status=%s, level=%s WHERE id=%s",
-            (answered["funds_status"], released_status, answered["level"], transfer["id"]),
+            (answered["funds_status"], released_status, str(level), transfer["id"]),
         )
         sync_entry(conn, transfer["id"], transfer["from_account"], answered["funds_status"], released_status)
         conn.execute("UPDATE bank.guardian_requests SET status='confirmed', funds_status='released' WHERE id=%s", (request_id,))

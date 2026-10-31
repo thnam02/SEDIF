@@ -472,12 +472,12 @@ export function ConfirmScreen() {
                   console.log(JSON.stringify({
                     experiment,
                     level: result.decision.level,
-                    engine_level: result.decision.engine_level ?? null,
+                    engine_level: result.decision.level,
                     rules_fired: result.decision.rules_fired ?? [],
                     evidence_card: card ?? null,
                   }))
                 }
-                const engineLevel = result.decision.engine_level ?? 0
+                const engineLevel = result.decision.level
                 const reasonsVi = (card?.reasons_vi ?? []).map(reasonLine).filter(Boolean)
                 setOutcome({
                   transferId: result.transfer_id,
@@ -489,7 +489,7 @@ export function ConfirmScreen() {
                   actions: result.decision.actions,
                   reasons: result.decision.reasons.map((reason) => ({ ...reason, text: reasonLine(reason.text) })),
                   reasonsVi,
-                  familiesHit: result.decision.families_hit ?? [],
+                  signalsPresent: result.decision.signals_present ?? [],
                   funds_status: experiment ? "released" : result.funds_status,
                   gate: "none",
                   hold_until: experiment ? null : result.hold_until,
