@@ -17,7 +17,7 @@ export function CallSimulator({ open, onClose }: { open: boolean; onClose: () =>
           <Text style={{ color: colors.navy, fontSize: 20, fontWeight: "700" }}>{copy.simulator}</Text>
           {outcome?.reasons.length ? (
             <View style={{ gap: 6 }}>
-              <Text style={{ color: colors.deep, fontWeight: "700" }}>{outcome.level} · {outcome.familiesHit.join(", ")}</Text>
+              <Text style={{ color: colors.deep, fontWeight: "700" }}>{outcome.level} · {outcome.signalsPresent.join(", ")}</Text>
               {outcome.reasons.map((reason) => (
                 <Text key={reason.code} style={{ color: colors.navy }}>{reason.text}</Text>
               ))}

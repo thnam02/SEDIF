@@ -42,13 +42,13 @@ export function DemoControls() {
   return (
     <View style={{ gap: 8 }}>
       <Pressable testID="dev-active-capture" accessibilityRole="button" onPress={() => { setDevCapture(!devCapture); closeDemoDrawer() }} style={{ minHeight: 44, justifyContent: "center" }}>
-        <Text style={{ color: devCapture ? colors.warn : colors.deep, fontWeight: "700" }}>Giả lập demo: màn hình đang bị ghi</Text>
+        <Text style={{ color: devCapture ? colors.warn : colors.deep, fontWeight: "700" }}>Demo: màn hình đang bị ghi</Text>
       </Pressable>
       <Pressable testID="dev-guided" accessibilityRole="button" onPress={() => { setDevGuided(!devGuided); closeDemoDrawer() }} style={{ minHeight: 44, justifyContent: "center" }}>
-        <Text style={{ color: devGuided ? colors.warn : colors.deep, fontWeight: "700" }}>Phiên có hướng dẫn (demo)</Text>
+        <Text style={{ color: devGuided ? colors.warn : colors.deep, fontWeight: "700" }}>Demo: phiên có hướng dẫn</Text>
       </Pressable>
       <Pressable testID="call-end" accessibilityRole="button" onPress={() => { FidesSession.setSimulatedCall(false, false); setStrangerCall(false); closeDemoDrawer() }} style={{ minHeight: 44, justifyContent: "center" }}>
-        <Text style={{ color: colors.deep, fontWeight: "700" }}>Kết thúc cuộc gọi giả lập</Text>
+        <Text style={{ color: colors.deep, fontWeight: "700" }}>Demo: kết thúc cuộc gọi</Text>
       </Pressable>
     </View>
   )

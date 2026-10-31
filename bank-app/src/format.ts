@@ -17,6 +17,9 @@ export function vnd(amount: number): string {
   return `${grouped(amount)} đ`
 }
 
+/** Tiền tố ngân hàng thay cho số 0 đệm. HMAC vẫn băm cả mã nội bộ, không băm số này. */
+const BANK_PREFIX = "1903"
+
 /** Số hiển thị 10 chữ số, hậu tố khác nhau. Mã nội bộ không đưa ra màn hình. */
 const DEMO_NUMBERS: Record<string, string> = {
   A0119434: "0901119434",
@@ -39,26 +42,113 @@ function accountKey(id: string): string {
 
 export function displayDigits(id: string): string {
   const key = accountKey(id)
-  if (DEMO_NUMBERS[key]) return DEMO_NUMBERS[key]
-  const digits = key.replace(/\D/g, "")
-  return digits.length >= 4 ? digits.padStart(10, "0").slice(-10) : digits
+  const mapped = DEMO_NUMBERS[key]
+  const raw = mapped ?? key.replace(/\D/g, "")
+  if (!raw) return ""
+  if (mapped || raw.length >= 10) return raw.length > 10 ? raw.slice(-10) : raw
+  return `${BANK_PREFIX}${raw.slice(-6).padStart(6, "0")}`
 }
 
+/** Nhóm 3 từ phải sang trái. Nhóm trái chỉ một chữ số thì gộp vào nhóm kế. */
+export function groupAccount(raw: string): string {
+  const digits = raw.replace(/\D/g, "")
+  if (!digits) return ""
+  const groups: string[] = []
+  let rest = digits
+  while (rest.length > 3) {
+    groups.unshift(rest.slice(-3))
+    rest = rest.slice(0, -3)
+  }
+  if (rest.length === 1 && groups.length > 0) {
+    groups[0] = `${rest}${groups[0]}`
+  } else if (rest) {
+    groups.unshift(rest)
+  }
+  return groups.join(" ")
+}
+
+/** Số người nhận. Không che. */
 export function showAccount(id: string): string {
-  const digits = displayDigits(id)
-  if (digits.length < 10) return maskAccount(id)
-  if (!DEMO_NUMBERS[accountKey(id)]) return maskAccount(id)
-  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+  return groupAccount(displayDigits(id))
 }
 
+/** Chỉ che tài khoản nguồn của chính khách. */
 export function maskAccount(id: string): string {
   const tail = displayDigits(id).slice(-4)
   return tail ? `•••• ${tail}` : ""
 }
 
+/** Một kiểu câu: chữ đầu viết hoa, kết thúc bằng dấu chấm. */
+export function reasonLine(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, " ")
+  if (!trimmed) return ""
+  const chars = [...trimmed]
+  const first = chars[0] ?? ""
+  let line = first.toLocaleUpperCase("vi") + chars.slice(1).join("")
+  if (!/[.!?]$/.test(line)) line += "."
+  return line
+}
+
 function part(iso: string, type: Intl.DateTimeFormatPartTypes, options: Intl.DateTimeFormatOptions): string {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: ICT, ...options }).formatToParts(new Date(iso))
   return parts.find((item) => item.type === type)?.value ?? ""
+}
+
+function clockPart(iso: string, type: "hour" | "minute" | "second"): string {
+  const value = part(iso, type, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
+  return value.padStart(2, "0")
+}
+
+function localDay(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+function addDays(day: Date, count: number): Date {
+  const next = new Date(day)
+  next.setDate(next.getDate() + count)
+  return next
+}
+
+function stampOn(day: Date, iso: string): string {
+  const year = day.getFullYear()
+  const month = String(day.getMonth() + 1).padStart(2, "0")
+  const date = String(day.getDate()).padStart(2, "0")
+  return `${year}-${month}-${date}T${clockPart(iso, "hour")}:${clockPart(iso, "minute")}:${clockPart(iso, "second")}+07:00`
+}
+
+/** Ngày neo đồng hồ demo, khớp bank-core DEMO_DAY. */
+export const DEMO_CLOCK = new Date(2026, 8, 21)
+
+const HELD_STATUS = new Set(["held", "needs_verification", "blocked_pending_hangup", "pending_draft"])
+
+export function isHeld(status: string | undefined): boolean {
+  return HELD_STATUS.has(status ?? "")
+}
+
+function calendarDay(iso: string): Date {
+  const options = { year: "numeric", month: "2-digit", day: "2-digit" } as const
+  const year = Number(part(iso, "year", options))
+  const month = Number(part(iso, "month", options))
+  const date = Number(part(iso, "day", options))
+  return new Date(year, month - 1, date)
+}
+
+function wholeDays(from: Date, to: Date): number {
+  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())
+  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate())
+  return Math.round((end - start) / 86_400_000)
+}
+
+/** Dịch một mốc cùng số ngày với sổ: ngày máy trừ ngày đồng hồ demo. Giữ giờ. */
+export function presentStamp(iso: string, now = new Date(), clock = DEMO_CLOCK): string {
+  if (!Number.isFinite(Date.parse(iso))) return iso
+  const shift = wholeDays(localDay(clock), localDay(now))
+  return stampOn(addDays(calendarDay(iso), shift), iso)
+}
+
+/** Dịch mọi dòng cùng một số ngày: ngày máy trừ ngày đồng hồ demo. Giữ giờ và khoảng cách thật. */
+export function presentHistory<T extends { ts: string }>(entries: T[], now = new Date(), clock = DEMO_CLOCK): T[] {
+  return entries.map((entry) => ({ ...entry, ts: presentStamp(entry.ts, now, clock) }))
 }
 
 export function when(iso: string): { time: string; date: string } {

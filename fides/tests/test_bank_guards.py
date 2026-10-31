@@ -228,7 +228,7 @@ def test_z_call_during_hold_raises_one_level(stack):
     )
     assert created["funds_status"] == "held", created
     start = created["decision"]["level"]
-    assert start == "medium", created
+    assert start == 2, created
     _advance(20)
     stamp = datetime.fromisoformat(_ok("GET", f"{BANK}/clock")["ts"])
     status, payload = _call(
@@ -278,7 +278,7 @@ def test_guardian_confirm_releases(stack):
         f"{BANK}/transfer",
         {"from_account": sender, "to_account": payee, "amount": 30_000_000, "purpose_text": "nhà", "device": {"acct_input": "typed"}},
     )
-    assert created["decision"]["level"] == "medium", created
+    assert created["decision"]["level"] == 2, created
     queued = _ok("GET", f"{BANK}/guardian/requests")
     match = [row for row in queued["requests"] if row["transfer_id"] == created["transfer_id"]]
     assert match and match[0]["funds_status"] == "held"

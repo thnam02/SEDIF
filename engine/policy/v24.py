@@ -140,6 +140,7 @@ class Outcome:
     rules_fired: list[str]
     signals: list[Signal]
     reasons_vi: list[str]
+    reason_codes: list[str]
     baseline_quality: str
     episode_id: str
     intervention: str
@@ -164,7 +165,32 @@ class Outcome:
         }
 
     def reason_rows(self) -> list[dict[str, str]]:
-        return [{"code": f"v24_{index}", "text": text} for index, text in enumerate(self.reasons_vi)]
+        return [{"code": code, "text": text} for code, text in zip(self.reason_codes, self.reasons_vi, strict=True)]
+
+
+# Tên trên hợp đồng. Luật vẫn đọc mã trong bank_policy.yaml.
+_CONTRACT_SIGNAL = {
+    "has_call": "call_active",
+    "recent_funds_event": "funds_mobilised",
+    "beneficiary_is_new": "new_payee",
+}
+
+
+def contract_code(signal_id: str, call_state: str | None = None) -> str:
+    """Mã lý do ổn định, cùng tên với signals_present."""
+    if signal_id == "has_call" and call_state == "ended_in_session":
+        return "call_ended"
+    return _CONTRACT_SIGNAL.get(signal_id, signal_id)
+
+
+def signals_present(outcome: Outcome, call_state: str | None = None) -> list[str]:
+    """Tín hiệu chính sách đang present. Gồm cả trường trên request và dòng trong sổ đặc trưng."""
+    names: list[str] = []
+    for signal in outcome.signals:
+        if signal.status != "present":
+            continue
+        names.append(contract_code(signal.signal_id, call_state))
+    return names
 
 
 class MemoryState:
@@ -551,17 +577,17 @@ def _match(rule: dict, signals: dict[str, Signal], flags: dict[str, str], baseli
     return present_ok and absent_ok and any_ok, False
 
 
-def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds: list[dict], behaviour=None, baseline: str = "none") -> list[str]:
-    texts: list[str] = []
+def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds: list[dict], behaviour=None, baseline: str = "none") -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
     fired = {rule["id"] for rule in rules}
 
-    def add(text: str) -> None:
-        if text and text not in texts:
-            texts.append(text)
+    def add(code: str, text: str) -> None:
+        if text and text not in [item[1] for item in rows]:
+            rows.append((code, text))
 
     for rule in rules:
         if rule["id"] == "R_CALL_NEWPAYEE":
-            add(CALL_NEWPAYEE_TEXT)
+            add(contract_code("has_call", facts.call_state), CALL_NEWPAYEE_TEXT)
             continue
         names = list(rule.get("all_present") or []) + list(rule.get("any_present") or [])
         for name in names:
@@ -569,20 +595,21 @@ def _reasons(facts: Facts, rules: list[dict], signals: dict[str, Signal], funds:
                 continue
             if not signals.get(name) or signals[name].status != "present":
                 continue
+            code = contract_code(name, facts.call_state)
             if name == "behaviour_rare":
                 if BASELINE_RANK.get(baseline, 0) < BASELINE_RANK["medium"]:
                     continue
                 phrase = ""
                 if behaviour is not None:
                     phrase = next((item for item in getattr(behaviour, "reasons", []) if item), "")
-                add(phrase or _reason_text(name, facts, funds))
+                add(code, phrase or _reason_text(name, facts, funds))
                 continue
-            add(_reason_text(name, facts, funds))
+            add(code, _reason_text(name, facts, funds))
         if rule["id"] == "R_SIMO_KNOWN":
-            add(SIMO_INFO_TEXT)
+            add("simo_info", SIMO_INFO_TEXT)
         if rule["id"] == "R_SIMO":
-            add(SIMO_TEXT)
-    return texts
+            add(contract_code("recipient_simo_flag"), SIMO_TEXT)
+    return rows
 
 
 def _call_text(facts: Facts) -> str:
@@ -708,7 +735,9 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
     elapsed_ms = (datetime.now(ICT) - started).total_seconds() * 1000
     _note_latency(elapsed_ms)
     ordered = [signals[name] for name in SIGNAL_ORDER]
-    reasons = _reasons(facts, fired, signals, funds, behaviour, baseline)
+    reason_rows = _reasons(facts, fired, signals, funds, behaviour, baseline)
+    reasons = [text for _, text in reason_rows]
+    reason_codes = [code for code, _ in reason_rows]
     behaviour_score = None
     behaviour_p = facts.behaviour_p_rarity
     if behaviour is not None:
@@ -719,6 +748,7 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
         rules_fired=[rule["id"] for rule in fired],
         signals=ordered,
         reasons_vi=reasons,
+        reason_codes=reason_codes,
         baseline_quality=baseline,
         episode_id=doc["episode_id"] if in_episode else "",
         intervention=INTERVENTION[level],

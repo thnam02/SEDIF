@@ -42,7 +42,7 @@ from engine.review import confirm as confirm_review
 from engine.review import consider as consider_review
 from engine.review import queue as review_queue
 from engine.policy import actions_for
-from engine.policy.v24 import STRING_LEVEL, RedisState, evaluate, facts_from_row
+from engine.policy.v24 import STRING_LEVEL, RedisState, evaluate, facts_from_row, signals_present
 
 log = logging.getLogger("engine")
 NAME = os.environ.get("SERVICE_NAME", "engine")
@@ -305,8 +305,9 @@ def decide(body: dict) -> tuple[int, dict]:
     outcome = evaluate(facts, RedisState(STORE.redis), behaviour)
     level_name = STRING_LEVEL[outcome.level]
     guardian = bool(int(row.get("has_guardian") or 0))
-    actions = actions_for(level_name, segment, guardian)
-    names = [name for name in ("call", "entry", "payee", "mobilization") if families[name]]
+    # Bản đồng ý nằm ở ngân hàng. Không có cờ này thì không đưa guardian_confirm.
+    actions = actions_for(level_name, segment, guardian, consented=bool(body.get("guardian_consent")))
+    present = signals_present(outcome, facts.call_state)
     reasons = outcome.reason_rows()[:3] or reasons_for(row, families)
     funds, hold = outcome.funds_status, outcome.hold_until
     payload = {
@@ -318,8 +319,7 @@ def decide(body: dict) -> tuple[int, dict]:
         "extra_auth": outcome.extra_auth,
         "actions": actions,
         "p_fraud": probability,
-        "group_scores": {name: float(families[name]) for name in ("call", "entry", "payee", "mobilization")},
-        "families_hit": names,
+        "signals_present": present,
         "reasons": reasons,
         "missing_signals": profile_missing(profile) if profile == "basic" else missing_signals(row, MODEL.columns),
         "profile": profile,
@@ -339,7 +339,7 @@ def decide(body: dict) -> tuple[int, dict]:
         "p": probability,
         "level": level_name,
         "actions": actions,
-        "families_hit": names,
+        "families_hit": present,
         "reasons": reasons,
         "funds_status": funds,
         "hold_until": hold,

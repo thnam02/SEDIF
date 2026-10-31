@@ -6,46 +6,110 @@ import { FidesGuardianRequest } from "fides-sdk"
 import { useAccount, useChoice, useConfirmGuardian, useGuardianRequests, useHistory, useRegisterGuardian } from "../api/queries"
 import { copy } from "../copy/vi"
 import { displayHolder, payeeName } from "../names"
-import { fullDate, movementTitle, showAccount, statement, vnd, weekStart, when } from "../format"
+import { fullDate, isHeld, movementTitle, presentHistory, statement, vnd } from "../format"
+import { LedgerRow } from "../ui/LedgerRow"
+import { axisVnd, buildStats, compactVnd, type StatsPeriodId } from "../stats"
 import { personas } from "../personas"
 import { useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
+
+const IN_COLOR = "#2E7D32"
+const PLOT_HEIGHT = 128
 
 export function StatsScreen() {
   const router = useRouter()
   const accountId = useBank((state) => state.accountId)
   const history = useHistory(accountId)
   const type = useType()
-  const entries = history.data?.entries ?? []
-  const weeks = new Map<string, number>()
-  let incoming = 0
-  let outgoing = 0
-  for (const item of entries) {
-    const key = weekStart(item.ts)
-    weeks.set(key, (weeks.get(key) ?? 0) + 1)
-    if (item.direction === "in") incoming += item.amount
-    else outgoing += item.amount
-  }
-  const bars = [...weeks.entries()]
-  const peak = Math.max(1, ...bars.map(([, count]) => count))
+  const [period, setPeriod] = useState<StatsPeriodId>("6m")
+  const [selected, setSelected] = useState<number | null>(null)
+  const [plotWidth, setPlotWidth] = useState(0)
+  const entries = presentHistory(history.data?.entries ?? [])
+  const report = buildStats(entries, period)
+  const periodLabel = copy.statsPeriods.find(([id]) => id === period)?.[1] ?? ""
+  const net = report.incoming - report.outgoing
+  const peak = Math.max(1, ...report.buckets.map((bucket) => Math.max(bucket.incoming, bucket.outgoing)))
+  const slot = plotWidth / Math.max(report.buckets.length, 1)
+  const barWidth = slot > 0 ? Math.min(16, Math.max(8, (slot - 4) / 2)) : 8
+  const labelWidth = Math.max(...report.buckets.map((bucket) => bucket.label.length), 1) * 7
+  const skipLabels = labelWidth > slot && slot > 0
+  const chosen = selected == null ? null : report.buckets[selected]
   return (
     <Screen>
       <Header title={copy.stats} />
-      <Card>
-        <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.txCount.replace("{n}", String(entries.length))}</Text>
-        <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{copy.incoming} {vnd(incoming)}</Text>
-        <Text style={{ color: "#64748B" }}>{copy.outgoing} {vnd(outgoing)}</Text>
-      </Card>
-      <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.byWeek}</Text>
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, height: bars.length === 0 ? 0 : 140 }}>
-        {bars.map(([label, count]) => (
-          <View key={label} style={{ flex: 1, alignItems: "center", gap: 4 }}>
-            <Text style={{ color: colors.navy, fontSize: type.small, fontWeight: "700" }}>{count}</Text>
-            <View style={{ width: "70%", height: Math.max(4, (count / peak) * 80), backgroundColor: colors.deep, borderRadius: 4 }} />
-            <Text style={{ color: "#64748B", fontSize: 10 }}>{label}</Text>
-          </View>
-        ))}
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+        {copy.statsPeriods.map(([id, label]) => {
+          const active = id === period
+          return (
+            <Pressable key={id} testID={`stats-period-${id}`} accessibilityRole="button" onPress={() => { setPeriod(id); setSelected(null) }} style={{ borderRadius: 12, backgroundColor: active ? colors.deep : colors.mint, paddingHorizontal: 12, paddingVertical: 8 }}>
+              <Text style={{ color: active ? colors.white : colors.deep, fontSize: type.small, fontWeight: "700" }}>{label}</Text>
+            </Pressable>
+          )
+        })}
       </View>
+      <Card>
+        <Text style={{ color: colors.navy, fontWeight: "700" }}>{periodLabel} · {copy.txCount.replace("{n}", String(report.count))}</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ color: "#64748B" }}>{copy.incoming}</Text>
+          <Text style={{ color: IN_COLOR, fontWeight: "700" }}>{compactVnd(report.incoming)}</Text>
+        </View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ color: "#64748B" }}>{copy.outgoing}</Text>
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>{compactVnd(report.outgoing)}</Text>
+        </View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ color: "#64748B" }}>{copy.net}</Text>
+          <Text style={{ color: net < 0 ? colors.danger : IN_COLOR, fontWeight: "700" }}>{compactVnd(net)}</Text>
+        </View>
+      </Card>
+      {report.count === 0 ? <Text style={{ color: "#64748B" }}>{copy.statsEmpty}</Text> : (
+        <View testID="stats-chart" style={{ gap: 12 }}>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ width: 52, height: PLOT_HEIGHT, justifyContent: "space-between" }}>
+              {[peak, peak / 2, 0].map((value, index) => (
+                <Text key={index} numberOfLines={1} style={{ color: "#94A3B8", fontSize: 10 }}>{axisVnd(value, peak)}</Text>
+              ))}
+            </View>
+            <View style={{ flex: 1 }} onLayout={(event) => setPlotWidth(event.nativeEvent.layout.width)}>
+              <View style={{ height: PLOT_HEIGHT, justifyContent: "space-between" }}>
+                {[0, 1, 2].map((line) => <View key={line} style={{ borderTopWidth: 1, borderColor: "#E6EEF5" }} />)}
+              </View>
+              <View style={{ position: "absolute", left: 0, right: 0, top: 0, height: PLOT_HEIGHT, flexDirection: "row", alignItems: "flex-end" }}>
+                {report.buckets.map((bucket, index) => (
+                  <Pressable key={bucket.startMs} testID={`stats-bucket-${index}`} accessibilityRole="button" onPress={() => setSelected(index)} style={{ flex: 1, height: "100%", alignItems: "center", justifyContent: "flex-end", borderRadius: 8, backgroundColor: selected === index ? colors.mint : "transparent" }}>
+                    <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 2 }}>
+                      <View style={{ width: barWidth, height: Math.max(bucket.incoming > 0 ? 2 : 0, (bucket.incoming / peak) * (PLOT_HEIGHT - 8)), backgroundColor: IN_COLOR, borderRadius: 3 }} />
+                      <View style={{ width: barWidth, height: Math.max(bucket.outgoing > 0 ? 2 : 0, (bucket.outgoing / peak) * (PLOT_HEIGHT - 8)), backgroundColor: colors.deep, borderRadius: 3 }} />
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", marginLeft: 60, overflow: "visible" }}>
+            {report.buckets.map((bucket, index) => {
+              const hidden = skipLabels && index % 2 === 1
+              const width = Math.max(slot, bucket.label.length * 7)
+              return (
+                <View key={bucket.startMs} style={{ flex: 1, overflow: "visible", alignItems: index === report.buckets.length - 1 ? "flex-end" : "center" }}>
+                  {hidden ? null : <Text numberOfLines={1} style={{ width, textAlign: "center", color: "#64748B", fontSize: 10 }}>{bucket.label}</Text>}
+                </View>
+              )
+            })}
+          </View>
+          {chosen ? <Text style={{ color: colors.navy, fontSize: type.small }}>{chosen.label}: vào {compactVnd(chosen.incoming)} · ra {compactVnd(chosen.outgoing)} · {copy.txCount.replace("{n}", String(chosen.count))}</Text> : null}
+          <View style={{ flexDirection: "row", gap: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: IN_COLOR }} />
+              <Text style={{ color: colors.navy, fontSize: type.small }}>{copy.incoming}</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.deep }} />
+              <Text style={{ color: colors.navy, fontSize: type.small }}>{copy.outgoing}</Text>
+            </View>
+          </View>
+        </View>
+      )}
       <Button label={copy.lookup} onPress={() => router.push("/(main)/history")} />
     </Screen>
   )
@@ -59,10 +123,10 @@ export function HistoryScreen() {
   const [query, setQuery] = useState("")
   const type = useType()
   const needle = query.trim().toLowerCase()
-  const rows = statement(history.data?.entries ?? [], account.data?.balance ?? 0).filter((item) => {
+  const rows = statement(presentHistory(history.data?.entries ?? []), account.data?.balance ?? 0).filter((item) => {
     if (filter === "in" && item.direction !== "in") return false
     if (filter === "out" && item.direction !== "out") return false
-    if (filter === "held" && item.status === "done") return false
+    if (filter === "held" && !isHeld(item.status)) return false
     if (!needle) return true
     const label = movementTitle({ ...item, counterparty_name: payeeName(item.counterparty_name, item.counterparty_id) })
     return `${item.purpose_text ?? ""} ${label} ${item.amount}`.toLowerCase().includes(needle)
@@ -89,27 +153,12 @@ export function HistoryScreen() {
       <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.txCount.replace("{n}", String(rows.length))}</Text>
       {rows.length === 0 ? <Text style={{ color: "#64748B" }}>{copy.emptyTx}</Text> : null}
       {rows.map((item) => {
-        const stamp = when(item.ts)
         const showDay = fullDate(item.ts) !== day
         day = fullDate(item.ts)
-        const inbound = item.direction === "in"
-        const who = payeeName(item.counterparty_name, item.counterparty_id)
-        const title = movementTitle({ ...item, counterparty_name: who })
-        const party = item.counterparty_id ? `${copy.bankName} · ${showAccount(item.counterparty_id)}` : ""
         return (
           <View key={`${item.tx_id}-${item.direction}`} style={{ gap: 8 }}>
             {showDay ? <Text style={{ color: colors.deep, fontWeight: "700" }}>{day}</Text> : null}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12, gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.navy, fontWeight: "600", fontSize: type.body }}>{title}</Text>
-                {party ? <Text style={{ color: "#64748B", fontSize: type.small }}>{party}</Text> : null}
-                <Text style={{ color: "#64748B", fontSize: type.small }}>{stamp.time} · {stamp.date}</Text>
-              </View>
-              <View>
-                <Text style={{ color: item.status !== "done" ? colors.warn : inbound ? "#2E7D32" : colors.navy, fontWeight: "700", textAlign: "right" }}>{item.status !== "done" ? copy.held : `${inbound ? "+" : "−"}${vnd(item.amount)}`}</Text>
-                <Text style={{ color: "#64748B", fontSize: type.small, textAlign: "right" }}>{copy.balanceAfter} {vnd(item.balanceAfter)}</Text>
-              </View>
-            </View>
+            <LedgerRow item={item} showBalance />
           </View>
         )
       })}

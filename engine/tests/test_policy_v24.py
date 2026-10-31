@@ -11,7 +11,8 @@ from zoneinfo import ZoneInfo
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO)]
 
-from engine.policy.v24 import CALL_NEWPAYEE_TEXT, Facts, MemoryState, cost_tau, evaluate, load_policy
+from engine.policy import actions_for
+from engine.policy.v24 import CALL_NEWPAYEE_TEXT, Facts, MemoryState, cost_tau, evaluate, load_policy, signals_present
 
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
 SENDER = "a" * 64
@@ -139,6 +140,22 @@ def test_call_and_qr_to_known_shop_stays_at_most_banner():
     assert out.level <= 1
     assert out.intervention in {"none", "banner"}
     assert "R_CALL_FUNDS_NEWPAYEE" not in out.rules_fired
+
+
+def test_present_signals_name_the_call_the_closure_and_the_new_payee():
+    facts = _ba_man(_at(9))
+    out = evaluate(facts)
+    assert signals_present(out, facts.call_state)[:3] == ["call_active", "new_payee", "funds_mobilised"]
+    assert [row["code"] for row in out.reason_rows()[:4]] == ["call_active", "funds_mobilised", "new_payee", "model_p_cost"]
+    ended_facts = _ba_man(_at(9), call="ended_in_session")
+    ended = evaluate(ended_facts)
+    assert signals_present(ended, ended_facts.call_state)[0] == "call_ended"
+    assert ended.reason_rows()[0]["code"] == "call_ended"
+
+
+def test_guardian_confirm_follows_stored_consent_not_the_persona_flag():
+    assert actions_for("medium", "cao tuổi", True, consented=False) == ["pause_and_verify"]
+    assert actions_for("medium", "cao tuổi", True, consented=True) == ["pause_and_verify", "guardian_confirm"]
 
 
 def test_ba_man_active_call_closure_and_new_payee():

@@ -100,7 +100,7 @@ def bank():
                 "countdown_until": None,
                 "actions": [],
                 "reasons": [],
-                "families_hit": [],
+                "signals_present": [],
             }
         return {}
 
@@ -236,6 +236,7 @@ def test_export_row_hashes_account_ids():
             "decision": {
                 "level": 2,
                 "rules_fired": ["R_BEHAVIOUR_GUIDED"],
+                "reasons": [{"code": "call_active", "text": "Có cuộc gọi đang diễn ra trong phiên này."}, {"code": "new_payee", "text": "Chưa từng chuyển tới người nhận này."}],
                 "evidence_card": {"behaviour_score": 0.4, "p_rarity": 0.03, "baseline_quality": "high"},
             },
         }
@@ -250,6 +251,7 @@ def test_export_row_hashes_account_ids():
     assert row["baseline_quality"] == "high"
     assert row["level"] == 2
     assert row["rules_fired"] == '["R_BEHAVIOUR_GUIDED"]'
+    assert row["reason_codes"] == '["call_active", "new_payee"]'
 
 
 def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
@@ -278,7 +280,7 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
                 "countdown_until": None,
                 "actions": ["verify"],
                 "reasons": [{"code": "v24_0", "text": "khác thường"}],
-                "families_hit": [],
+                "signals_present": [],
             }
         return {}
 
@@ -302,8 +304,7 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
         body = response.json()
         assert body["status"] == "done"
         assert body["funds_status"] == "released"
-        assert body["decision"]["level"] == "medium"
-        assert body["decision"]["engine_level"] == 2
+        assert body["decision"]["level"] == 2
         assert body["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
         assert body["decision"]["evidence_card"]["behaviour_score"] == 1.2
         assert body["decision"]["evidence_card"]["p_rarity"] == 0.02
@@ -321,7 +322,7 @@ def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):
         held = plain.json()
         assert held["status"] == "needs_verification"
         assert held["funds_status"] == "held"
-        assert held["decision"]["engine_level"] == 2
+        assert held["decision"]["level"] == 2
         assert held["decision"]["intervention"] == "three_button"
         assert held["decision"]["rules_fired"] == ["R_BEHAVIOUR_GUIDED"]
         assert held["decision"]["evidence_card"]["reasons_vi"] == ["dừng lâu hơn thường lệ"]
@@ -358,7 +359,7 @@ def test_choice_pause_holds_a_draft_and_cancel_refunds(bank):
                 "countdown_until": None,
                 "actions": [],
                 "reasons": [],
-                "families_hit": [],
+                "signals_present": [],
             }
         if path.endswith("/choice"):
             return {"decision_id": path.split("/")[2], "choice": body["choice"], "logged": True}
@@ -405,7 +406,7 @@ def test_guardian_is_notified_only_after_consent(bank):
                 "hold_until": None,
                 "actions": [],
                 "reasons": [],
-                "families_hit": [],
+                "signals_present": [],
             }
         return {}
 
