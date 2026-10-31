@@ -1,4 +1,4 @@
-"""Đồng hồ demo. Ngày cố định 20/09/2026, giờ là giờ địa phương, trôi theo thời gian thật."""
+"""Đồng hồ demo. Ngày cố định 21/09/2026, giờ là giờ địa phương, trôi theo thời gian thật."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 ICT = ZoneInfo("Asia/Ho_Chi_Minh")
-DEMO_DAY = datetime(2026, 9, 20, tzinfo=ICT)
+DEMO_DAY = datetime(2026, 9, 21, tzinfo=ICT)
 
 
 def _wall_on_demo_day() -> datetime:
@@ -30,7 +30,7 @@ class DemoClock:
         return self._sim + timedelta(seconds=elapsed * self.speed)
 
     def reanchor(self) -> datetime:
-        """Gắn lại giờ địa phương hiện tại lên 20/09/2026 và để đồng hồ chạy thật."""
+        """Gắn lại giờ địa phương hiện tại lên 21/09/2026 và để đồng hồ chạy thật."""
         self._sim = _wall_on_demo_day()
         self._real = time.monotonic()
         self.paused = False

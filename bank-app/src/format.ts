@@ -134,7 +134,7 @@ function gapDays(seed: string): number {
  * Đưa ngày sổ cái về khoảng tính từ ngày máy.
  * Mới nhất trong 2 ngày gần đây. Các lệnh cách nhau 1–8 ngày. Giữ giờ phút gốc.
  */
-export function presentHistory<T extends { ts: string }>(entries: T[], now = new Date()): T[] {
+export function presentHistory<T extends { ts: string; tx_id: string }>(entries: T[], now = new Date()): T[] {
   if (entries.length === 0) return entries
   const valid = entries.flatMap((entry, index) => {
     const ms = Date.parse(entry.ts)
@@ -154,7 +154,7 @@ export function presentHistory<T extends { ts: string }>(entries: T[], now = new
     const source = entries[item.index]
     if (!source) continue
     assigned.set(item.index, stampOn(addDays(anchor, -offset), source.ts))
-    offset += gapDays(`${source.ts}:${item.index}`)
+    offset += gapDays(source.tx_id)
   }
   let previous = Number.NEGATIVE_INFINITY
   for (const item of valid) {

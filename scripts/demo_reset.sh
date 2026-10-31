@@ -160,4 +160,57 @@ WHERE from_account IN (
 )
   AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup');
 SQL
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+FIDES_ROOT="$ROOT" python3 - <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+root = os.environ["FIDES_ROOT"]
+with open(os.path.join(root, "docs", "personas.json"), encoding="utf-8") as handle:
+    payload = json.load(handle)
+ids = [account_id for person in payload["personas"] for account_id in person["account_ids"]]
+quoted = ",".join("'" + item.replace("'", "") + "'" for item in ids)
+sql = f"""
+SELECT a.id,
+       a.balance,
+       a.opening_balance,
+       COALESCE(SUM(CASE WHEN e.direction = 'in' THEN e.amount WHEN e.direction = 'out' THEN -e.amount ELSE 0 END), 0) AS net
+FROM bank.accounts a
+LEFT JOIN bank.entries e ON e.account_id = a.id
+WHERE a.id IN ({quoted})
+GROUP BY a.id, a.balance, a.opening_balance
+ORDER BY a.id;
+"""
+done = subprocess.run(
+    ["psql", os.environ["DATABASE_URL"], "-v", "ON_ERROR_STOP=1", "-t", "-A", "-F", "|", "-c", sql],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if done.returncode != 0:
+    sys.stderr.write(done.stderr or done.stdout)
+    sys.exit(1)
+seen = {}
+for line in done.stdout.splitlines():
+    if not line.strip():
+        continue
+    account_id, balance, opening, net = line.split("|")
+    seen[account_id] = (int(balance), int(opening), int(net))
+bad = []
+missing = [item for item in ids if item not in seen]
+if missing:
+    bad.append("thiếu tài khoản: " + ", ".join(missing))
+for account_id, (balance, opening, net) in sorted(seen.items()):
+    if balance != opening + net:
+        bad.append(f"{account_id}: số dư {balance} khác đầu kỳ {opening} + sổ {net}")
+if "A0072556" in seen:
+    balance, opening, net = seen["A0072556"]
+    if opening + net < 200_000_000:
+        bad.append(f"A0072556: đầu kỳ + sổ = {opening + net} < 200000000")
+if bad:
+    sys.stderr.write("sổ không khớp số dư đầu kỳ:\n" + "\n".join(bad) + "\n")
+    sys.exit(1)
+PY
 echo ready

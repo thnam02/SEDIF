@@ -39,15 +39,13 @@ test("reason lines share one sentence style", () => {
 
 test("seeded history dates follow the device day and keep the clock time", () => {
   const now = new Date(2026, 9, 31, 18, 0, 0)
-  const rows = presentHistory(
-    [
-      { ts: "2026-09-17T13:27:14+07:00" },
-      { ts: "2026-09-18T08:48:25+07:00" },
-      { ts: "2026-09-19T12:52:09+07:00" },
-      { ts: "2026-09-20T00:23:32+07:00" },
-    ],
-    now,
-  )
+  const source = [
+    { tx_id: "t1", ts: "2026-09-17T13:27:14+07:00" },
+    { tx_id: "t2", ts: "2026-09-18T08:48:25+07:00" },
+    { tx_id: "t3", ts: "2026-09-19T12:52:09+07:00" },
+    { tx_id: "t4", ts: "2026-09-20T00:23:32+07:00" },
+  ]
+  const rows = presentHistory(source, now)
   const shown = rows.map((row) => when(row.ts))
   assert.deepEqual(shown.map((item) => item.time), ["13:27", "08:48", "12:52", "00:23"])
   const newest = shown[3]?.date ?? ""
@@ -60,6 +58,9 @@ test("seeded history dates follow the device day and keep the clock time", () =>
     const gap = (day(shown[index + 1]?.date ?? "") - day(shown[index]?.date ?? "")) / 86_400_000
     assert.ok(gap >= 1 && gap <= 8, `${shown[index]?.date} -> ${shown[index + 1]?.date}`)
   }
+  const reversed = presentHistory([...source].reverse(), now)
+  const byId = (list: typeof rows) => Object.fromEntries(list.map((row) => [row.tx_id, row.ts]))
+  assert.deepEqual(byId(reversed), byId(rows))
 })
 
 test("pasted text yields an account and the BVC bank", () => {

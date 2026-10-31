@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OBSERVED = ROOT / "fides-sim" / "out" / "observed"
 PERSONAS = ROOT / "docs" / "personas.json"
 CUT = pd.Timestamp("2026-09-20T00:00:00+07:00")
+HUYNH_ACCOUNT = "A0072556"
+HUYNH_MIN_BALANCE = 200_000_000
 
 
 def _money(value) -> int:
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS bank.accounts (
     holder_name text NOT NULL,
     segment text NOT NULL,
     balance bigint NOT NULL,
+    opening_balance bigint NOT NULL DEFAULT 0,
     status text NOT NULL,
     has_guardian boolean NOT NULL,
     account_type text,
@@ -142,8 +145,35 @@ def related_ids() -> set[str]:
     return ids
 
 
+def _raise_scene_opening(conn) -> None:
+    """Nâng số dư đầu kỳ của Huỳnh cho cảnh B. Không thêm dòng sổ."""
+    row = conn.execute(
+        """
+        SELECT a.opening_balance AS opening,
+               COALESCE(SUM(CASE WHEN e.direction = 'in' THEN e.amount WHEN e.direction = 'out' THEN -e.amount ELSE 0 END), 0) AS net
+        FROM bank.accounts a
+        LEFT JOIN bank.entries e ON e.account_id = a.id
+        WHERE a.id = %s
+        GROUP BY a.opening_balance
+        """,
+        (HUYNH_ACCOUNT,),
+    ).fetchone()
+    if row is None:
+        return
+    opening = int(row["opening"])
+    net = int(row["net"])
+    if opening + net >= HUYNH_MIN_BALANCE:
+        return
+    raised = HUYNH_MIN_BALANCE - net
+    conn.execute(
+        "UPDATE bank.accounts SET opening_balance = %s, balance = %s WHERE id = %s",
+        (raised, raised + net, HUYNH_ACCOUNT),
+    )
+
+
 def load(conn) -> int:
     conn.execute(SCHEMA)
+    conn.execute("ALTER TABLE bank.accounts ADD COLUMN IF NOT EXISTS opening_balance bigint NOT NULL DEFAULT 0")
     conn.execute(
         """
         TRUNCATE bank.entries, bank.transfers, bank.products, bank.guardian_requests,
@@ -173,7 +203,8 @@ def load(conn) -> int:
     rows = []
     for record in accounts.itertuples(index=False):
         who = str(record.customer_id) if pd.notna(record.customer_id) else ""
-        balance = _money(record.opening_balance) + _money(inflow.get(record.account_id, 0)) - _money(outflow.get(record.account_id, 0))
+        opening = _money(record.opening_balance)
+        balance = opening + _money(inflow.get(record.account_id, 0)) - _money(outflow.get(record.account_id, 0))
         rows.append(
             (
                 record.account_id,
@@ -181,6 +212,7 @@ def load(conn) -> int:
                 legal_name.get(who) or str(record.holder_name_ascii or record.account_id),
                 segment.get(who, "thường"),
                 balance,
+                opening,
                 str(record.status) if str(record.status) in {"open", "frozen", "closed"} else "open",
                 bool(guardian.get(who, False)),
                 str(record.account_type),
@@ -193,8 +225,8 @@ def load(conn) -> int:
         cur.executemany(
             """
             INSERT INTO bank.accounts
-            (id, customer_id, holder_name, segment, balance, status, has_guardian, account_type, bank_id, limit_per_txn, limit_per_day)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (id, customer_id, holder_name, segment, balance, opening_balance, status, has_guardian, account_type, bank_id, limit_per_txn, limit_per_day)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             rows,
         )
@@ -251,6 +283,7 @@ def load(conn) -> int:
                 """,
                 entries,
             )
+    _raise_scene_opening(conn)
     for person in payload["personas"]:
         guard = person.get("guardian") or {}
         phone = guard.get("guardian_phone_number_id")

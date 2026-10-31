@@ -96,7 +96,7 @@ def test_fee_high_and_mule_warning():
     frozen = _request("GET", "http://127.0.0.1:8092/clock")
     time.sleep(0.3)
     still = _request("GET", "http://127.0.0.1:8092/clock")
-    assert frozen["paused"] is False and still["ts"] > frozen["ts"] and still["ts"].startswith("2026-09-20")
+    assert frozen["paused"] is False and still["ts"] > frozen["ts"] and still["ts"].startswith("2026-09-21")
     _advance(30)
     moved = _request("GET", "http://127.0.0.1:8092/clock")
     assert moved["ts"] > still["ts"] and moved["paused"]
