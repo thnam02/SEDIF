@@ -13,6 +13,7 @@ import { copy } from "../copy/vi"
 import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, presentStamp, reasonLine, showAccount, vnd } from "../format"
 import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
+import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
 
@@ -389,7 +390,6 @@ export function ConfirmScreen() {
   const saved = useBeneficiaries(accountId)
   const policy = usePurposePolicy()
   const type = useType()
-  const [banner, setBanner] = useState<string | null>(null)
   useEffect(() => { sessionRecorder.note({ type: "screen_enter", screen: "confirm" }) }, [])
   const known = (saved.data?.beneficiaries ?? []).some((item) => item.account_id === toAccount)
   const threshold = policy.data?.purpose_amount_vnd ?? 10_000_000
@@ -426,8 +426,6 @@ export function ConfirmScreen() {
           <Text style={{ color: colors.warn, fontSize: type.small }}>{copy.face}</Text>
         </View>
       ) : null}
-      {banner ? <Text testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{banner}</Text> : null}
-      {banner ? <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} /> : (
       <Button
         testID="confirm-transfer"
         label={copy.confirm}
@@ -467,18 +465,21 @@ export function ConfirmScreen() {
             {
               onSuccess: (result) => {
                 const card = result.decision.evidence_card
+                console.log(JSON.stringify({
+                  kind: "transfer",
+                  transfer_id: result.transfer_id,
+                  status: result.status,
+                  funds_status: result.funds_status,
+                  level: result.decision.level,
+                  intervention: result.decision.intervention ?? null,
+                  rules_fired: result.decision.rules_fired ?? [],
+                  reasons: result.decision.reasons ?? [],
+                }))
                 if (card && entryDetail) card.entry_detail = entryDetail
-                if (experiment) {
-                  console.log(JSON.stringify({
-                    experiment,
-                    level: result.decision.level,
-                    engine_level: result.decision.level,
-                    rules_fired: result.decision.rules_fired ?? [],
-                    evidence_card: card ?? null,
-                  }))
-                }
                 const engineLevel = result.decision.level
                 const reasonsVi = (card?.reasons_vi ?? []).map(reasonLine).filter(Boolean)
+                const route = resultRoute(engineLevel, result.decision.intervention)
+                console.log(JSON.stringify({ kind: "route", route }))
                 setOutcome({
                   transferId: result.transfer_id,
                   decisionId: `dec-${result.transfer_id}`,
@@ -487,7 +488,7 @@ export function ConfirmScreen() {
                   engineLevel,
                   intervention: result.decision.intervention ?? (engineLevel === 3 ? "security_workflow" : engineLevel === 2 ? "three_button" : engineLevel === 1 ? "banner" : "none"),
                   actions: result.decision.actions,
-                  reasons: result.decision.reasons.map((reason) => ({ ...reason, text: reasonLine(reason.text) })),
+                  reasons: (result.decision.reasons ?? []).map((reason) => ({ ...reason, text: reasonLine(reason.text) })),
                   reasonsVi,
                   signalsPresent: result.decision.signals_present ?? [],
                   funds_status: experiment ? "released" : result.funds_status,
@@ -499,17 +500,12 @@ export function ConfirmScreen() {
                   amount,
                   experiment: Boolean(experiment),
                 })
-                if (!experiment && engineLevel === 1) {
-                  setBanner(reasonsVi.join(" "))
-                  return
-                }
                 router.replace("/(main)/transfer/result")
               },
             },
           )
         }}
       />
-      )}
       {transfer.isError ? <Text style={{ color: colors.danger }}>{transfer.error.message}</Text> : null}
     </Screen>
   )
@@ -542,7 +538,8 @@ export function ResultScreen() {
     )
   }
   const who = payeeName(outcome.payeeName, outcome.payee)
-  if (outcome.engineLevel === 3 || outcome.intervention === "security_workflow") {
+  const route = resultRoute(outcome.engineLevel, outcome.intervention)
+  if (route === "security") {
     return (
       <Screen call>
         <View testID="level-3" style={{ gap: 16 }}>
@@ -568,7 +565,7 @@ export function ResultScreen() {
       </Screen>
     )
   }
-  if (outcome.engineLevel === 2 || outcome.intervention === "three_button") {
+  if (route === "three_button") {
     return (
       <Screen call>
         <View testID="level-2" style={{ gap: 16 }}>
@@ -628,6 +625,9 @@ export function ResultScreen() {
         <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.success}</Text>
         <Text style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }}>{vnd(outcome.amount)}</Text>
         <Text style={{ color: "#64748B", fontSize: type.body }}>{who} · {copy.bankName} · {showAccount(outcome.payee)}</Text>
+        {route === "success_reminder" ? outcome.reasonsVi.map((line) => (
+          <Text key={line} testID="level-1-line" style={{ color: colors.navy, fontSize: type.body, textAlign: "center" }}>{line}</Text>
+        )) : null}
         <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
       </View>
     </Screen>
