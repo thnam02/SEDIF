@@ -6,7 +6,7 @@ import { FidesGuardianRequest } from "fides-sdk"
 import { useAccount, useChoice, useConfirmGuardian, useGuardianRequests, useHistory, useRegisterGuardian } from "../api/queries"
 import { copy } from "../copy/vi"
 import { displayHolder, payeeName } from "../names"
-import { fullDate, movementTitle, showAccount, statement, vnd, weekStart, when } from "../format"
+import { fullDate, movementTitle, presentHistory, showAccount, statement, vnd, weekStart, when } from "../format"
 import { personas } from "../personas"
 import { useBank } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -16,7 +16,7 @@ export function StatsScreen() {
   const accountId = useBank((state) => state.accountId)
   const history = useHistory(accountId)
   const type = useType()
-  const entries = history.data?.entries ?? []
+  const entries = presentHistory(history.data?.entries ?? [])
   const weeks = new Map<string, number>()
   let incoming = 0
   let outgoing = 0
@@ -59,7 +59,7 @@ export function HistoryScreen() {
   const [query, setQuery] = useState("")
   const type = useType()
   const needle = query.trim().toLowerCase()
-  const rows = statement(history.data?.entries ?? [], account.data?.balance ?? 0).filter((item) => {
+  const rows = statement(presentHistory(history.data?.entries ?? []), account.data?.balance ?? 0).filter((item) => {
     if (filter === "in" && item.direction !== "in") return false
     if (filter === "out" && item.direction !== "out") return false
     if (filter === "held" && item.status === "done") return false

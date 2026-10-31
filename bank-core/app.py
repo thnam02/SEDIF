@@ -61,6 +61,21 @@ DEMO_PAYEES = {
     "ZANH000000000099": "Võ Anh Thư",
     "ZVAY000000000001": "Bùi Hải Yến",
 }
+# Cùng bảng với bank-app/src/format.ts. Hậu tố giữ nguyên để fixture engine khớp. Thiếu thì đệm trái thành 10 số.
+DEMO_NUMBERS = {
+    "A0119434": "0901119434",
+    "ZCAP400000000001": "0902401001",
+    "ZGUIDE4000000001": "0902402001",
+    "ZMULEDEMO0000001": "0902003001",
+    "ZMED230000000001": "0902230230",
+    "ZMED220000000001": "0902220220",
+    "ZMED000000000001": "0902000001",
+    "ZLANB40000000001": "0902101002",
+    "ZLANB40000000002": "0902102002",
+    "ZLAN120000000001": "0902120120",
+    "ZANH000000000099": "0902000099",
+    "ZVAY000000000001": "0902004001",
+}
 SKIP: set[str] = set()
 SESSIONS: set[str] = set()
 FEED: list[tuple[datetime, dict]] = []
@@ -532,9 +547,29 @@ def ensure_fund_channel(conn) -> None:
     conn.execute("ALTER TABLE bank.entries ADD COLUMN IF NOT EXISTS channel text")
 
 
+BANK_PREFIX = "1903"
+
+
+def display_digits(account_id: str) -> str:
+    """Số hiển thị 10 chữ số. Không đệm bằng số 0: giữ hậu tố và gắn tiền tố ngân hàng.
+
+    HMAC băm cả mã nội bộ (account_hash), không băm số hiển thị và không cắt hậu tố.
+    """
+    mapped = DEMO_NUMBERS.get(account_id)
+    raw = mapped if mapped is not None else "".join(char for char in account_id if char.isdigit())
+    if not raw:
+        return ""
+    if mapped or len(raw) >= 10:
+        return raw[-10:]
+    return f"{BANK_PREFIX}{raw[-6:].zfill(6)}"
+
+
 def seed_demo_payees(conn) -> None:
     """Tên cho số tài khoản chỉ xuất hiện trong demo. Không đè khách có trong sổ mô phỏng."""
     for account_id, name in DEMO_PAYEES.items():
+        shown = display_digits(account_id)
+        if len(shown) != 10 or not shown.isdigit():
+            raise RuntimeError(f"số demo không đủ 10 chữ số: {account_id}")
         conn.execute(
             """
             INSERT INTO bank.accounts
@@ -597,8 +632,6 @@ def backfill_counterparties(conn) -> None:
         WHERE t.id = e.tx_id AND (e.counterparty_id IS NULL OR e.counterparty_id = '')
         """
     )
-    if conn.execute("SELECT 1 FROM bank.meta WHERE key = 'parties_v1'").fetchone():
-        return
     from load import OBSERVED
 
     path = OBSERVED / "transactions.parquet"
@@ -642,6 +675,19 @@ def backfill_counterparties(conn) -> None:
     conn.execute("INSERT INTO bank.meta (key, value) VALUES ('parties_v1', '1') ON CONFLICT (key) DO NOTHING")
 
 
+def ensure_scene_capacity(conn) -> None:
+    """Cảnh B chuyển 120 triệu. Sổ parquet để hạn mức 100 triệu và số dư sau cảnh F không đủ."""
+    conn.execute(
+        """
+        UPDATE bank.accounts
+        SET limit_per_txn = GREATEST(limit_per_txn, 500000000),
+            limit_per_day = GREATEST(limit_per_day, 5000000000),
+            balance = CASE WHEN balance < 172000000 THEN balance + 80000000 ELSE balance END
+        WHERE id = 'A0072556'
+        """
+    )
+
+
 def seed_branch_closure(conn) -> None:
     """Một tất toán tại quầy, gắn nhãn demo. Không nằm trên tài khoản các cảnh Maestro."""
     ensure_fund_channel(conn)
@@ -673,6 +719,7 @@ def boot() -> None:
             load_reset(conn)
         seed_branch_closure(conn)
         seed_demo_payees(conn)
+        ensure_scene_capacity(conn)
         spread_frozen_stamps(conn)
         backfill_counterparties(conn)
         conn.commit()

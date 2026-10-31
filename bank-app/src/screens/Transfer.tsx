@@ -10,8 +10,8 @@ import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
-import { digits, grouped, maskAccount, parseTransferDraft, showAccount, vnd } from "../format"
-import { displayHolder, payeeName, recentLabel, transferNote } from "../names"
+import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, reasonLine, showAccount, vnd } from "../format"
+import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -47,6 +47,10 @@ export function RecipientScreen() {
   const type = useType()
   const rows = saved.data?.beneficiaries ?? []
   const recent = rows.filter((item) => item.times_paid > 0).slice(0, 6)
+  const chips = recentChips(recent.map((item) => ({ id: item.account_id, name: payeeName(item.holder_name, item.account_id) || displayHolder(item.holder_name) }))).map((chip) => ({
+    ...chip,
+    fullName: payeeName(recent.find((item) => item.account_id === chip.id)?.holder_name, chip.id) || chip.label,
+  }))
   const filtered = rows.filter((item) => `${item.holder_name} ${item.account_id}`.toLowerCase().includes(query.trim().toLowerCase()))
   useEffect(() => {
     ensureSession("new_typed")
@@ -111,22 +115,20 @@ export function RecipientScreen() {
         </View>
       </Card>
       <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.recentPayees}</Text>
-      <View testID="recent-payees" style={{ flexDirection: "row", gap: 12 }}>
-        {recent.map((item) => {
-          const name = payeeName(item.holder_name, item.account_id) || displayHolder(item.holder_name)
-          return (
-            <Pressable key={item.id} accessibilityRole="button" onPress={() => go(item.account_id, name, true)} style={{ alignItems: "center", gap: 4, width: 56 }}>
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
-                <Text style={{ color: colors.deep, fontWeight: "700" }}>{name.slice(0, 1)}</Text>
-              </View>
-              <Text numberOfLines={1} style={{ color: colors.navy, fontSize: 11 }}>{recentLabel(name)}</Text>
-            </Pressable>
-          )
-        })}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }} testID="recent-payees">
+        {chips.map((chip) => (
+          <Pressable key={chip.id} accessibilityRole="button" onPress={() => go(chip.id, chip.fullName, true)} style={{ alignItems: "center", gap: 4, width: 108 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ color: colors.deep, fontWeight: "700" }}>{chip.letter}</Text>
+            </View>
+            <Text numberOfLines={1} style={{ color: colors.navy, fontSize: 11, textAlign: "center" }}>{chip.label}</Text>
+            <Text numberOfLines={2} style={{ color: "#64748B", fontSize: 10, textAlign: "center" }}>{showAccount(chip.id)}</Text>
+          </Pressable>
+        ))}
         <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ color: colors.deep, fontWeight: "700" }}>{recent.length}</Text>
+          <Text style={{ color: colors.deep, fontWeight: "700" }}>{chips.length}</Text>
         </View>
-      </View>
+      </ScrollView>
       <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.partners}</Text>
       <View testID="partners" style={{ flexDirection: "row", gap: 8 }}>
         {copy.partnerNames.map((name, index) => {
@@ -227,7 +229,6 @@ export function AmountScreen() {
   const [bankOpen, setBankOpen] = useState(false)
   const [purposeOpen, setPurposeOpen] = useState(false)
   const [amountFocused, setAmountFocused] = useState(false)
-  const [destFocused, setDestFocused] = useState(false)
   const amountRef = useRef<TextInput>(null)
   const [dest, setDest] = useState(toAccount)
   const type = useType()
@@ -308,7 +309,7 @@ export function AmountScreen() {
           <ChevronDown size={18} color={colors.deep} />
         </Pressable>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <TextInput testID="dest-account" value={destFocused ? dest : (showAccount(dest) || dest)} onChangeText={onDest} onFocus={() => { setDestFocused(true); sessionRecorder.note({ type: "field_focus", field: "account" }) }} onBlur={() => { setDestFocused(false); sessionRecorder.note({ type: "field_blur", field: "account" }) }} keyboardType="number-pad" style={{ flex: 1, color: colors.navy, fontSize: type.body }} />
+          <TextInput testID="dest-account" value={showAccount(dest)} onChangeText={(value) => { const compact = value.replace(/\s/g, ""); if (compact !== displayDigits(dest)) onDest(compact) }} onFocus={() => sessionRecorder.note({ type: "field_focus", field: "account" })} onBlur={() => sessionRecorder.note({ type: "field_blur", field: "account" })} keyboardType="number-pad" style={{ flex: 1, color: colors.navy, fontSize: type.body }} />
           <Pressable testID="dest-contacts" accessibilityRole="button" onPress={() => router.push("/(main)/transfer/recipient")}>
             <Contact size={18} color={colors.deep} />
           </Pressable>
@@ -477,7 +478,7 @@ export function ConfirmScreen() {
                   }))
                 }
                 const engineLevel = result.decision.engine_level ?? 0
-                const reasonsVi = card?.reasons_vi ?? []
+                const reasonsVi = (card?.reasons_vi ?? []).map(reasonLine).filter(Boolean)
                 setOutcome({
                   transferId: result.transfer_id,
                   decisionId: `dec-${result.transfer_id}`,
@@ -486,7 +487,7 @@ export function ConfirmScreen() {
                   engineLevel,
                   intervention: result.decision.intervention ?? (engineLevel === 3 ? "security_workflow" : engineLevel === 2 ? "three_button" : engineLevel === 1 ? "banner" : "none"),
                   actions: result.decision.actions,
-                  reasons: result.decision.reasons,
+                  reasons: result.decision.reasons.map((reason) => ({ ...reason, text: reasonLine(reason.text) })),
                   reasonsVi,
                   familiesHit: result.decision.families_hit ?? [],
                   funds_status: experiment ? "released" : result.funds_status,

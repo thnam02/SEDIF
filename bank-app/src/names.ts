@@ -60,19 +60,86 @@ export function givenName(full: string): string {
 const COMPANY_MARK = ["CONG TY", "TNHH", "CHU DAU", "CO PHAN", "CTCP", "CTY "]
 const COMPANY_PREFIX = ["CONG TY TNHH MTV", "CONG TY CO PHAN", "CONG TY TNHH", "CONG TY", "CTY TNHH", "CTCP", "CHU DAU TU", "TNHH"]
 
-/** Người: tên gọi. Công ty: bỏ tiền tố pháp lý, tối đa 10 ký tự. */
-export function recentLabel(full: string): string {
-  const ascii = nameAscii(full).replace(/\s+/g, " ").trim()
-  const company = COMPANY_MARK.some((mark) => ascii.includes(mark))
-  if (!company) return [...givenName(full)].slice(0, 10).join("")
-  let rest = ` ${ascii} `
-  for (const prefix of COMPANY_PREFIX) rest = rest.replaceAll(` ${prefix} `, " ")
-  rest = rest.replace(/\s+/g, " ").trim()
-  let label = ""
-  for (const word of rest.split(" ").filter(Boolean)) {
-    const next = label ? `${label} ${word}` : word
-    if (next.length > 10) break
-    label = next
+function titleWord(word: string): string {
+  const chars = [...word]
+  const first = chars[0]
+  if (!first) return ""
+  return first.toLocaleUpperCase("vi") + chars.slice(1).join("").toLocaleLowerCase("vi")
+}
+
+function isCompany(full: string): boolean {
+  const ascii = nameAscii(full)
+  return COMPANY_MARK.some((mark) => ascii.includes(mark))
+}
+
+function meaningfulOrgWords(full: string): string[] {
+  const original = full.trim().split(/\s+/).filter(Boolean)
+  const ascii = original.map((word) => nameAscii(word))
+  const prefixes = [...COMPANY_PREFIX].sort((left, right) => right.length - left.length)
+  let index = 0
+  let advanced = true
+  while (advanced && index < original.length) {
+    advanced = false
+    const rest = ascii.slice(index).join(" ")
+    for (const prefix of prefixes) {
+      if (rest === prefix || rest.startsWith(`${prefix} `)) {
+        index += prefix.split(" ").length
+        advanced = true
+        break
+      }
+    }
   }
-  return (label || rest).slice(0, 10).trim()
+  return original.slice(index)
+}
+
+const WORD: Record<string, string> = {
+  NGUYEN: "Nguyễn", HUE: "Huệ", LE: "Lê", QUY: "Quý", DON: "Đôn", TRAN: "Trần", PHU: "Phú",
+  VAN: "Văn", AN: "An", TRAI: "Trãi", HONG: "Hồng", PHONG: "Phong", QUANG: "Quang", TRUNG: "Trung",
+  HUNG: "Hùng", VUONG: "Vương", LY: "Lý", TU: "Tự", TRONG: "Trọng", PHAN: "Phan", CHAU: "Châu",
+  TRINH: "Trinh", MINH: "Minh", PHAT: "Phát", HOANG: "Hoàng", GIA: "Gia", THANH: "Thành", CONG: "Công",
+  KIM: "Kim", OANH: "Oanh", NAM: "Nam", VIET: "Việt", DONG: "Đông", BAC: "Bắc", SON: "Sơn",
+  PHUONG: "Phương", BINH: "Bình", THINH: "Thịnh", THAI: "Thái", HOA: "Hoa", MAI: "Mai", TINH: "Tinh",
+  LANG: "Lang", HA: "Hà", DO: "Đô", TAY: "Tây", MEKONG: "Mekong", TRUONG: "Trường",
+}
+
+function titled(word: string): string {
+  return WORD[nameAscii(word)] ?? titleWord(word)
+}
+
+function chipBase(full: string): { label: string; familyInitial: string } {
+  const words = full.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return { label: "", familyInitial: "" }
+  if (isCompany(full)) {
+    const meaningful = meaningfulOrgWords(full)
+    const tail = (meaningful.length > 0 ? meaningful : words).slice(-2)
+    const label = tail.map(titled).join(" ")
+    const family = meaningful[0] ?? words[0] ?? ""
+    return { label, familyInitial: [...titled(family)][0] ?? "" }
+  }
+  const given = words[words.length - 1] ?? ""
+  const family = words[0] ?? ""
+  return { label: titleWord(given), familyInitial: [...titleWord(family)][0] ?? "" }
+}
+
+export type RecentChip = { id: string; label: string; letter: string }
+
+/** Người: tên gọi. Tổ chức: hai từ cuối. Trùng tên thì thêm họ. */
+export function recentChips(items: { id: string; name: string }[]): RecentChip[] {
+  const seen = new Set<string>()
+  const unique = items.filter((item) => {
+    if (!item.id || seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+  const bases = unique.map((item) => ({ ...item, ...chipBase(item.name) }))
+  const counts = new Map<string, number>()
+  for (const item of bases) {
+    const key = item.label.toLocaleLowerCase("vi")
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return bases.map((item) => {
+    const collide = (counts.get(item.label.toLocaleLowerCase("vi")) ?? 0) > 1
+    const label = collide && item.familyInitial ? `${item.label} ${item.familyInitial}.` : item.label
+    return { id: item.id, label, letter: [...label][0] ?? "" }
+  })
 }

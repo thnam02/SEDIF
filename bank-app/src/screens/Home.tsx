@@ -5,7 +5,7 @@ import { ArrowRight, Bell, ChevronDown, ChevronUp, CreditCard, Eye, EyeOff, Hand
 
 import { useAccount, useHistory } from "../api/queries"
 import { copy } from "../copy/vi"
-import { movementTitle, showAccount, statement, vnd, when } from "../format"
+import { movementTitle, presentHistory, showAccount, statement, vnd, when } from "../format"
 import { payeeName } from "../names"
 import { personas } from "../personas"
 import { DEMO, useBank } from "../store"
@@ -147,7 +147,7 @@ function RecentList({ accountId }: { accountId: string | null }) {
   const account = useAccount(accountId)
   const history = useHistory(accountId)
   const type = useType()
-  const recent = statement(history.data?.entries ?? [], account.data?.balance ?? 0).slice(0, 5)
+  const recent = statement(presentHistory(history.data?.entries ?? []), account.data?.balance ?? 0).slice(0, 5)
   return (
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>

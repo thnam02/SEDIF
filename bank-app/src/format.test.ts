@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { maskAccount, movementTitle, parseTransferDraft, showAccount, when } from "./format.ts"
+import { groupAccount, maskAccount, movementTitle, parseTransferDraft, presentHistory, reasonLine, showAccount, when } from "./format.ts"
 
 test("when shows the Ho Chi Minh clock", () => {
   const stamp = when("2026-09-18T11:03:58+00:00")
@@ -20,11 +20,46 @@ test("movement titles use Vietnamese, not raw codes", () => {
 })
 
 test("demo payees show a numeric account and do not share a tail", () => {
+  assert.equal(groupAccount("0902401001"), "0902 401 001")
+  assert.equal(groupAccount("0060289"), "0060 289")
   assert.equal(showAccount("ZCAP400000000001"), "0902 401 001")
   assert.equal(showAccount("ZMULEDEMO0000001"), "0902 003 001")
+  assert.equal(showAccount("A0002845"), "1903 002 845")
+  assert.equal(showAccount("A0060289"), "1903 060 289")
   assert.equal(maskAccount("A0051289"), "•••• 1289")
   const tails = ["A0119434", "ZCAP400000000001", "ZGUIDE4000000001", "ZMULEDEMO0000001", "ZMED230000000001", "ZMED220000000001", "ZLANB40000000001", "ZLANB40000000002"].map((id) => maskAccount(id))
   assert.equal(new Set(tails).size, tails.length)
+})
+
+test("reason lines share one sentence style", () => {
+  assert.equal(reasonLine("Giao dịch khác thường so với lịch sử của bạn"), "Giao dịch khác thường so với lịch sử của bạn.")
+  assert.equal(reasonLine("Màn hình đang bị ghi hoặc chiếu."), "Màn hình đang bị ghi hoặc chiếu.")
+  assert.equal(reasonLine("quét mã QR"), "Quét mã QR.")
+})
+
+test("seeded history dates follow the device day and keep the clock time", () => {
+  const now = new Date(2026, 9, 31, 18, 0, 0)
+  const rows = presentHistory(
+    [
+      { ts: "2026-09-17T13:27:14+07:00" },
+      { ts: "2026-09-18T08:48:25+07:00" },
+      { ts: "2026-09-19T12:52:09+07:00" },
+      { ts: "2026-09-20T00:23:32+07:00" },
+    ],
+    now,
+  )
+  const shown = rows.map((row) => when(row.ts))
+  assert.deepEqual(shown.map((item) => item.time), ["13:27", "08:48", "12:52", "00:23"])
+  const newest = shown[3]?.date ?? ""
+  assert.ok(newest === "30/10/2026" || newest === "31/10/2026")
+  const day = (value: string) => {
+    const [date, month, year] = value.split("/").map(Number)
+    return Date.UTC(year ?? 0, (month ?? 1) - 1, date ?? 1)
+  }
+  for (let index = 0; index < shown.length - 1; index += 1) {
+    const gap = (day(shown[index + 1]?.date ?? "") - day(shown[index]?.date ?? "")) / 86_400_000
+    assert.ok(gap >= 1 && gap <= 8, `${shown[index]?.date} -> ${shown[index + 1]?.date}`)
+  }
 })
 
 test("pasted text yields an account and the BVC bank", () => {

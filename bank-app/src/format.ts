@@ -17,6 +17,9 @@ export function vnd(amount: number): string {
   return `${grouped(amount)} đ`
 }
 
+/** Tiền tố ngân hàng thay cho số 0 đệm. HMAC vẫn băm cả mã nội bộ, không băm số này. */
+const BANK_PREFIX = "1903"
+
 /** Số hiển thị 10 chữ số, hậu tố khác nhau. Mã nội bộ không đưa ra màn hình. */
 const DEMO_NUMBERS: Record<string, string> = {
   A0119434: "0901119434",
@@ -39,26 +42,139 @@ function accountKey(id: string): string {
 
 export function displayDigits(id: string): string {
   const key = accountKey(id)
-  if (DEMO_NUMBERS[key]) return DEMO_NUMBERS[key]
-  const digits = key.replace(/\D/g, "")
-  return digits.length >= 4 ? digits.padStart(10, "0").slice(-10) : digits
+  const mapped = DEMO_NUMBERS[key]
+  const raw = mapped ?? key.replace(/\D/g, "")
+  if (!raw) return ""
+  if (mapped || raw.length >= 10) return raw.length > 10 ? raw.slice(-10) : raw
+  return `${BANK_PREFIX}${raw.slice(-6).padStart(6, "0")}`
 }
 
+/** Nhóm 3 từ phải sang trái. Nhóm trái chỉ một chữ số thì gộp vào nhóm kế. */
+export function groupAccount(raw: string): string {
+  const digits = raw.replace(/\D/g, "")
+  if (!digits) return ""
+  const groups: string[] = []
+  let rest = digits
+  while (rest.length > 3) {
+    groups.unshift(rest.slice(-3))
+    rest = rest.slice(0, -3)
+  }
+  if (rest.length === 1 && groups.length > 0) {
+    groups[0] = `${rest}${groups[0]}`
+  } else if (rest) {
+    groups.unshift(rest)
+  }
+  return groups.join(" ")
+}
+
+/** Số người nhận. Không che. */
 export function showAccount(id: string): string {
-  const digits = displayDigits(id)
-  if (digits.length < 10) return maskAccount(id)
-  if (!DEMO_NUMBERS[accountKey(id)]) return maskAccount(id)
-  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+  return groupAccount(displayDigits(id))
 }
 
+/** Chỉ che tài khoản nguồn của chính khách. */
 export function maskAccount(id: string): string {
   const tail = displayDigits(id).slice(-4)
   return tail ? `•••• ${tail}` : ""
 }
 
+/** Một kiểu câu: chữ đầu viết hoa, kết thúc bằng dấu chấm. */
+export function reasonLine(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, " ")
+  if (!trimmed) return ""
+  const chars = [...trimmed]
+  const first = chars[0] ?? ""
+  let line = first.toLocaleUpperCase("vi") + chars.slice(1).join("")
+  if (!/[.!?]$/.test(line)) line += "."
+  return line
+}
+
 function part(iso: string, type: Intl.DateTimeFormatPartTypes, options: Intl.DateTimeFormatOptions): string {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: ICT, ...options }).formatToParts(new Date(iso))
   return parts.find((item) => item.type === type)?.value ?? ""
+}
+
+function clockPart(iso: string, type: "hour" | "minute" | "second"): string {
+  const value = part(iso, type, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
+  return value.padStart(2, "0")
+}
+
+function localDay(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+function addDays(day: Date, count: number): Date {
+  const next = new Date(day)
+  next.setDate(next.getDate() + count)
+  return next
+}
+
+function stampOn(day: Date, iso: string): string {
+  const year = day.getFullYear()
+  const month = String(day.getMonth() + 1).padStart(2, "0")
+  const date = String(day.getDate()).padStart(2, "0")
+  return `${year}-${month}-${date}T${clockPart(iso, "hour")}:${clockPart(iso, "minute")}:${clockPart(iso, "second")}+07:00`
+}
+
+function hashText(seed: string): number {
+  let hash = 2166136261
+  for (const char of seed) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+/** Khoảng cách 1–8 ngày, cùng một hạt cho cùng một mốc. */
+function gapDays(seed: string): number {
+  return 1 + (hashText(seed) % 8)
+}
+
+/**
+ * Đưa ngày sổ cái về khoảng tính từ ngày máy.
+ * Mới nhất trong 2 ngày gần đây. Các lệnh cách nhau 1–8 ngày. Giữ giờ phút gốc.
+ */
+export function presentHistory<T extends { ts: string }>(entries: T[], now = new Date()): T[] {
+  if (entries.length === 0) return entries
+  const valid = entries.flatMap((entry, index) => {
+    const ms = Date.parse(entry.ts)
+    return Number.isFinite(ms) ? [{ index, ms }] : []
+  })
+  if (valid.length === 0) return entries
+  valid.sort((left, right) => left.ms - right.ms || left.index - right.index)
+  const newest = valid[valid.length - 1]
+  if (!newest) return entries
+  const newestTs = entries[newest.index]?.ts ?? ""
+  let age = hashText(newestTs) % 2
+  if (Date.parse(stampOn(addDays(localDay(now), -age), newestTs)) > now.getTime()) age = 1
+  const anchor = addDays(localDay(now), -age)
+  const assigned = new Map<number, string>()
+  let offset = 0
+  for (const item of [...valid].reverse()) {
+    const source = entries[item.index]
+    if (!source) continue
+    assigned.set(item.index, stampOn(addDays(anchor, -offset), source.ts))
+    offset += gapDays(`${source.ts}:${item.index}`)
+  }
+  let previous = Number.NEGATIVE_INFINITY
+  for (const item of valid) {
+    const source = entries[item.index]
+    let ts = assigned.get(item.index)
+    if (!source || !ts) continue
+    let guard = 0
+    while (Date.parse(ts) <= previous && guard < 45) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(ts)
+      const day = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : localDay(new Date(ts))
+      ts = stampOn(addDays(day, 1), source.ts)
+      guard += 1
+    }
+    assigned.set(item.index, ts)
+    previous = Date.parse(ts)
+  }
+  return entries.map((entry, index) => {
+    const ts = assigned.get(index)
+    return ts ? { ...entry, ts } : entry
+  })
 }
 
 export function when(iso: string): { time: string; date: string } {
