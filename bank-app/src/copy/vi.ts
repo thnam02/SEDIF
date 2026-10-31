@@ -1,6 +1,7 @@
 export const copy = {
   logo: "BVC BANK",
   choose: "Chọn tài khoản demo",
+  accountLoadError: "Không tải được số dư. Thử lại.",
   home: "Trang chủ",
   hello: "Xin chào",
   balance: "Tài khoản thanh toán",
@@ -10,7 +11,6 @@ export const copy = {
   hiddenBalance: "*** *** đ",
   servicesTitle: "Mua sắm - Giải trí - Đầu tư",
   services: ["Mua sắm", "Giải trí", "Đầu tư", "Tiện ích"] as const,
-  promos: ["Ưu đãi BVC", "Gói dịch vụ BVC"] as const,
   transferHub: "Chuyển tiền",
   transferForm: "Chuyển tiền",
   transferTo: "Tới số tài khoản",

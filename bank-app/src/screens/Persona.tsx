@@ -1,10 +1,11 @@
+import { useState } from "react"
 import { Pressable, Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { ChevronRight, ShieldCheck } from "lucide-react-native"
 
 import { bank, unwrap } from "../api/client"
 import { copy } from "../copy/vi"
-import { personas } from "../personas"
+import { personas, type Persona } from "../personas"
 import { useBank } from "../store"
 import { colors, Screen, useType } from "../ui/parts"
 
@@ -15,6 +16,24 @@ export function PersonaScreen() {
   const type = useType()
   const guarded = personas.find((item) => item.has_guardian)
   const guardedHint = `${(guarded?.guardian?.relation ?? "người giám hộ").replaceAll("_", " ")} · ${guarded?.full_name ?? ""}`
+  const [error, setError] = useState<string | null>(null)
+  async function openPerson(person: Persona, desk: boolean) {
+    setError(null)
+    try {
+      const rows = await Promise.all(person.account_ids.map((id) => unwrap(bank.GET("/accounts/{id}", { params: { path: { id } } }))))
+      const personal = rows.filter((row) => row.account_type === "personal")
+      const best = [...(personal.length ? personal : rows)].sort((left, right) => right.balance - left.balance)[0]
+      if (!best) {
+        setError(copy.accountLoadError)
+        return
+      }
+      choose(person.customer_id, best.id, person.role)
+      if (desk) setDesk(true)
+      router.replace(desk ? "/(main)/(tabs)/profile" : "/(main)/(tabs)")
+    } catch {
+      setError(copy.accountLoadError)
+    }
+  }
   return (
     <Screen>
       <View className="flex-row items-center gap-2" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -22,25 +41,14 @@ export function PersonaScreen() {
         <Text style={{ color: colors.deep, fontWeight: "700", letterSpacing: 2 }}>{copy.logo}</Text>
       </View>
       <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.choose}</Text>
+      {error ? <Text style={{ color: colors.danger }}>{error}</Text> : null}
       {personas.map((person) => {
         const label = copy.personas[person.role as keyof typeof copy.personas]
         return (
           <Pressable
             key={person.customer_id}
             accessibilityRole="button"
-            onPress={async () => {
-              let accountId = person.account_ids[0] ?? ""
-              try {
-                const rows = await Promise.all(person.account_ids.map((id) => unwrap(bank.GET("/accounts/{id}", { params: { path: { id } } }))))
-                const personal = rows.filter((row) => row.account_type === "personal")
-                const best = [...(personal.length ? personal : rows)].sort((left, right) => right.balance - left.balance)[0]
-                if (best) accountId = best.id
-              } catch {
-                accountId = person.account_ids[0] ?? ""
-              }
-              choose(person.customer_id, accountId, person.role)
-              router.replace("/(main)/(tabs)")
-            }}
+            onPress={() => void openPerson(person, false)}
             className="flex-row items-center gap-3 rounded-2xl border p-3"
             style={{ flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, borderWidth: 1, borderColor: "#F1F5F9", padding: 12 }}
           >
@@ -57,21 +65,9 @@ export function PersonaScreen() {
       })}
       <Pressable
         accessibilityRole="button"
-        onPress={async () => {
-          const mother = guarded
-          if (!mother) return
-          let accountId = mother.account_ids[0] ?? ""
-          try {
-            const rows = await Promise.all(mother.account_ids.map((id) => unwrap(bank.GET("/accounts/{id}", { params: { path: { id } } }))))
-            const personal = rows.filter((row) => row.account_type === "personal")
-            const best = [...(personal.length ? personal : rows)].sort((left, right) => right.balance - left.balance)[0]
-            if (best) accountId = best.id
-          } catch {
-            accountId = mother.account_ids[0] ?? ""
-          }
-          choose(mother.customer_id, accountId, mother.role)
-          setDesk(true)
-          router.replace("/(main)/(tabs)/profile")
+        onPress={() => {
+          if (!guarded) return
+          void openPerson(guarded, true)
         }}
         style={{ flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, borderWidth: 1, borderColor: "#F1F5F9", padding: 12 }}
       >

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react"
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native"
 import { useRouter } from "expo-router"
-import { ArrowRight, Bell, ChevronDown, ChevronUp, CreditCard, Eye, EyeOff, HandCoins, Menu, PiggyBank, Receipt, Search, ShieldCheck, ShoppingBag, Smartphone, UserRound } from "lucide-react-native"
+import { ArrowRight, Bell, CreditCard, Eye, EyeOff, HandCoins, Menu, PiggyBank, Receipt, Search, ShieldCheck, ShoppingBag, Smartphone, UserRound } from "lucide-react-native"
 
 import { useAccount, useHistory } from "../api/queries"
 import { copy } from "../copy/vi"
@@ -23,10 +23,10 @@ export function HomeScreen() {
   const setAccount = useBank((state) => state.setAccount)
   const role = useBank((state) => state.role)
   const [hidden, setHidden] = useState(true)
-  const [more, setMore] = useState(false)
   const type = useType()
   const person = personas.find((item) => item.role === role)
   const ids = person?.account_ids ?? (accountId ? [accountId] : [])
+  const ordered = accountId && ids.includes(accountId) ? [accountId, ...ids.filter((id) => id !== accountId)] : ids
   const cardWidth = Math.max(240, width - 40)
   return (
     <Screen>
@@ -52,8 +52,8 @@ export function HomeScreen() {
           <Text style={{ color: colors.deep, fontWeight: "700", fontSize: type.small }}>Phiên FIDES</Text>
         </Pressable>
       ) : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} decelerationRate="fast" snapToInterval={cardWidth + 12} contentContainerStyle={{ gap: 12 }}>
-        {ids.map((id) => <BalanceCard key={id} id={id} width={cardWidth} hidden={hidden} selected={id === accountId} onSelect={() => setAccount(id)} onToggle={() => setHidden(!hidden)} />)}
+      <ScrollView key={accountId ?? "none"} horizontal showsHorizontalScrollIndicator={false} decelerationRate="fast" snapToInterval={cardWidth + 12} contentContainerStyle={{ gap: 12 }}>
+        {ordered.map((id) => <BalanceCard key={id} id={id} width={cardWidth} hidden={hidden} selected={id === accountId} onSelect={() => setAccount(id)} onToggle={() => setHidden(!hidden)} />)}
       </ScrollView>
       <View style={{ flexDirection: "row", gap: 8 }}>
         {copy.quick.map((name, index) => {
@@ -66,33 +66,20 @@ export function HomeScreen() {
             </Pressable>
           )
         })}
-        <Pressable testID="quick-more" accessibilityRole="button" onPress={() => setMore(!more)} style={{ width: 48, flexShrink: 0, alignSelf: "stretch", alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: colors.mint }}>
-          {more ? <ChevronUp size={18} color={colors.deep} /> : <ChevronDown size={18} color={colors.deep} />}
-        </Pressable>
       </View>
-      {more ? (
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          {copy.quickMore.map((name, index) => {
-            const Icon = moreIcons[index] ?? ArrowRight
-            const route = ["/(main)/card", "/(main)/bills", "/(main)/transfer/recipient"][index] ?? "/(main)/(tabs)"
-            return (
-              <Pressable key={name} testID={`quick-extra-${index}`} accessibilityRole="button" onPress={() => router.push(route)} style={{ flex: 1, alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: colors.mint, padding: 12 }}>
-                <Icon size={18} color={colors.deep} />
-                <Text style={{ color: colors.deep, fontSize: 11, textAlign: "center" }}>{name}</Text>
-              </Pressable>
-            )
-          })}
-        </View>
-      ) : null}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {copy.quickMore.map((name, index) => {
+          const Icon = moreIcons[index] ?? ArrowRight
+          const route = ["/(main)/card", "/(main)/bills", "/(main)/transfer/recipient"][index] ?? "/(main)/(tabs)"
+          return (
+            <Pressable key={name} testID={`quick-extra-${index}`} accessibilityRole="button" onPress={() => router.push(route)} style={{ flex: 1, alignItems: "center", gap: 8, borderRadius: 12, backgroundColor: colors.mint, paddingVertical: 12, paddingHorizontal: 4 }}>
+              <Icon size={18} color={colors.deep} />
+              <Text numberOfLines={2} style={{ color: colors.deep, fontSize: 11, lineHeight: 14, textAlign: "center", minHeight: 28 }}>{name}</Text>
+            </Pressable>
+          )
+        })}
+      </View>
       <RecentList accountId={accountId} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }} testID="promo-carousel">
-        {copy.promos.map((name) => (
-          <View key={name} style={{ width: 220, borderRadius: 16, backgroundColor: colors.deep, padding: 16, gap: 8 }}>
-            <Text style={{ color: colors.aqua, fontSize: type.small }}>{copy.logo}</Text>
-            <Text style={{ color: colors.white, fontWeight: "700", fontSize: type.body }}>{name}</Text>
-          </View>
-        ))}
-      </ScrollView>
       <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.servicesTitle}</Text>
       <View testID="service-grid" style={{ flexDirection: "row", gap: 8 }}>
         {copy.services.map((name, index) => {
@@ -123,22 +110,24 @@ function BalanceCard({ id, width, hidden, selected, onSelect, onToggle }: { id: 
   const type = useType()
   const kind = copy.accountKind[account.data?.account_type ?? "personal"] ?? copy.balance
   return (
-    <Pressable testID={selected ? "balance-card" : undefined} onPress={onSelect} style={{ width, borderRadius: 24, backgroundColor: colors.deep, padding: 20, gap: 16, borderWidth: selected ? 2 : 0, borderColor: colors.aqua }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={{ color: colors.white, fontSize: type.small }}>{kind}</Text>
-        <Pressable testID={selected ? "balance-toggle" : undefined} accessibilityRole="button" onPress={onToggle}>{hidden ? <EyeOff size={16} color={colors.white} /> : <Eye size={16} color={colors.white} />}</Pressable>
-      </View>
-      <Text style={{ color: colors.white, fontSize: 30, fontWeight: "700" }}>{hidden ? copy.hiddenBalance : vnd(account.data?.balance ?? 0)}</Text>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <ShieldCheck size={14} color={colors.aqua} />
-          <Text style={{ color: colors.aqua, fontSize: type.small }}>{copy.protected}</Text>
+    <View style={{ width, borderRadius: 24, backgroundColor: colors.deep, padding: 20, borderWidth: selected ? 2 : 0, borderColor: colors.aqua }}>
+      <Pressable testID={selected ? "balance-card" : undefined} onPress={onSelect} style={{ gap: 16 }}>
+        <Text style={{ color: colors.white, fontSize: type.small, paddingRight: 28 }}>{kind}</Text>
+        <Text style={{ color: colors.white, fontSize: 30, fontWeight: "700" }}>{hidden ? copy.hiddenBalance : vnd(account.data?.balance ?? 0)}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <ShieldCheck size={14} color={colors.aqua} />
+            <Text style={{ color: colors.aqua, fontSize: type.small }}>{copy.protected}</Text>
+          </View>
+          <Pressable testID={selected ? "deposits-link" : undefined} accessibilityRole="button" onPress={() => router.push("/(main)/savings")}>
+            <Text style={{ color: colors.white, fontWeight: "700", fontSize: type.small }}>{copy.deposits}</Text>
+          </Pressable>
         </View>
-        <Pressable testID={selected ? "deposits-link" : undefined} accessibilityRole="button" onPress={() => router.push("/(main)/savings")}>
-          <Text style={{ color: colors.white, fontWeight: "700", fontSize: type.small }}>{copy.deposits}</Text>
-        </Pressable>
-      </View>
-    </Pressable>
+      </Pressable>
+      <Pressable testID={selected ? "balance-toggle" : undefined} accessibilityRole="button" onPress={onToggle} hitSlop={8} style={{ position: "absolute", top: 20, right: 20 }}>
+        {hidden ? <EyeOff size={16} color={colors.white} /> : <Eye size={16} color={colors.white} />}
+      </Pressable>
+    </View>
   )
 }
 
