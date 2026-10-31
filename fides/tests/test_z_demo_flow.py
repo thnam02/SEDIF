@@ -222,5 +222,5 @@ def test_fee_high_and_mule_warning():
         {"from_account": "A0031239", "to_account": "A0119955", "amount": 10_000, "purpose_text": "chuyen"},
     )
     codes = [item["code"] for item in victim["decision"]["reasons"]]
-    assert "simo_listed" in codes, victim
+    assert "recipient_simo_flag" in codes, victim
     engine.shutdown()

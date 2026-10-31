@@ -305,7 +305,8 @@ def decide(body: dict) -> tuple[int, dict]:
     outcome = evaluate(facts, RedisState(STORE.redis), behaviour)
     level_name = STRING_LEVEL[outcome.level]
     guardian = bool(int(row.get("has_guardian") or 0))
-    actions = actions_for(level_name, segment, guardian)
+    # Bản đồng ý nằm ở ngân hàng. Không có cờ này thì không đưa guardian_confirm.
+    actions = actions_for(level_name, segment, guardian, consented=bool(body.get("guardian_consent")))
     present = signals_present(outcome, facts.call_state)
     reasons = outcome.reason_rows()[:3] or reasons_for(row, families)
     funds, hold = outcome.funds_status, outcome.hold_until

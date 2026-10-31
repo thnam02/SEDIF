@@ -32,14 +32,16 @@ def raise_level(level: str, answer) -> str:
     return LEVELS[min(LEVELS.index(level) + 1, len(LEVELS) - 1)]
 
 
-def actions_for(level: str, segment: str, has_guardian: bool) -> list[str]:
+def actions_for(level: str, segment: str, has_guardian: bool, *, consented: bool | None = None) -> list[str]:
+    """guardian_confirm chỉ khi có bản đồng ý đã lưu. consented=None giữ lối cũ cho /respond."""
+    guardian = has_guardian if consented is None else consented
     if level == "none":
         return ["allow"]
     if level == "info":
         return ["info"]
     if level == "banner":
         return ["g1_banner"]
-    if level == "medium" and segment == "cao tuổi" and has_guardian:
+    if level == "medium" and segment == "cao tuổi" and guardian:
         return ["pause_and_verify", "guardian_confirm"]
     if level == "medium":
         return ["pause_and_verify"]

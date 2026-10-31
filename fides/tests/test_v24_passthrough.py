@@ -236,6 +236,7 @@ def test_export_row_hashes_account_ids():
             "decision": {
                 "level": 2,
                 "rules_fired": ["R_BEHAVIOUR_GUIDED"],
+                "reasons": [{"code": "call_active", "text": "Có cuộc gọi đang diễn ra trong phiên này."}, {"code": "new_payee", "text": "Chưa từng chuyển tới người nhận này."}],
                 "evidence_card": {"behaviour_score": 0.4, "p_rarity": 0.03, "baseline_quality": "high"},
             },
         }
@@ -250,6 +251,7 @@ def test_export_row_hashes_account_ids():
     assert row["baseline_quality"] == "high"
     assert row["level"] == 2
     assert row["rules_fired"] == '["R_BEHAVIOUR_GUIDED"]'
+    assert row["reason_codes"] == '["call_active", "new_payee"]'
 
 
 def test_experiment_transfer_completes_and_a_plain_transfer_still_holds(bank):

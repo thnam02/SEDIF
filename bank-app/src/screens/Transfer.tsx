@@ -10,7 +10,7 @@ import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
-import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, reasonLine, showAccount, vnd } from "../format"
+import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, presentStamp, reasonLine, showAccount, vnd } from "../format"
 import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
 import { DEMO, useBank, type EntryDetail } from "../store"
@@ -492,7 +492,7 @@ export function ConfirmScreen() {
                   signalsPresent: result.decision.signals_present ?? [],
                   funds_status: experiment ? "released" : result.funds_status,
                   gate: "none",
-                  hold_until: experiment ? null : result.hold_until,
+                  hold_until: experiment || !result.hold_until ? null : presentStamp(result.hold_until),
                   countdown_until: null,
                   payee: toAccount,
                   payeeName: resolved || toName,

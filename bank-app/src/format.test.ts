@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { DEMO_CLOCK, groupAccount, isHeld, maskAccount, movementTitle, parseTransferDraft, presentHistory, reasonLine, showAccount, when } from "./format.ts"
+import { DEMO_CLOCK, groupAccount, isHeld, maskAccount, movementTitle, parseTransferDraft, presentHistory, presentStamp, reasonLine, showAccount, when } from "./format.ts"
 
 test("when shows the Ho Chi Minh clock", () => {
   const stamp = when("2026-09-18T11:03:58+00:00")
@@ -55,6 +55,7 @@ test("history dates shift by the same number of days and keep real gaps", () => 
   const reversed = presentHistory([...source].reverse(), now, clock)
   const byId = (list: typeof rows) => Object.fromEntries(list.map((row) => [row.tx_id, row.ts]))
   assert.deepEqual(byId(reversed), byId(rows))
+  assert.equal(presentStamp("2026-09-21T21:41:15+07:00", now, clock), "2026-10-31T21:41:15+07:00")
   assert.equal(isHeld("held"), true)
   assert.equal(isHeld("done"), false)
   assert.equal(isHeld(undefined), false)

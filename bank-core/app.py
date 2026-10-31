@@ -1064,6 +1064,7 @@ def transfer(
             if sent is not None:
                 request[field] = sent
         request["recent_funds_events"] = ledger_funds(conn, body.from_account, now)
+        request["guardian_consent"] = _guardian_consented(conn, body.from_account)
         mule = verified_mule(body.to_account)
         if mule:
             request["signals"] = mule

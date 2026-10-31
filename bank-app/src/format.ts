@@ -139,13 +139,16 @@ function wholeDays(from: Date, to: Date): number {
   return Math.round((end - start) / 86_400_000)
 }
 
+/** Dịch một mốc cùng số ngày với sổ: ngày máy trừ ngày đồng hồ demo. Giữ giờ. */
+export function presentStamp(iso: string, now = new Date(), clock = DEMO_CLOCK): string {
+  if (!Number.isFinite(Date.parse(iso))) return iso
+  const shift = wholeDays(localDay(clock), localDay(now))
+  return stampOn(addDays(calendarDay(iso), shift), iso)
+}
+
 /** Dịch mọi dòng cùng một số ngày: ngày máy trừ ngày đồng hồ demo. Giữ giờ và khoảng cách thật. */
 export function presentHistory<T extends { ts: string }>(entries: T[], now = new Date(), clock = DEMO_CLOCK): T[] {
-  const shift = wholeDays(localDay(clock), localDay(now))
-  return entries.map((entry) => {
-    if (!Number.isFinite(Date.parse(entry.ts))) return entry
-    return { ...entry, ts: stampOn(addDays(calendarDay(entry.ts), shift), entry.ts) }
-  })
+  return entries.map((entry) => ({ ...entry, ts: presentStamp(entry.ts, now, clock) }))
 }
 
 export function when(iso: string): { time: string; date: string } {

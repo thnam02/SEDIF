@@ -57,6 +57,7 @@ def export_row(record: dict) -> dict:
     decision = _load_json(record.get("decision")) or {}
     card = decision.get("evidence_card") or {}
     rules = decision.get("rules_fired") or []
+    reason_codes = [item.get("code") for item in (decision.get("reasons") or []) if isinstance(item, dict) and item.get("code")]
     return {
         "participant": hash_text(str(record.get("participant_id") or "")),
         "condition": str(record.get("condition") or ""),
@@ -69,6 +70,7 @@ def export_row(record: dict) -> dict:
         "baseline_quality": card.get("baseline_quality") or "",
         "level": decision.get("level"),
         "rules_fired": json.dumps(rules, ensure_ascii=False),
+        "reason_codes": json.dumps(reason_codes, ensure_ascii=False),
     }
 
 
@@ -84,6 +86,7 @@ COLUMNS = (
     "baseline_quality",
     "level",
     "rules_fired",
+    "reason_codes",
 )
 
 
