@@ -61,7 +61,7 @@ export const copy = {
   savings: "Tiết kiệm",
   settle: "Tất toán trước hạn",
   settleNote: "Tất toán trước hạn sẽ mất lãi",
-  settled: "Đã chuyển 200.000.000 đ về tài khoản thanh toán",
+  settled: "Đã chuyển 150.000.000 đ về tài khoản thanh toán",
   settledLive: "Đã chuyển {amount} về tài khoản thanh toán",
   loan: "Vay nhanh",
   disburse: "Giải ngân ngay về tài khoản thanh toán",

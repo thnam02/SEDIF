@@ -12,7 +12,13 @@ OBSERVED = ROOT / "fides-sim" / "out" / "observed"
 PERSONAS = ROOT / "docs" / "personas.json"
 CUT = pd.Timestamp("2026-09-20T00:00:00+07:00")
 HUYNH_ACCOUNT = "A0072556"
-HUYNH_MIN_BALANCE = 200_000_000
+HUYNH_SAVINGS = "A0077690"
+# Lương hưu trên tài khoản thanh toán. 120 triệu không đi được nếu chưa tất toán.
+PENSION_BALANCE = 15_000_000
+SAVINGS_PRINCIPAL = 150_000_000
+# Màn hình chọn tài khoản cá nhân số dư cao nhất. Sổ kia phải thấp hơn lương hưu
+# vì hạn mức 120 triệu chỉ được nâng trên A0072556.
+OTHER_PERSONAL_CAP = 14_000_000
 
 
 def _money(value) -> int:
@@ -145,8 +151,7 @@ def related_ids() -> set[str]:
     return ids
 
 
-def _raise_scene_opening(conn) -> None:
-    """Nâng số dư đầu kỳ của Huỳnh cho cảnh B. Không thêm dòng sổ."""
+def _ledger_net(conn, account_id: str) -> tuple[int, int] | None:
     row = conn.execute(
         """
         SELECT a.opening_balance AS opening,
@@ -156,19 +161,57 @@ def _raise_scene_opening(conn) -> None:
         WHERE a.id = %s
         GROUP BY a.opening_balance
         """,
-        (HUYNH_ACCOUNT,),
+        (account_id,),
     ).fetchone()
     if row is None:
+        return None
+    return int(row["opening"]), int(row["net"])
+
+
+def _set_opening(conn, account_id: str, target: int) -> None:
+    """Đưa số dư về target bằng đầu kỳ. Không thêm dòng sổ, nên không phát sinh tiền vào."""
+    found = _ledger_net(conn, account_id)
+    if found is None:
         return
-    opening = int(row["opening"])
-    net = int(row["net"])
-    if opening + net >= HUYNH_MIN_BALANCE:
-        return
-    raised = HUYNH_MIN_BALANCE - net
+    _opening, net = found
+    opening = target - net
     conn.execute(
         "UPDATE bank.accounts SET opening_balance = %s, balance = %s WHERE id = %s",
-        (raised, raised + net, HUYNH_ACCOUNT),
+        (opening, opening + net, account_id),
     )
+
+
+def _pension_story(conn) -> None:
+    """Cảnh B: tất toán sổ tiết kiệm là cách duy nhất để đủ 120 triệu.
+
+    Parquet quan sát được là nguồn lịch sử giao dịch. A0072556 có trong
+    accounts.parquet (đầu kỳ 66.023.530, sổ trước 20/9 để số dư khoảng 92 triệu)
+    và sổ A0077690 mở từ 2018 với đúng 48.091.787, không một dòng sổ.
+    load() ghi đè hai số đó cho cảnh demo: Postgres sau load() là số app và
+    engine đọc khi chuyển tiền. Không ghi dòng tiền vào trong cửa sổ 72 giờ.
+    """
+    _set_opening(conn, HUYNH_ACCOUNT, PENSION_BALANCE)
+    _set_opening(conn, HUYNH_SAVINGS, SAVINGS_PRINCIPAL)
+    conn.execute(
+        """
+        UPDATE bank.accounts
+        SET account_type = 'savings', status = 'open'
+        WHERE id = %s
+        """,
+        (HUYNH_SAVINGS,),
+    )
+    others = conn.execute(
+        """
+        SELECT id FROM bank.accounts
+        WHERE customer_id = (SELECT customer_id FROM bank.accounts WHERE id = %s)
+          AND account_type = 'personal'
+          AND id <> %s
+          AND balance >= %s
+        """,
+        (HUYNH_ACCOUNT, HUYNH_ACCOUNT, PENSION_BALANCE),
+    ).fetchall()
+    for row in others:
+        _set_opening(conn, row["id"], OTHER_PERSONAL_CAP)
 
 
 def load(conn) -> int:
@@ -283,7 +326,7 @@ def load(conn) -> int:
                 """,
                 entries,
             )
-    _raise_scene_opening(conn)
+    _pension_story(conn)
     for person in payload["personas"]:
         guard = person.get("guardian") or {}
         phone = guard.get("guardian_phone_number_id")

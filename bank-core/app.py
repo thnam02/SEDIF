@@ -1340,9 +1340,89 @@ def _product(body: ProductIn, kind: str, tx_type: str) -> dict:
     return {"id": product_id, "status": "done"}
 
 
+def _savings_book(conn, checking_id: str):
+    """Sổ tiết kiệm đang mở của cùng khách. Không có sổ thì tất toán chỉ ghi có, như các bài test."""
+    return conn.execute(
+        """
+        SELECT s.id, s.balance
+        FROM bank.accounts s
+        JOIN bank.accounts c ON c.customer_id = s.customer_id
+        WHERE c.id = %s
+          AND s.id <> c.id
+          AND s.account_type = 'savings'
+          AND s.status = 'open'
+          AND s.balance > 0
+        ORDER BY s.balance DESC
+        LIMIT 1
+        """,
+        (checking_id,),
+    ).fetchone()
+
+
 @app.post("/savings/liquidate")
 def liquidate(body: ProductIn) -> dict:
-    return _product(body, "savings_liquidation", "savings_liquidation")
+    """Tất toán một lần: trừ sổ, ghi có đúng một dòng vào tài khoản thanh toán, báo engine.
+
+    Lần gọi sau cùng tài khoản, loại và số tiền trả về dòng đã có, không cộng thêm.
+    """
+    now = CLOCK.now()
+    touch_session(body.account_id, body.device, now)
+    fresh = False
+    with connect() as conn:
+        found = conn.execute(
+            """
+            SELECT tx_id FROM bank.entries
+            WHERE account_id = %s AND tx_type = 'savings_liquidation' AND direction = 'in'
+              AND amount = %s AND left(tx_id, 2) = 'P-'
+            ORDER BY ts DESC
+            LIMIT 1
+            """,
+            (body.account_id, body.amount),
+        ).fetchone()
+        if found:
+            product_id = found["tx_id"]
+        else:
+            book = _savings_book(conn, body.account_id)
+            if book is not None and int(book["balance"]) < body.amount:
+                raise HTTPException(400, "không đủ số dư")
+            fresh = True
+            product_id = f"P-{uuid.uuid4().hex[:16]}"
+            if book is not None:
+                updated = conn.execute(
+                    """
+                    UPDATE bank.accounts
+                    SET balance = balance - %s
+                    WHERE id = %s AND status = 'open' AND balance >= %s
+                    RETURNING balance
+                    """,
+                    (body.amount, book["id"], body.amount),
+                ).fetchone()
+                if updated is None:
+                    raise HTTPException(400, "không đủ số dư")
+                if int(updated["balance"]) == 0:
+                    conn.execute("UPDATE bank.accounts SET status = 'closed' WHERE id = %s", (book["id"],))
+                entry(conn, book["id"], product_id, now, "out", body.amount, "savings_liquidation", "savings_liquidation", "done")
+            credit(conn, body.account_id, body.amount)
+            entry(conn, body.account_id, product_id, now, "in", body.amount, "savings_liquidation", "savings_liquidation", "done")
+            conn.execute(
+                "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,%s,'savings_liquidation',%s,'app')",
+                (product_id, body.account_id, body.amount, now),
+            )
+            conn.commit()
+    if fresh:
+        post_ledger(
+            {
+                "event_id": f"product:{product_id}",
+                "type": "product",
+                "ts": now.isoformat(),
+                "account_hash": account_hash(body.account_id),
+                "product_type": "savings_liquidation",
+                "tx_type": "savings_liquidation",
+                "amount": body.amount,
+                "session_id": f"demo-{body.account_id}",
+            }
+        )
+    return {"id": product_id, "status": "done"}
 
 
 @app.post("/loan")

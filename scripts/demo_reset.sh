@@ -209,11 +209,86 @@ for account_id, (balance, opening, net) in sorted(seen.items()):
         bad.append(f"{account_id}: số dư {balance} khác đầu kỳ {opening} + sổ {net}")
 if "A0072556" in seen:
     balance, opening, net = seen["A0072556"]
-    if opening + net < 200_000_000:
-        bad.append(f"A0072556: đầu kỳ + sổ = {opening + net} < 200000000")
+    if opening + net != 15_000_000:
+        bad.append(f"A0072556: đầu kỳ + sổ = {opening + net}, cần 15000000")
+book_sql = """
+SELECT id, status, account_type, balance
+FROM bank.accounts
+WHERE id = 'A0077690';
+"""
+book = subprocess.run(
+    ["psql", os.environ["DATABASE_URL"], "-v", "ON_ERROR_STOP=1", "-t", "-A", "-F", "|", "-c", book_sql],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if book.returncode != 0:
+    sys.stderr.write(book.stderr or book.stdout)
+    sys.exit(1)
+line = next((item for item in book.stdout.splitlines() if item.strip()), "")
+parts = line.split("|") if line else []
+if len(parts) != 4 or parts[1] != "open" or parts[2] != "savings" or int(parts[3]) != 150_000_000:
+    bad.append(f"A0077690: cần sổ tiết kiệm mở 150000000, gặp {line or 'không có'}")
+funds_sql = """
+SELECT COUNT(*) FROM (
+    SELECT id FROM bank.products
+    WHERE account_id IN ('A0072556', 'A0077690') AND kind = 'savings_liquidation'
+    UNION ALL
+    SELECT tx_id FROM bank.entries
+    WHERE account_id IN ('A0072556', 'A0077690') AND tx_type = 'savings_liquidation'
+) events;
+"""
+funds = subprocess.run(
+    ["psql", os.environ["DATABASE_URL"], "-v", "ON_ERROR_STOP=1", "-t", "-A", "-c", funds_sql],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if funds.returncode != 0:
+    sys.stderr.write(funds.stderr or funds.stdout)
+    sys.exit(1)
+if funds.stdout.strip() != "0":
+    bad.append(f"đã có tất toán trước khi vào cảnh: {funds.stdout.strip()}")
 if bad:
     sys.stderr.write("sổ không khớp số dư đầu kỳ:\n" + "\n".join(bad) + "\n")
     sys.exit(1)
+PY
+# Sổ Redis không giữ số dư hiện tại. product_savings_7d là zset. Xoá mọi tất toán
+# của A0072556 trong cửa sổ demo để khớp Postgres vừa nạp (chưa tất toán).
+FIDES_ROOT="$ROOT" python3 - <<'PY'
+import os
+import subprocess
+import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+sys.path[:0] = [os.environ["FIDES_ROOT"]]
+from engine.common.hashing import account_hash, reset_key_cache
+
+reset_key_cache()
+account = account_hash("A0072556")
+key = f"f:prod:savings_liquidation:{account}"
+ict = ZoneInfo("Asia/Ho_Chi_Minh")
+start = int(datetime(2026, 9, 14, tzinfo=ict).timestamp() * 1_000_000)
+end = int(datetime(2026, 9, 23, tzinfo=ict).timestamp() * 1_000_000)
+base = [
+    "redis-cli",
+    "-h",
+    os.environ.get("REDIS_HOST", "127.0.0.1"),
+    "-p",
+    os.environ.get("REDIS_PORT", "6379"),
+    "-n",
+    os.environ["REDIS_URL"].rstrip("/").rsplit("/", 1)[-1],
+]
+removed = subprocess.run([*base, "ZREMRANGEBYSCORE", key, str(start), str(end)], check=False, capture_output=True, text=True)
+if removed.returncode != 0:
+    sys.stderr.write(removed.stderr or removed.stdout)
+    sys.exit(1)
+left = subprocess.run([*base, "ZCOUNT", key, str(start), str(end)], check=False, capture_output=True, text=True)
+if left.returncode != 0 or left.stdout.strip() != "0":
+    sys.stderr.write(f"product_savings_7d của A0072556 còn {left.stdout.strip()}\n")
+    sys.exit(1)
+print(f"product_savings_7d A0072556 {left.stdout.strip()}")
 PY
 # Purge ở trên xoá mọi beh:v24. Chỉ Trương, task new_typed, được gieo lại cho cảnh C.
 python3 "$ROOT/scripts/seed_demo_baseline.py"
