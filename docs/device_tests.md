@@ -16,6 +16,11 @@ Chưa đo trên máy. Mỗi dòng điền `in_call`, `voip_suspected`, `call_end
 
 ## iPhone
 
+- `UIScreen.main.isCaptured` cũng bật khi chiếu AirPlay. Chiếu điện thoại qua AirPlay sẽ gửi `device.state = active_capture` và `R_CAPTURE` sẽ khớp trên mọi lệnh chuyển.
+- Không ghi màn hình thì iOS gửi `none`. `unknown` chỉ còn khi máy không đọc được trạng thái (Android). Nút "Demo: màn hình đang bị ghi" vẫn ép `active_capture`.
+
+## iPhone cuộc gọi
+
 - Root cause, v2.2 `FidesIntervention` buttons dead during a cellular call: iOS grows the status-bar frame for the in-call bar. `Screen` in `bank-app/src/ui/parts.tsx` padded by `useSafeAreaInsets().top` and put the buttons in a `ScrollView` whose default `contentInsetAdjustmentBehavior` is `automatic`, so UIKit applied that bar a second time. `SafeAreaProvider` in `app/_layout.tsx` does not refresh insets on `statusBarFrame` changes. The painted `Pressable` and its hit target then differed by the bar height, and a tap on the medium guide rows or the high-screen buttons landed on empty scroll space. Those screens are removed. The scroll view now uses `contentInsetAdjustmentBehavior="never"` so the inset is applied once.
 - Cellular call on iPhone: detected (call pill shown).
 - The button retest during a live cellular call was not run. The phone was paired, and no call was on screen, so the in-call status bar was not exercised.

@@ -37,7 +37,9 @@ let callActiveAtStart: boolean | null = null
 let callStartedDuring = false
 let callEndedDuring = false
 let listening = false
+let watchingCapture = false
 let watchingApp = false
+let screenCaptured: boolean | null = null
 const listeners = new Set<() => void>()
 
 function emit() {
@@ -81,9 +83,10 @@ function platformOs(): string {
 
 function nativeModule(): {
   getCallState?: () => CallState
+  getScreenCaptured?: () => boolean
   beginSession?: () => void
   reconcile?: () => NativeCall
-  addListener?: (name: string, listener: (event: NativeCall) => void) => { remove: () => void }
+  addListener?: (name: string, listener: (event: NativeCall & { captured?: boolean }) => void) => { remove: () => void }
 } | null {
   try {
     // expo-modules-core vắng khi chạy test Node; nạp lúc runtime.
@@ -137,8 +140,24 @@ export const FidesSession = {
       return
     }
     native?.addListener?.("onCallStateChanged", applyNative)
+    if (!watchingCapture && platformOs() === "ios") {
+      native?.addListener?.("onCaptureChanged", (event) => {
+        screenCaptured = Boolean(event.captured)
+        emit()
+      })
+      if (native?.getScreenCaptured) screenCaptured = native.getScreenCaptured()
+      watchingCapture = true
+    }
     watchForeground()
     listening = true
+  },
+
+  /** iOS: true/false từ UIScreen.isCaptured. Android không đọc, trả null. */
+  screenCaptured(): boolean | null {
+    if (platformOs() !== "ios") return null
+    const native = nativeModule()
+    if (native?.getScreenCaptured) screenCaptured = native.getScreenCaptured()
+    return screenCaptured
   },
 
   noteAppSwitch() {

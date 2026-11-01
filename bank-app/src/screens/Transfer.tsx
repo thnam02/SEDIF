@@ -14,6 +14,7 @@ import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, presen
 import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
 import { addMethod } from "../addMethod"
+import { deviceState } from "../deviceState"
 import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -435,7 +436,7 @@ export function ConfirmScreen() {
           const call = FidesSession.callBlock()
           const session = sessionRecorder.end()
           const behaviour = devGuided ? GUIDED_FEATURES : session.behaviour_features
-          const device = { ...FidesSession.collectSignals(), state: (devCapture ? "active_capture" : "unknown") as "active_capture" | "unknown" }
+          const device = { ...FidesSession.collectSignals(), state: deviceState(FidesSession.screenCaptured(), devCapture) }
           rememberSession({ task_type: session.task_type, call, behaviour_features: behaviour })
           const experiment = session.experiment
           if (experiment && session.raw_events) {
