@@ -97,6 +97,7 @@ export const copy = {
   bankHint: "Tài khoản BVC bank",
   dong: "đồng",
   payee: "Người nhận",
+  unknownPayee: "Không tìm thấy tài khoản người nhận",
   moneyLabel: "Số tiền",
   emptySavings: "Chưa có sổ trên tài khoản này",
   book: "Sổ tiết kiệm {n}",

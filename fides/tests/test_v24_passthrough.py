@@ -800,3 +800,19 @@ def test_level_1_expires_after_ten_minutes_and_cancel_frees_the_key(bank):
         with psycopg.connect(DATABASE) as conn:
             conn.execute("DELETE FROM bank.idempotency WHERE key = ANY(%s)", ([expire_key, reuse_key],))
             conn.commit()
+
+
+def test_unknown_account_number_is_not_a_payee(bank):
+    _module, client, _seen = bank
+    missing = client.get("/accounts/0896895239")
+    assert missing.status_code == 404
+    spaced = client.get("/accounts/0896%20895%20239")
+    assert spaced.status_code == 404
+    known = client.get("/accounts/0902230230")
+    assert known.status_code == 200, known.text
+    body = known.json()
+    assert body["id"] == "ZMED230000000001"
+    assert body["holder_name"] == "Lý Minh Châu"
+    internal = client.get("/accounts/ZMED230000000001")
+    assert internal.status_code == 200
+    assert internal.json()["id"] == "ZMED230000000001"

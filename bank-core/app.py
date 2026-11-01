@@ -843,6 +843,7 @@ def demo_reset(body: ResetIn) -> dict:
     with connect() as conn:
         load(conn)
         ensure_scene_capacity(conn)
+        seed_demo_payees(conn)
         remember_reset(conn, body.reset_id)
         conn.commit()
     LEDGER_MISMATCH = False
@@ -883,10 +884,28 @@ def persona(body: PersonaIn) -> dict:
     return {"customer_id": body.customer_id, "skipped_accounts": sorted(SKIP)}
 
 
+def lookup_account(conn, token: str):
+    """Mã nội bộ, hoặc số hiển thị 10 chữ số của người nhận demo. Không có thì None."""
+    raw = token.strip()
+    row = conn.execute("SELECT * FROM bank.accounts WHERE id = %s", (raw,)).fetchone()
+    if row is not None:
+        return row
+    compact = "".join(raw.split())
+    if compact != raw:
+        row = conn.execute("SELECT * FROM bank.accounts WHERE id = %s", (compact,)).fetchone()
+        if row is not None:
+            return row
+    digits = "".join(char for char in raw if char.isdigit())
+    account_id = next((key for key, shown in DEMO_NUMBERS.items() if shown == digits), None)
+    if account_id is None:
+        return None
+    return conn.execute("SELECT * FROM bank.accounts WHERE id = %s", (account_id,)).fetchone()
+
+
 @app.get("/accounts/{account_id}")
 def get_account(account_id: str) -> dict:
     with connect() as conn:
-        row = conn.execute("SELECT * FROM bank.accounts WHERE id = %s", (account_id,)).fetchone()
+        row = lookup_account(conn, account_id)
     if row is None:
         raise HTTPException(404, "không có tài khoản")
     return {

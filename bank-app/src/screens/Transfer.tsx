@@ -17,6 +17,7 @@ import { personas } from "../personas"
 import { addMethod } from "../addMethod"
 import { deviceState } from "../deviceState"
 import { level1AppStateCancels, level1ConfirmRejected, level1OnLeave } from "../level1Leave"
+import { payeeGate } from "../payeeLookup"
 import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -81,7 +82,7 @@ export function RecipientScreen() {
       go(recent[0].account_id, displayHolder(recent[0].holder_name), true)
       return
     }
-    setPayee(account, account)
+    setPayee(account.replace(/\s/g, ""), "")
     router.push("/(main)/transfer/amount")
   }
   const numeric = method === 1 || method === 2
@@ -130,9 +131,6 @@ export function RecipientScreen() {
             <Text numberOfLines={2} style={{ color: "#64748B", fontSize: 10, textAlign: "center" }}>{showAccount(chip.id)}</Text>
           </Pressable>
         ))}
-        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ color: colors.deep, fontWeight: "700" }}>{chips.length}</Text>
-        </View>
       </ScrollView>
       <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.partners}</Text>
       <View testID="partners" style={{ flexDirection: "row", gap: 8 }}>
@@ -229,7 +227,8 @@ export function AmountScreen() {
   const saved = useBeneficiaries(accountId)
   const policy = usePurposePolicy()
   const source = useAccount(accountId)
-  const looked = useAccount(toAccount || null)
+  const lookupToken = toAccount.replace(/\s/g, "")
+  const looked = useAccount(lookupToken || null)
   const [openAccounts, setOpenAccounts] = useState(false)
   const [bankOpen, setBankOpen] = useState(false)
   const [purposeOpen, setPurposeOpen] = useState(false)
@@ -245,15 +244,23 @@ export function AmountScreen() {
     if (!useBank.getState().note && person) setNote(transferNote(person.full_name))
   }, [person, setNote])
   useEffect(() => {
-    const holder = looked.data?.holder_name
-    if (!holder) return
-    const shown = displayHolder(holder)
-    if (shown !== toName) setPayee(toAccount, shown)
-  }, [looked.data?.holder_name, setPayee, toAccount, toName])
-  const known = (saved.data?.beneficiaries ?? []).some((item) => item.account_id === toAccount)
+    const row = looked.data
+    if (!row?.id || !row.holder_name) return
+    const shown = payeeName(row.holder_name, row.id)
+    if (!shown) return
+    if (row.id !== toAccount || shown !== toName) setPayee(row.id, shown)
+    if (dest !== row.id) setDest(row.id)
+  }, [dest, looked.data, setPayee, toAccount, toName])
+  const holder = looked.data ? payeeName(looked.data.holder_name, looked.data.id) : ""
+  const gate = payeeGate(
+    toAccount,
+    !lookupToken ? "idle" : looked.isError ? "missing" : looked.isSuccess ? "found" : "pending",
+    holder,
+  )
+  const known = (saved.data?.beneficiaries ?? []).some((item) => item.account_id === (looked.data?.id ?? toAccount))
   const threshold = policy.data?.purpose_amount_vnd ?? 10_000_000
   const askPurpose = saved.isSuccess && (!known || amount >= threshold)
-  const ready = amount >= 1 && Boolean(toAccount) && (!askPurpose || Boolean(purpose)) && saved.isSuccess && !policy.isPending
+  const ready = amount >= 1 && gate.canContinue && (!askPurpose || Boolean(purpose)) && saved.isSuccess && !policy.isPending
   function onAmount(value: string) {
     const next = digits(value)
     const prev = digits(String(amount))
@@ -268,7 +275,7 @@ export function AmountScreen() {
     if (value.length < prev.length) sessionRecorder.note({ type: "field_edit", payee: true })
     else if (value.length - prev.length > 1) sessionRecorder.note({ type: "paste", payee: true })
     else if (value.length > prev.length) sessionRecorder.note({ type: "key_tick", payee: true })
-    setPayee(value.trim(), value.trim())
+    setPayee(value.trim(), "")
   }
   function onNote(value: string) {
     if (value.length < note.length) sessionRecorder.note({ type: "field_edit" })
@@ -277,7 +284,7 @@ export function AmountScreen() {
     setNote(value)
   }
   const kind = copy.accountKind[source.data?.account_type ?? "personal"] ?? copy.balance
-  const resolved = payeeName(looked.data?.holder_name ?? toName, toAccount)
+  const resolved = gate.canContinue ? holder : ""
   const purposeLabel = copy.purposes.find(([id]) => id === purpose)?.[1]
   return (
     <Screen
@@ -319,6 +326,7 @@ export function AmountScreen() {
             <Contact size={18} color={colors.deep} />
           </Pressable>
         </View>
+        {gate.showMissing ? <Text testID="payee-missing" style={{ color: colors.danger, fontWeight: "700" }}>{copy.unknownPayee}</Text> : null}
         {resolved ? <Text style={{ color: colors.navy, fontWeight: "700" }}>{resolved}</Text> : null}
       </Card>
       <TextInput ref={amountRef} testID="amount" inputAccessoryViewID="amount-bar" value={amountFocused ? (amount ? String(amount) : "") : grouped(amount)} onChangeText={onAmount} onFocus={() => { setAmountFocused(true); sessionRecorder.note({ type: "field_focus", field: "amount" }) }} onBlur={() => { setAmountFocused(false); sessionRecorder.note({ type: "field_blur", field: "amount" }) }} keyboardType="number-pad" style={{ color: colors.deep, fontSize: 36, fontWeight: "700", textAlign: "center" }} />
@@ -429,7 +437,7 @@ export function ConfirmScreen() {
   const threshold = policy.data?.purpose_amount_vnd ?? 10_000_000
   const askPurpose = saved.isSuccess && (!known || amount >= threshold)
   const waiting = !saved.isSuccess || policy.isPending
-  const resolved = payeeName(toName, toAccount)
+  const resolved = payeeName(toName, toAccount) && toName !== copy.payee ? payeeName(toName, toAccount) : ""
   const purposeLabel = copy.purposes.find(([id]) => id === purpose)?.[1]
   return (
     <Screen call>
@@ -438,7 +446,7 @@ export function ConfirmScreen() {
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.source}</Text>
         <Text style={{ color: colors.navy, fontWeight: "700" }}>{copy.balance} {maskAccount(accountId)}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.payee}</Text>
-        <Text style={{ color: colors.navy, fontWeight: "700" }}>{resolved || copy.payee}</Text>
+        <Text style={{ color: resolved ? colors.navy : colors.danger, fontWeight: "700" }}>{resolved || copy.unknownPayee}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.bankName} · {showAccount(toAccount)}</Text>
         <Text style={{ color: "#64748B", fontSize: type.small }}>{copy.moneyLabel}</Text>
         <Text style={{ color: colors.deep, fontSize: type.title, fontWeight: "700" }}>{vnd(amount)}</Text>
@@ -526,8 +534,9 @@ export function ConfirmScreen() {
       {reminder ? null : <Button
         testID="confirm-transfer"
         label={copy.confirm}
+        disabled={waiting || !resolved || (askPurpose && !purpose)}
         onPress={() => {
-          if (waiting || (askPurpose && !purpose) || transfer.isPending) return
+          if (waiting || !resolved || (askPurpose && !purpose) || transfer.isPending) return
           const call = FidesSession.callBlock()
           const session = sessionRecorder.end()
           const behaviour = devGuided ? GUIDED_FEATURES : session.behaviour_features
