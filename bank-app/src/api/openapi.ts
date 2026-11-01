@@ -463,6 +463,8 @@ export interface components {
          * @enum {string}
          */
         TaskType: "saved_payee" | "new_typed" | "new_pasted" | "qr";
+        /** @description Cách nhập người nhận mà model-v2.1 đã học. */
+        AddMethod: "typed" | "paste" | "qr" | "contact";
         /**
          * @description Cách đưa số người nhận vào ô, khi task_type là new_pasted. Không tham gia chấm điểm. Chỉ hiện trên thẻ bằng chứng.
          *
@@ -667,6 +669,11 @@ export interface components {
              */
             ts: string;
             task_type?: components["schemas"]["TaskType"];
+            add_method?: components["schemas"]["AddMethod"];
+            limit_per_txn?: number;
+            limit_per_day?: number;
+            /** @description Tổng đã chuyển trong ngày, chưa gồm lệnh này. Bank-core điền từ Postgres. */
+            spent_today?: number;
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];
@@ -821,6 +828,7 @@ export interface components {
             amount: number;
             purpose_text?: string;
             task_type?: components["schemas"]["TaskType"];
+            add_method?: components["schemas"]["AddMethod"];
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];

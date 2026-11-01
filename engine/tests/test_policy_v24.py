@@ -356,6 +356,42 @@ def test_simo_unknown_history_is_not_treated_as_absent():
     assert "R_SIMO_KNOWN" not in out.rules_fired
 
 
+def test_near_limit_covers_per_txn_per_day_and_biometric():
+    per_txn = evaluate(_facts(amount=499_999_999, limit_per_txn=500_000_000, limit_per_day=None, sender="a" * 64))
+    assert per_txn.split_suspected
+    far = evaluate(_facts(amount=100_000, limit_per_txn=500_000_000, limit_per_day=5_000_000_000, spent_today=0, sender="b" * 64))
+    assert not far.split_suspected
+    # 0,5% của 5 tỷ là 25 triệu. 10 triệu + 4,970 tỷ còn thiếu 20 triệu.
+    daily = evaluate(
+        _facts(
+            amount=10_000_000,
+            limit_per_txn=500_000_000,
+            limit_per_day=5_000_000_000,
+            spent_today=4_970_000_000,
+            sender="c" * 64,
+        )
+    )
+    assert daily.split_suspected
+    same_amount = evaluate(
+        _facts(amount=10_000_000, limit_per_txn=500_000_000, limit_per_day=5_000_000_000, spent_today=0, sender="d" * 64)
+    )
+    assert not same_amount.split_suspected
+    over = evaluate(
+        _facts(
+            amount=40_000_000,
+            limit_per_txn=500_000_000,
+            limit_per_day=5_000_000_000,
+            spent_today=4_970_000_000,
+            sender="g" * 64,
+        )
+    )
+    assert not over.split_suspected
+    biometric = evaluate(_facts(amount=9_990_000, limit_per_txn=None, limit_per_day=None, sender="e" * 64))
+    assert biometric.split_suspected
+    ordinary = evaluate(_facts(amount=5_000_000, limit_per_txn=None, limit_per_day=None, sender="f" * 64))
+    assert not ordinary.split_suspected
+
+
 def test_near_limit_sums_splits_and_ignores_ordinary_amounts():
     state = MemoryState()
     sender = "d" * 64

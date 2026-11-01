@@ -13,6 +13,7 @@ import { copy } from "../copy/vi"
 import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, presentStamp, reasonLine, showAccount, vnd } from "../format"
 import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
+import { addMethod } from "../addMethod"
 import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -455,6 +456,7 @@ export function ConfirmScreen() {
               amount,
               note,
               task_type: session.task_type,
+              add_method: addMethod(session.task_type, entryDetail),
               call,
               behaviour_features: behaviour,
               transfer_purpose: askPurpose && purpose ? purpose : "not_asked",

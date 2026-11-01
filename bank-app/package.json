@@ -6,7 +6,7 @@
     "start": "expo start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app src --max-warnings 0",
-    "test": "node --experimental-strip-types --test src/copy/vi.test.ts src/format.test.ts src/routeDecision.test.ts src/stats.test.ts",
+    "test": "node --experimental-strip-types --test src/addMethod.test.ts src/copy/vi.test.ts src/format.test.ts src/routeDecision.test.ts src/stats.test.ts",
     "postinstall": "node scripts/fix-expo-publication.js",
     "android": "expo run:android",
     "ios": "expo run:ios",

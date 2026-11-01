@@ -252,6 +252,25 @@ def _features(row: dict, columns: list[str]) -> dict:
     return out
 
 
+ADD_METHODS = frozenset({"typed", "paste", "qr", "contact"})
+
+
+def apply_add_method(body: dict, row: dict) -> bool:
+    """Gắn cách nhập người nhận vào hàng chấm điểm. Thiếu thì cảnh báo."""
+    method = body.get("add_method")
+    if not isinstance(method, str) or method not in ADD_METHODS:
+        log.warning("add_method_missing %s", body.get("decision_id"))
+        return False
+    row["add_method"] = method
+    return True
+
+
+def with_add_method(present: list[str], method_known: bool) -> list[str]:
+    if method_known or "add_method_missing" in present:
+        return present
+    return [*present, "add_method_missing"]
+
+
 def decide(body: dict) -> tuple[int, dict]:
     if MODEL is None or STORE is None:
         return 503, {"detail": "model chưa nạp"}
@@ -285,11 +304,11 @@ def decide(body: dict) -> tuple[int, dict]:
             row[name] = None
         for name in ("payee_account_age_days", "distinct_senders_7d", "passthrough_24h", "device_holder_count"):
             row[f"{name}_missing"] = 1
+    method_known = apply_add_method(body, row)
     with SCORE_LOCK:
         probability = MODEL.score(row)
     families = gated_families(row)
     segment = str(row.get("segment") or "thường")
-    limit = int(STORE.limit_of.get(body["sender_hash"]) or 0)
     behaviour = assess(
         STORE.redis,
         str(body.get("user_hash") or body["sender_hash"]),
@@ -298,7 +317,7 @@ def decide(body: dict) -> tuple[int, dict]:
         decided,
         experiment=isinstance(body.get("experiment"), dict),
     )
-    facts = facts_from_row(body, row, probability, decided, limit or None)
+    facts = facts_from_row(body, row, probability, decided, None)
     if behaviour is not None:
         facts.same_task_sessions = behaviour.n
         facts.behaviour_p_rarity = behaviour.p_rarity if behaviour.usable else None
@@ -307,7 +326,7 @@ def decide(body: dict) -> tuple[int, dict]:
     guardian = bool(int(row.get("has_guardian") or 0))
     # Bản đồng ý nằm ở ngân hàng. Không có cờ này thì không đưa guardian_confirm.
     actions = actions_for(level_name, segment, guardian, consented=bool(body.get("guardian_consent")))
-    present = signals_present(outcome, facts.call_state)
+    present = with_add_method(signals_present(outcome, facts.call_state), method_known)
     reasons = outcome.reason_rows()[:3] or reasons_for(row, families)
     funds, hold = outcome.funds_status, outcome.hold_until
     payload = {

@@ -84,6 +84,7 @@ export function useTransfer() {
       amount: number
       note: string
       task_type: components["schemas"]["TaskType"]
+      add_method: components["schemas"]["AddMethod"]
       call: components["schemas"]["CallContext"]
       behaviour_features: components["schemas"]["BehaviourFeatures"]
       transfer_purpose: components["schemas"]["TransferPurpose"]
@@ -101,6 +102,7 @@ export function useTransfer() {
             amount: input.amount,
             purpose_text: input.note || undefined,
             task_type: input.task_type,
+            add_method: input.add_method,
             call: input.call,
             behaviour_features: input.behaviour_features,
             transfer_purpose: input.transfer_purpose,

@@ -995,6 +995,12 @@ components:
       type: string
       enum: [saved_payee, new_typed, new_pasted, qr]
       description: Cách khách chọn người nhận. Khoá baseline thao tác cùng loại.
+    AddMethod:
+      type: string
+      enum: [typed, paste, qr, contact]
+      description: >
+        Cách nhập người nhận mà model-v2.1 đã học.
+        Ảnh chụp và ảnh tải lên dùng paste, vì số tới một lần.
     EntryDetail:
       type: string
       enum: [paste, image_capture, image_upload]
@@ -1359,6 +1365,20 @@ components:
           description: Bank-core điền. App không có trường này.
         task_type:
           $ref: "#/components/schemas/TaskType"
+        add_method:
+          $ref: "#/components/schemas/AddMethod"
+        limit_per_txn:
+          type: integer
+          minimum: 0
+          description: Hạn một lệnh từ Postgres. Engine dùng số này, không đọc Redis.
+        limit_per_day:
+          type: integer
+          minimum: 0
+          description: Hạn ngày từ Postgres.
+        spent_today:
+          type: integer
+          minimum: 0
+          description: Tổng đã chuyển trong ngày, chưa gồm lệnh này.
         call:
           $ref: "#/components/schemas/CallContext"
         behaviour_features:
@@ -1689,6 +1709,8 @@ components:
           type: string
         task_type:
           $ref: "#/components/schemas/TaskType"
+        add_method:
+          $ref: "#/components/schemas/AddMethod"
         call:
           $ref: "#/components/schemas/CallContext"
         behaviour_features:

@@ -310,14 +310,27 @@ def credit(conn, account: str, amount: int) -> None:
     conn.execute("UPDATE bank.accounts SET balance = balance + %s WHERE id = %s", (amount, account))
 
 
-def debit(conn, account: str, amount: int, now: datetime) -> None:
-    row = conn.execute("SELECT balance, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s", (account,)).fetchone()
-    if row is None:
-        raise HTTPException(404, "không có tài khoản")
-    if int(row["balance"]) < amount:
-        raise HTTPException(400, "không đủ số dư")
-    if amount > int(row["limit_per_txn"]):
-        raise HTTPException(400, "vượt hạn mức giao dịch")
+ADD_METHODS = frozenset({"typed", "paste", "qr", "contact"})
+
+
+def add_method_for(task_type: str | None, entry_detail: str | None, explicit: str | None) -> str | None:
+    """Cách nhập mà model-v2.1 đã học. Ảnh không có cột riêng, nên dùng paste."""
+    if explicit in ADD_METHODS:
+        return explicit
+    if entry_detail in {"paste", "image_capture", "image_upload"}:
+        return "paste"
+    if task_type == "qr":
+        return "qr"
+    if task_type == "saved_payee":
+        return "contact"
+    if task_type == "new_pasted":
+        return "paste"
+    if task_type == "new_typed":
+        return "typed"
+    return None
+
+
+def spent_today(conn, account: str, now: datetime) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     spent = conn.execute(
         """
@@ -326,7 +339,18 @@ def debit(conn, account: str, amount: int, now: datetime) -> None:
         """,
         (account, start),
     ).fetchone()
-    if int(spent["n"]) + amount > int(row["limit_per_day"]):
+    return int(spent["n"])
+
+
+def debit(conn, account: str, amount: int, now: datetime) -> None:
+    row = conn.execute("SELECT balance, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s", (account,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "không có tài khoản")
+    if int(row["balance"]) < amount:
+        raise HTTPException(400, "không đủ số dư")
+    if amount > int(row["limit_per_txn"]):
+        raise HTTPException(400, "vượt hạn mức giao dịch")
+    if spent_today(conn, account, now) + amount > int(row["limit_per_day"]):
         raise HTTPException(400, "vượt hạn mức ngày")
     conn.execute("UPDATE bank.accounts SET balance = balance - %s WHERE id = %s", (amount, account))
 
@@ -415,6 +439,8 @@ class TransferIn(BaseModel):
     purpose_text: str | None = None
     device: dict | None = None
     task_type: Literal["saved_payee", "new_typed", "new_pasted", "qr"] | None = None
+    add_method: Literal["typed", "paste", "qr", "contact"] | None = None
+    entry_detail: Literal["paste", "image_capture", "image_upload"] | None = None
     call: CallIn | None = None
     behaviour_features: BehaviourIn | None = None
     transfer_purpose: Literal[
@@ -1043,9 +1069,28 @@ def transfer(
     session = touch_session(body.from_account, body.device, now)
     with connect() as conn:
         debit(conn, body.from_account, body.amount, now)
-        balance = conn.execute("SELECT balance, segment, has_guardian FROM bank.accounts WHERE id = %s", (body.from_account,)).fetchone()
+        balance = conn.execute(
+            "SELECT balance, segment, has_guardian, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s",
+            (body.from_account,),
+        ).fetchone()
         transfer_id = _next_id("X")
         decision_id = f"dec-{transfer_id}"
+        method = add_method_for(body.task_type, body.entry_detail, body.add_method)
+        if method:
+            try:
+                engine_post(
+                    "/events",
+                    {
+                        "type": "payee_add",
+                        "ts": _us(now),
+                        "account": account_hash(body.from_account),
+                        "payee": account_hash(body.to_account),
+                        "method": method,
+                    },
+                    timeout=DECIDE_TIMEOUT_S,
+                )
+            except EngineUnavailable:
+                log.warning("payee_add failed")
         request = {
             "decision_id": decision_id,
             "profile": "advanced",
@@ -1056,7 +1101,12 @@ def transfer(
             "ts": now.isoformat(),
             "session_id": session,
             "score_request": True,
+            "limit_per_txn": int(balance["limit_per_txn"]),
+            "limit_per_day": int(balance["limit_per_day"]),
+            "spent_today": spent_today(conn, body.from_account, now),
         }
+        if method:
+            request["add_method"] = method
         if body.device is not None:
             request["device"] = body.device
         for field in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment"):
