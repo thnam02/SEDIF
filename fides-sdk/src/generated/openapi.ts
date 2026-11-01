@@ -219,10 +219,51 @@ export interface paths {
         put?: never;
         /**
          * Tạo lệnh chuyển
-         * @description App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256 rồi gọi POST /decide. none, info và banner cho đi. Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng: lúc đó chỉ là ghi chú info. medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy. Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai. /decide hết 300 ms hoặc lỗi thì chuyển bình thường và ghi log engine_unavailable. Từ 50 triệu tới người nhận mới thì vẫn hiện banner. Thiếu device thì engine dùng profile basic.
+         * @description App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256 rồi gọi POST /decide trước khi trừ tiền. Mức 0 trừ và hoàn tất. Mức 1 tạo awaiting_confirmation, chưa trừ, intervention reminder. Mức 2 và 3 trừ sau khi đã có quyết định rồi giữ như trước. none, info và banner cho đi sau khi khách xác nhận mức 1. Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng: lúc đó chỉ là ghi chú info. medium giữ 30 phút. high giữ 24 giờ và chặn cho đến khi cúp máy. Header Idempotency-Key trả lại đúng lệnh đã tạo, không ghi nợ lần hai. /decide hết 300 ms hoặc lỗi thì chuyển bình thường và ghi log engine_unavailable. Từ 50 triệu tới người nhận mới thì vẫn hiện banner. Thiếu device thì engine dùng profile basic.
          *
          */
         post: operations["createTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfers/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Khách xác nhận tờ nhắc mức 1
+         * @description Chỉ lệnh awaiting_confirmation. Trừ tiền, ghi sổ, báo engine choice continue. Gọi lại không trừ lần hai.
+         *
+         */
+        post: operations["confirmLevel1Transfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfers/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Khách huỷ tờ nhắc mức 1
+         * @description Bỏ lệnh awaiting_confirmation. Không trừ tiền. Báo engine choice cancel.
+         */
+        post: operations["cancelLevel1Transfer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -464,6 +505,12 @@ export interface components {
          */
         TaskType: "saved_payee" | "new_typed" | "new_pasted" | "qr";
         /**
+         * @description Cách nhập người nhận mà model-v2.1 đã học. Ảnh chụp và ảnh tải lên dùng paste, vì số tới một lần.
+         *
+         * @enum {string}
+         */
+        AddMethod: "typed" | "paste" | "qr" | "contact";
+        /**
          * @description Cách đưa số người nhận vào ô, khi task_type là new_pasted. Không tham gia chấm điểm. Chỉ hiện trên thẻ bằng chứng.
          *
          * @enum {string}
@@ -498,7 +545,7 @@ export interface components {
          * @enum {string}
          */
         TransferPurpose: "authority_request" | "fee_to_receive" | "investment" | "refund_request" | "purchase" | "family_friends" | "debt_salary" | "other" | "not_asked";
-        /** @description Toàn vẹn thiết bị gửi kèm khối device trên /decide. additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input. Engine đọc state. integrity_verdict_at vẫn chưa đọc.
+        /** @description Toàn vẹn thiết bị gửi kèm khối device trên /decide. additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input. Engine đọc state. integrity_verdict_at vẫn chưa đọc. none là máy báo không ghi màn hình. unknown là không biết; engine không coi unknown là vắng. iOS gửi active_capture hoặc none. Android có thể gửi unknown.
          *      */
         DeviceIntegrity: {
             /** @enum {string} */
@@ -667,6 +714,13 @@ export interface components {
              */
             ts: string;
             task_type?: components["schemas"]["TaskType"];
+            add_method?: components["schemas"]["AddMethod"];
+            /** @description Hạn một lệnh từ Postgres. Engine dùng số này, không đọc Redis. */
+            limit_per_txn?: number;
+            /** @description Hạn ngày từ Postgres. */
+            limit_per_day?: number;
+            /** @description Tổng đã chuyển trong ngày, chưa gồm lệnh này. */
+            spent_today?: number;
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];
@@ -696,10 +750,11 @@ export interface components {
             entry_detail?: components["schemas"]["EntryDetail"] | null;
         };
         /**
-         * @description Kiểu màn hình v2.4. App dùng trường này cùng level 0–3.
+         * @description Kiểu màn hình v2.4. App dùng trường này cùng level 0–3. reminder là tờ mức 1 trên màn xác nhận, trước khi trừ tiền. Engine vẫn trả banner.
+         *
          * @enum {string}
          */
-        Intervention: "none" | "banner" | "three_button" | "security_workflow";
+        Intervention: "none" | "banner" | "reminder" | "three_button" | "security_workflow";
         /** @description Giữ các trường v2.1. Thêm level số 0–3, rules_fired, evidence_card và intervention. 0 proceed, 1 banner, 2 three-button verification, 3 security workflow (verified evidence only).
          *      */
         DecideResponse: {
@@ -729,7 +784,7 @@ export interface components {
             countdown_until: string | null;
         };
         /** @enum {string} */
-        UserChoice: "pause" | "cancel" | "continue";
+        UserChoice: "pause" | "cancel" | "continue" | "abandoned";
         UserChoiceRequest: {
             choice: components["schemas"]["UserChoice"];
             /** @description Mili giây từ lúc hiện can thiệp tới lúc bấm. Chỉ ghi cho nghiên cứu. Không đưa vào chấm điểm.
@@ -814,13 +869,14 @@ export interface components {
             times_paid: number;
         };
         /** @enum {string} */
-        TransferStatus: "done" | "needs_verification" | "held" | "blocked_pending_hangup" | "released" | "cancelled" | "pending_draft";
+        TransferStatus: "done" | "needs_verification" | "held" | "blocked_pending_hangup" | "released" | "cancelled" | "pending_draft" | "awaiting_confirmation" | "expired";
         TransferRequest: {
             from_account: string;
             to_account: string;
             amount: number;
             purpose_text?: string;
             task_type?: components["schemas"]["TaskType"];
+            add_method?: components["schemas"]["AddMethod"];
             call?: components["schemas"]["CallContext"];
             behaviour_features?: components["schemas"]["BehaviourFeatures"];
             transfer_purpose?: components["schemas"]["TransferPurpose"];
@@ -1319,6 +1375,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransferResponse"];
+                };
+            };
+        };
+    };
+    confirmLevel1Transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    response_ms?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Đã trừ và hoàn tất */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferResponse"];
+                };
+            };
+            /** @description Không phải lệnh mức 1 đang chờ */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelLevel1Transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    response_ms?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Đã huỷ, số dư không đổi */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferRespondResponse"];
+                };
+            };
+            /** @description Không phải lệnh mức 1 đang chờ */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

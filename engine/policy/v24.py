@@ -130,6 +130,7 @@ class Facts:
     same_task_sessions: int | None = None
     limit_per_txn: int | None = None
     limit_per_day: int | None = None
+    spent_today: int | None = None
     verified: list[dict] = field(default_factory=list)
     user_level_floor: int = 0
 
@@ -517,13 +518,24 @@ def _near_limit(amount: int, limits: list[int]) -> bool:
     return False
 
 
-def _limits(facts: Facts) -> list[int]:
+def _point_limits(facts: Facts) -> list[int]:
+    """Hạn một lệnh và mốc sinh trắc. Hạn ngày tính riêng, cộng số đã chuyển trong ngày."""
     found = [int(threshold("biometric_vnd"))]
     if facts.limit_per_txn:
         found.append(int(facts.limit_per_txn))
-    if facts.limit_per_day:
-        found.append(int(facts.limit_per_day))
     return found
+
+
+def _split_suspected(facts: Facts) -> bool:
+    amount = int(facts.amount)
+    if _near_limit(amount, _point_limits(facts)):
+        return True
+    if not facts.limit_per_day:
+        return False
+    spent = 0 if facts.spent_today is None else int(facts.spent_today)
+    if spent < 0:
+        spent = 0
+    return _near_limit(amount + spent, [int(facts.limit_per_day)])
 
 
 def _expire(doc: dict, now: datetime) -> None:
@@ -673,7 +685,7 @@ def evaluate(facts: Facts, state: MemoryState | RedisState | None = None, behavi
     _expire(doc, clock)
     signals, flags, funds = build_signals(facts, clock)
     baseline = _baseline(facts.same_task_sessions)
-    split = _near_limit(int(facts.amount), _limits(facts))
+    split = _split_suspected(facts)
     joined = _joins(doc, facts, signals, funds, clock)
     fired: list[dict] = []
     fired_ids: set[str] = set()
@@ -788,6 +800,13 @@ def _segment(row: dict) -> str:
     return text or "thường"
 
 
+def _body_int(body: dict, name: str) -> int | None:
+    value = body.get(name)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _opt_bool(row: dict, name: str) -> bool | None:
     if name not in row or row.get(name) is None:
         return None
@@ -805,10 +824,10 @@ def facts_from_row(body: dict, row: dict, probability: float, decided: datetime,
     else:
         funds = None
     verified = body.get("signals") if isinstance(body.get("signals"), list) else []
-    limit = limit_per_txn if limit_per_txn else None
-    if isinstance(body.get("limit_per_txn"), int):
-        limit = int(body["limit_per_txn"])
-    day = int(body["limit_per_day"]) if isinstance(body.get("limit_per_day"), int) else None
+    body_txn = _body_int(body, "limit_per_txn")
+    limit = body_txn if body_txn is not None else (limit_per_txn if limit_per_txn else None)
+    day = _body_int(body, "limit_per_day")
+    spent = _body_int(body, "spent_today")
     return Facts(
         sender=str(body.get("sender_hash") or ""),
         payee=str(body.get("payee_hash") or ""),
@@ -833,6 +852,7 @@ def facts_from_row(body: dict, row: dict, probability: float, decided: datetime,
         same_task_sessions=None,
         limit_per_txn=limit,
         limit_per_day=day,
+        spent_today=spent,
         verified=verified,
         user_level_floor=0,
     )

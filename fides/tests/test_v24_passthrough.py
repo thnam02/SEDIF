@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -584,4 +585,218 @@ def test_ledger_channel_unknown_does_not_count_and_branch_does(bank):
         _restore_transfer(SENDER, before, ("pytest-ledger-channel",))
         with psycopg.connect(DATABASE) as conn:
             conn.execute("DELETE FROM bank.products WHERE id = ANY(%s)", (list(ids),))
+            conn.commit()
+
+
+def _movement(account: str, tx_ids: list[str]) -> int:
+    with psycopg.connect(DATABASE) as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END), 0)
+            FROM bank.entries
+            WHERE account_id = %s AND tx_id = ANY(%s)
+            """,
+            (account, tx_ids),
+        ).fetchone()
+    return int(row[0])
+
+
+def _entry_count(tx_id: str) -> int:
+    with psycopg.connect(DATABASE) as conn:
+        row = conn.execute("SELECT COUNT(*) FROM bank.entries WHERE tx_id = %s", (tx_id,)).fetchone()
+    return int(row[0])
+
+
+def test_level_1_waits_without_a_debit_until_confirm(bank):
+    module, client, seen = bank
+    original = module.engine_post
+    before = _balance(SENDER)
+    payee_before = _balance(PAYEE)
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        seen.append((path, body))
+        if path == "/decide":
+            return {
+                "level": 1,
+                "intervention": "banner",
+                "funds_status": "released",
+                "hold_until": None,
+                "countdown_until": None,
+                "actions": [],
+                "reasons": [{"code": "call", "text": "Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới"}],
+                "signals_present": ["call_active"],
+                "rules_fired": ["R_CALL_NEWPAYEE"],
+                "evidence_card": {
+                    "signals": [],
+                    "reasons_vi": ["Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới"],
+                    "baseline_quality": "none",
+                    "episode_id": "",
+                },
+            }
+        if path.endswith("/choice"):
+            return {"decision_id": path.split("/")[2], "choice": body.get("choice"), "logged": True}
+        return {}
+
+    module.engine_post = engine_post
+    seen.clear()
+    try:
+        created = client.post(
+            "/transfer",
+            json={"from_account": SENDER, "to_account": PAYEE, "amount": 1000, "purpose_text": "pytest-level1-wait", "device": {"state": "none"}},
+        )
+        assert created.status_code == 200, created.text
+        waiting = created.json()
+        assert waiting["status"] == "awaiting_confirmation"
+        assert waiting["funds_status"] == "held"
+        assert waiting["decision"]["level"] == 1
+        assert waiting["decision"]["intervention"] == "reminder"
+        assert any(path == "/decide" for path, _body in seen)
+        assert _balance(SENDER) == before
+        assert _balance(PAYEE) == payee_before
+        assert _entry_count(waiting["transfer_id"]) == 0
+        assert _movement(SENDER, [waiting["transfer_id"]]) == 0
+        spent_before = next(body["spent_today"] for path, body in seen if path == "/decide")
+
+        confirmed = client.post(f"/transfers/{waiting['transfer_id']}/confirm", json={"response_ms": 800})
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["status"] == "done"
+        assert confirmed.json()["funds_status"] == "released"
+        assert _balance(SENDER) == before - 1000
+        assert _balance(PAYEE) == payee_before + 1000
+        assert _entry_count(waiting["transfer_id"]) == 2
+        assert _balance(SENDER) - before == _movement(SENDER, [waiting["transfer_id"]])
+        assert _balance(PAYEE) - payee_before == _movement(PAYEE, [waiting["transfer_id"]])
+        assert any(path.endswith("/choice") and body.get("choice") == "continue" and body.get("response_ms") == 800 for path, body in seen)
+
+        repeat = client.post(f"/transfers/{waiting['transfer_id']}/confirm", json={"response_ms": 1})
+        assert repeat.status_code == 200, repeat.text
+        assert _balance(SENDER) == before - 1000
+        assert _balance(PAYEE) == payee_before + 1000
+
+        seen.clear()
+        other = client.post(
+            "/transfer",
+            json={"from_account": SENDER, "to_account": PAYEE, "amount": 2000, "purpose_text": "pytest-level1-cancel", "device": {"state": "none"}},
+        )
+        assert other.status_code == 200, other.text
+        cancelled_id = other.json()["transfer_id"]
+        assert other.json()["status"] == "awaiting_confirmation"
+        assert next(body["spent_today"] for path, body in seen if path == "/decide") == spent_before + 1000
+        assert _balance(SENDER) == before - 1000
+        dropped = client.post(f"/transfers/{cancelled_id}/cancel", json={"response_ms": 100})
+        assert dropped.status_code == 200, dropped.text
+        assert dropped.json()["status"] == "cancelled"
+        assert _balance(SENDER) == before - 1000
+        assert _entry_count(cancelled_id) == 0
+        assert _movement(SENDER, [cancelled_id]) == 0
+        assert _balance(SENDER) - before == _movement(SENDER, [waiting["transfer_id"], cancelled_id])
+        assert any(path.endswith("/choice") and body.get("choice") == "cancel" for path, body in seen)
+        blocked = client.post(f"/transfers/{cancelled_id}/confirm", json={"response_ms": 0})
+        assert blocked.status_code == 409
+    finally:
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-level1-wait", "pytest-level1-cancel"))
+        _set_balance(PAYEE, payee_before)
+
+
+def test_level_1_expires_after_ten_minutes_and_cancel_frees_the_key(bank):
+    module, client, seen = bank
+    original = module.engine_post
+    before = _balance(SENDER)
+    clock = module.CLOCK
+    anchor = clock.now()
+    was_paused = clock.paused
+    feed = clock.feed
+    expire_key = "pytest-level1-expire"
+    reuse_key = "pytest-level1-reuse"
+
+    def engine_post(path: str, body: dict, timeout: float = 30) -> dict:
+        seen.append((path, body))
+        if path == "/decide":
+            return {
+                "level": 1,
+                "intervention": "banner",
+                "funds_status": "released",
+                "hold_until": None,
+                "countdown_until": None,
+                "actions": [],
+                "reasons": [{"code": "call", "text": "Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới"}],
+                "signals_present": ["call_active"],
+                "rules_fired": ["R_CALL_NEWPAYEE"],
+                "evidence_card": {
+                    "signals": [],
+                    "reasons_vi": ["Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới"],
+                    "baseline_quality": "none",
+                    "episode_id": "",
+                },
+            }
+        if path.endswith("/choice"):
+            return {"decision_id": path.split("/")[2], "choice": body.get("choice"), "logged": True}
+        return {}
+
+    def post(key: str, purpose: str, amount: int = 1500):
+        return client.post(
+            "/transfer",
+            headers={"Idempotency-Key": key},
+            json={"from_account": SENDER, "to_account": PAYEE, "amount": amount, "purpose_text": purpose, "device": {"state": "none"}},
+        )
+
+    module.engine_post = engine_post
+    seen.clear()
+    clock.pause()
+    try:
+        created = post(expire_key, "pytest-level1-expire")
+        assert created.status_code == 200, created.text
+        waiting = created.json()
+        first_id = waiting["transfer_id"]
+        assert waiting["status"] == "awaiting_confirmation"
+        spent_before = next(body["spent_today"] for path, body in seen if path == "/decide")
+        clock.advance(600)
+        held = post(expire_key, "pytest-level1-expire")
+        assert held.status_code == 200, held.text
+        assert held.json()["transfer_id"] == first_id
+        assert held.json()["status"] == "awaiting_confirmation"
+        clock.advance(1)
+        renewed = post(expire_key, "pytest-level1-expire")
+        assert renewed.status_code == 200, renewed.text
+        assert renewed.json()["transfer_id"] != first_id
+        assert renewed.json()["status"] == "awaiting_confirmation"
+        assert _balance(SENDER) == before
+        assert _entry_count(first_id) == 0
+        abandoned = [body for path, body in seen if str(path).endswith("/choice") and body.get("choice") == "abandoned"]
+        assert abandoned == [{"choice": "abandoned", "response_ms": 0}]
+        assert next(body["spent_today"] for path, body in reversed(seen) if path == "/decide") == spent_before
+        blocked = client.post(f"/transfers/{first_id}/confirm", json={"response_ms": 900})
+        assert blocked.status_code == 409
+        assert blocked.json()["detail"] == "Lệnh đã hết hạn, vui lòng thực hiện lại"
+        assert [body for path, body in seen if str(path).endswith("/choice") and body.get("choice") == "abandoned"] == abandoned
+        assert _balance(SENDER) == before
+
+        seen.clear()
+        clock.advance(1)
+        opened = post(reuse_key, "pytest-level1-reuse", 2500)
+        assert opened.status_code == 200, opened.text
+        opened_id = opened.json()["transfer_id"]
+        assert opened.json()["status"] == "awaiting_confirmation"
+        dropped = client.post(f"/transfers/{opened_id}/cancel", json={"response_ms": 40})
+        assert dropped.status_code == 200, dropped.text
+        assert dropped.json()["status"] == "cancelled"
+        assert any(str(path).endswith("/choice") and body.get("choice") == "cancel" and body.get("response_ms") == 40 for path, body in seen)
+        assert not any(body.get("choice") == "abandoned" for _, body in seen)
+        again = post(reuse_key, "pytest-level1-reuse", 2500)
+        assert again.status_code == 200, again.text
+        assert again.json()["transfer_id"] != opened_id
+        assert again.json()["status"] == "awaiting_confirmation"
+        assert _balance(SENDER) == before
+        assert _entry_count(opened_id) == 0
+        assert next(body["spent_today"] for path, body in seen if path == "/decide") == spent_before
+    finally:
+        clock.seek(anchor)
+        clock.paused = was_paused
+        clock.feed = feed
+        clock._real = time.monotonic()
+        module.engine_post = original
+        _restore_transfer(SENDER, before, ("pytest-level1-expire", "pytest-level1-reuse"))
+        with psycopg.connect(DATABASE) as conn:
+            conn.execute("DELETE FROM bank.idempotency WHERE key = ANY(%s)", ([expire_key, reuse_key],))
             conn.commit()

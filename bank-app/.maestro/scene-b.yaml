@@ -11,8 +11,11 @@ appId: com.hainamtran.saobank
 - tapOn:
     id: "call-stranger"
 - tapOn: "Tiết kiệm"
+- assertVisible: ".*150.000.000 đ.*"
 - tapOn: "Tất toán trước hạn"
+- assertVisible: ".*150.000.000 đ.*"
 - tapOn: "Tất toán trước hạn"
+- assertVisible: ".*150.000.000.*"
 - tapOn: "Về trang chủ"
 - tapOn: "Chuyển tiền"
 - tapOn:

@@ -65,7 +65,7 @@ export function SavingsDetail({ id }: { id: string }) {
 
 export function SavingsSettle() {
   const router = useRouter()
-  const [amount, setAmount] = useState("200000000")
+  const [amount, setAmount] = useState("150000000")
   const liquidate = useProduct("/savings/liquidate")
   return (
     <Screen call>

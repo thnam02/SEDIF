@@ -98,7 +98,8 @@ def isolate(accounts: tuple[str, ...]) -> None:
         for task in TASKS:
             redis("DEL", key_for(user, task))
     listed = ",".join(f"'{account}'" for account in accounts)
-    unfinished = "('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup')"
+    # released: giám hộ đã cho đi, tiền đã trừ. Cảnh sau của cùng khách phải thấy lại số dư đầu cảnh.
+    unfinished = "('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup', 'released')"
     # Lệnh chưa xong đã trừ số dư lúc ghi sổ. Xoá dòng mà không hoàn tiền thì cảnh sau hết số dư.
     subprocess.run(
         [
@@ -114,6 +115,10 @@ def isolate(accounts: tuple[str, ...]) -> None:
             "-v",
             "ON_ERROR_STOP=1",
             "-c",
+            f"UPDATE bank.accounts a SET balance = a.balance - s.amount FROM ("
+            f"SELECT to_account, SUM(amount) AS amount FROM bank.transfers "
+            f"WHERE from_account IN ({listed}) AND status = 'released' AND posted GROUP BY to_account"
+            f") s WHERE a.id = s.to_account;"
             f"UPDATE bank.accounts a SET balance = a.balance + s.amount FROM ("
             f"SELECT from_account, SUM(amount) AS amount FROM bank.transfers "
             f"WHERE from_account IN ({listed}) AND status IN {unfinished} GROUP BY from_account"
@@ -131,6 +136,14 @@ def isolate(accounts: tuple[str, ...]) -> None:
             f"DELETE FROM bank.idempotency WHERE transfer_id IN ("
             f"SELECT id FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished});"
             f"DELETE FROM bank.transfers WHERE from_account IN ({listed}) AND status IN {unfinished};"
+            f"DELETE FROM bank.idempotency WHERE transfer_id IN ("
+            f"SELECT id FROM bank.transfers WHERE from_account IN ({listed}) AND status IN ('awaiting_confirmation', 'expired'));"
+            f"DELETE FROM bank.transfers WHERE from_account IN ({listed}) AND status IN ('awaiting_confirmation', 'expired');"
+            f"UPDATE bank.accounts a SET balance = a.balance + s.amount, "
+            f"status = CASE WHEN a.account_type = 'savings' THEN 'open' ELSE a.status END FROM ("
+            f"SELECT account_id, SUM(amount) AS amount FROM bank.entries "
+            f"WHERE account_id IN ({listed}) AND direction = 'out' AND left(tx_id, 2) = 'P-' "
+            f"GROUP BY account_id) s WHERE a.id = s.account_id;"
             f"UPDATE bank.accounts a SET balance = a.balance - s.amount FROM ("
             f"SELECT account_id, SUM(amount) AS amount FROM bank.entries "
             f"WHERE account_id IN ({listed}) AND direction = 'in' AND left(tx_id, 2) = 'P-' "

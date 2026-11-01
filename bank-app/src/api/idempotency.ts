@@ -8,3 +8,8 @@ export async function transferKey(from: string, to: string, amount: number): Pro
   await SecureStore.setItemAsync(name, created)
   return created
 }
+
+export async function forgetTransferKey(from: string, to: string, amount: number): Promise<void> {
+  const name = `idem-${from}-${to}-${amount}`.slice(0, 120)
+  await SecureStore.deleteItemAsync(name)
+}

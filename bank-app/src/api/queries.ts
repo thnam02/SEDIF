@@ -84,6 +84,7 @@ export function useTransfer() {
       amount: number
       note: string
       task_type: components["schemas"]["TaskType"]
+      add_method: components["schemas"]["AddMethod"]
       call: components["schemas"]["CallContext"]
       behaviour_features: components["schemas"]["BehaviourFeatures"]
       transfer_purpose: components["schemas"]["TransferPurpose"]
@@ -101,6 +102,7 @@ export function useTransfer() {
             amount: input.amount,
             purpose_text: input.note || undefined,
             task_type: input.task_type,
+            add_method: input.add_method,
             call: input.call,
             behaviour_features: input.behaviour_features,
             transfer_purpose: input.transfer_purpose,
@@ -112,6 +114,53 @@ export function useTransfer() {
       )
     },
     onSuccess: (_data, input) => refreshAccount(client, input.from),
+  })
+}
+
+async function rejectBank(response: Response, fallback: string): Promise<never> {
+  let detail = fallback
+  try {
+    const body = await response.json()
+    if (body && typeof body.detail === "string" && body.detail) detail = body.detail
+  } catch {
+    detail = fallback
+  }
+  const error = new Error(detail) as Error & { status: number }
+  error.status = response.status
+  throw error
+}
+
+export function useConfirmLevel1() {
+  const accountId = useBank((state) => state.accountId) ?? ""
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { id: string; responseMs: number }) => {
+      const response = await fetch(`${BANK_URL}/transfers/${input.id}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response_ms: input.responseMs }),
+      })
+      if (!response.ok) await rejectBank(response, "confirm")
+      return response.json() as Promise<{ transfer_id: string; status: string; funds_status: string }>
+    },
+    onSuccess: () => refreshAccount(client, accountId),
+  })
+}
+
+export function useCancelLevel1() {
+  const accountId = useBank((state) => state.accountId) ?? ""
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { id: string; responseMs: number }) => {
+      const response = await fetch(`${BANK_URL}/transfers/${input.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response_ms: input.responseMs }),
+      })
+      if (!response.ok) await rejectBank(response, "cancel")
+      return response.json() as Promise<{ transfer_id: string; status: string }>
+    },
+    onSuccess: () => refreshAccount(client, accountId),
   })
 }
 

@@ -129,6 +129,15 @@ def insert_decision(conn, row: dict) -> bool:
     return found is not None
 
 
+def reject_choice(choice: object, response_ms: object) -> bool:
+    """pause, cancel, continue là khách bấm. abandoned là lệnh mức 1 hết hạn, không phải huỷ."""
+    if choice not in {"pause", "cancel", "continue", "abandoned"}:
+        return True
+    if isinstance(response_ms, bool) or not isinstance(response_ms, int):
+        return True
+    return response_ms < 0
+
+
 def record_choice(conn, decision_id: str, choice: str, response_ms: int) -> bool:
     row = conn.execute(
         "SELECT level, funds_status, hold_until, countdown_until FROM decisions WHERE decision_id = %s",

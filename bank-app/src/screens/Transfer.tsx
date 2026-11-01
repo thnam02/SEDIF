@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from "react"
-import { InputAccessoryView, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native"
-import { useRouter } from "expo-router"
+import { Alert, AppState, InputAccessoryView, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native"
+import { useNavigation, useRouter } from "expo-router"
 import { AlertTriangle, Camera, Check, ChevronDown, ClipboardPaste, Contact, CreditCard, Image as ImageIcon, QrCode, Receipt, Search, ShieldCheck, TrendingUp, Wallet, X } from "lucide-react-native"
 import { FidesCallNotice, FidesSession, sessionRecorder, useAccountInput } from "fides-sdk"
 
 import { BANK_URL } from "../api/client"
-import { useAccount, useBeneficiaries, useChoice, usePurposePolicy, useTransfer } from "../api/queries"
+import { useAccount, useBeneficiaries, useCancelLevel1, useChoice, useConfirmLevel1, usePurposePolicy, useTransfer } from "../api/queries"
+import { forgetTransferKey } from "../api/idempotency"
 import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
-import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, presentStamp, reasonLine, showAccount, vnd } from "../format"
+import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, payeeLine, presentStamp, reasonLine, showAccount, vnd } from "../format"
 import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
+import { addMethod } from "../addMethod"
+import { deviceState } from "../deviceState"
+import { level1AppStateCancels, level1ConfirmRejected, level1OnLeave } from "../level1Leave"
+import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
 
@@ -386,10 +391,39 @@ export function ConfirmScreen() {
   const devCapture = useBank((state) => state.devCapture)
   const devGuided = useBank((state) => state.devGuided)
   const transfer = useTransfer()
+  const confirmLevel1 = useConfirmLevel1()
+  const cancelLevel1 = useCancelLevel1()
+  const remindedAt = useRef(Date.now())
+  const settled = useRef(false)
+  const [reminder, setReminder] = useState<{ transferId: string; reasons: string[] } | null>(null)
+  const navigation = useNavigation()
+  const cancelRef = useRef(cancelLevel1)
+  cancelRef.current = cancelLevel1
+  useEffect(() => {
+    if (!reminder) return
+    const id = reminder.transferId
+    const abandon = (event: "navigation" | "background" | "unmount") => {
+      const decision = level1OnLeave(event)
+      if (settled.current || decision.request !== "cancel") return
+      settled.current = true
+      cancelRef.current.mutate({ id, responseMs: Math.max(0, Date.now() - remindedAt.current) })
+      if (decision.forgetKey) void forgetTransferKey(accountId, toAccount, amount)
+      if (event === "background") router.back()
+    }
+    const unsub = navigation.addListener("beforeRemove", () => abandon("navigation"))
+    const sub = AppState.addEventListener("change", (next) => {
+      if (level1AppStateCancels(next)) abandon("background")
+    })
+    return () => {
+      unsub()
+      sub.remove()
+      abandon("unmount")
+    }
+    // Chỉ gắn lại khi bảng nhắc mới mở. Đổi phụ thuộc mỗi render sẽ huỷ nhầm lệnh.
+  }, [reminder])
   const saved = useBeneficiaries(accountId)
   const policy = usePurposePolicy()
   const type = useType()
-  const [banner, setBanner] = useState<string | null>(null)
   useEffect(() => { sessionRecorder.note({ type: "screen_enter", screen: "confirm" }) }, [])
   const known = (saved.data?.beneficiaries ?? []).some((item) => item.account_id === toAccount)
   const threshold = policy.data?.purpose_amount_vnd ?? 10_000_000
@@ -426,9 +460,70 @@ export function ConfirmScreen() {
           <Text style={{ color: colors.warn, fontSize: type.small }}>{copy.face}</Text>
         </View>
       ) : null}
-      {banner ? <Text testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{banner}</Text> : null}
-      {banner ? <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} /> : (
-      <Button
+      {reminder ? (
+        <View style={{ gap: 12 }}>
+          {reminder.reasons.map((line) => (
+            <Text key={line} testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{line}</Text>
+          ))}
+          <Button testID="level-1-continue" label={copy.level1Continue} onPress={() => {
+            if (confirmLevel1.isPending || settled.current) return
+            confirmLevel1.mutate(
+              { id: reminder.transferId, responseMs: Math.max(0, Date.now() - remindedAt.current) },
+              {
+                onSuccess: () => {
+                  settled.current = true
+                  setOutcome({
+                    transferId: reminder.transferId,
+                    decisionId: `dec-${reminder.transferId}`,
+                    status: "done",
+                    level: 1,
+                    engineLevel: 1,
+                    intervention: "reminder",
+                    actions: [],
+                    reasons: reminder.reasons.map((text) => ({ code: "shown", text })),
+                    reasonsVi: reminder.reasons,
+                    signalsPresent: [],
+                    funds_status: "released",
+                    gate: "none",
+                    hold_until: null,
+                    countdown_until: null,
+                    payee: toAccount,
+                    payeeName: resolved || toName,
+                    amount,
+                  })
+                  router.replace("/(main)/transfer/result")
+                },
+                onError: (error) => {
+                  const status = "status" in error ? Number((error as { status?: number }).status) : 0
+                  const rejected = level1ConfirmRejected(status, error.message)
+                  if (!rejected?.back) return
+                  settled.current = true
+                  if (rejected.forgetKey) void forgetTransferKey(accountId, toAccount, amount)
+                  Alert.alert(rejected.message)
+                  setReminder(null)
+                  router.back()
+                },
+              },
+            )
+          }} />
+          <Button testID="level-1-cancel" outline label={copy.level1Cancel} onPress={() => {
+            if (cancelLevel1.isPending || settled.current) return
+            settled.current = true
+            cancelLevel1.mutate(
+              { id: reminder.transferId, responseMs: Math.max(0, Date.now() - remindedAt.current) },
+              {
+                onSuccess: () => {
+                  void forgetTransferKey(accountId, toAccount, amount)
+                  setReminder(null)
+                  router.back()
+                },
+              },
+            )
+          }} />
+          {confirmLevel1.isError || cancelLevel1.isError ? <Text style={{ color: colors.danger }}>{copy.accountLoadError}</Text> : null}
+        </View>
+      ) : null}
+      {reminder ? null : <Button
         testID="confirm-transfer"
         label={copy.confirm}
         onPress={() => {
@@ -436,7 +531,7 @@ export function ConfirmScreen() {
           const call = FidesSession.callBlock()
           const session = sessionRecorder.end()
           const behaviour = devGuided ? GUIDED_FEATURES : session.behaviour_features
-          const device = { ...FidesSession.collectSignals(), state: (devCapture ? "active_capture" : "unknown") as "active_capture" | "unknown" }
+          const device = { ...FidesSession.collectSignals(), state: deviceState(FidesSession.screenCaptured(), devCapture) }
           rememberSession({ task_type: session.task_type, call, behaviour_features: behaviour })
           const experiment = session.experiment
           if (experiment && session.raw_events) {
@@ -457,6 +552,7 @@ export function ConfirmScreen() {
               amount,
               note,
               task_type: session.task_type,
+              add_method: addMethod(session.task_type, entryDetail),
               call,
               behaviour_features: behaviour,
               transfer_purpose: askPurpose && purpose ? purpose : "not_asked",
@@ -467,18 +563,26 @@ export function ConfirmScreen() {
             {
               onSuccess: (result) => {
                 const card = result.decision.evidence_card
+                console.log(JSON.stringify({
+                  kind: "transfer",
+                  transfer_id: result.transfer_id,
+                  status: result.status,
+                  funds_status: result.funds_status,
+                  level: result.decision.level,
+                  intervention: result.decision.intervention ?? null,
+                  rules_fired: result.decision.rules_fired ?? [],
+                  reasons: result.decision.reasons ?? [],
+                }))
                 if (card && entryDetail) card.entry_detail = entryDetail
-                if (experiment) {
-                  console.log(JSON.stringify({
-                    experiment,
-                    level: result.decision.level,
-                    engine_level: result.decision.level,
-                    rules_fired: result.decision.rules_fired ?? [],
-                    evidence_card: card ?? null,
-                  }))
-                }
                 const engineLevel = result.decision.level
-                const reasonsVi = (card?.reasons_vi ?? []).map(reasonLine).filter(Boolean)
+                const reasonsVi = (card?.reasons_vi ?? result.decision.reasons.map((reason) => reason.text) ?? []).map(reasonLine).filter(Boolean)
+                if (result.status === "awaiting_confirmation") {
+                  remindedAt.current = Date.now()
+                  setReminder({ transferId: result.transfer_id, reasons: reasonsVi })
+                  return
+                }
+                const route = resultRoute(engineLevel, result.decision.intervention)
+                console.log(JSON.stringify({ kind: "route", route }))
                 setOutcome({
                   transferId: result.transfer_id,
                   decisionId: `dec-${result.transfer_id}`,
@@ -487,7 +591,7 @@ export function ConfirmScreen() {
                   engineLevel,
                   intervention: result.decision.intervention ?? (engineLevel === 3 ? "security_workflow" : engineLevel === 2 ? "three_button" : engineLevel === 1 ? "banner" : "none"),
                   actions: result.decision.actions,
-                  reasons: result.decision.reasons.map((reason) => ({ ...reason, text: reasonLine(reason.text) })),
+                  reasons: (result.decision.reasons ?? []).map((reason) => ({ ...reason, text: reasonLine(reason.text) })),
                   reasonsVi,
                   signalsPresent: result.decision.signals_present ?? [],
                   funds_status: experiment ? "released" : result.funds_status,
@@ -499,17 +603,12 @@ export function ConfirmScreen() {
                   amount,
                   experiment: Boolean(experiment),
                 })
-                if (!experiment && engineLevel === 1) {
-                  setBanner(reasonsVi.join(" "))
-                  return
-                }
                 router.replace("/(main)/transfer/result")
               },
             },
           )
         }}
-      />
-      )}
+      />}
       {transfer.isError ? <Text style={{ color: colors.danger }}>{transfer.error.message}</Text> : null}
     </Screen>
   )
@@ -542,7 +641,8 @@ export function ResultScreen() {
     )
   }
   const who = payeeName(outcome.payeeName, outcome.payee)
-  if (outcome.engineLevel === 3 || outcome.intervention === "security_workflow") {
+  const route = resultRoute(outcome.engineLevel, outcome.intervention)
+  if (route === "security") {
     return (
       <Screen call>
         <View testID="level-3" style={{ gap: 16 }}>
@@ -568,7 +668,7 @@ export function ResultScreen() {
       </Screen>
     )
   }
-  if (outcome.engineLevel === 2 || outcome.intervention === "three_button") {
+  if (route === "three_button") {
     return (
       <Screen call>
         <View testID="level-2" style={{ gap: 16 }}>
@@ -627,7 +727,10 @@ export function ResultScreen() {
         </View>
         <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.success}</Text>
         <Text style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }}>{vnd(outcome.amount)}</Text>
-        <Text style={{ color: "#64748B", fontSize: type.body }}>{who} · {copy.bankName} · {showAccount(outcome.payee)}</Text>
+        <Text style={{ color: "#64748B", fontSize: type.body }}>{payeeLine([who, copy.bankName, showAccount(outcome.payee)])}</Text>
+        {route === "success_reminder" ? outcome.reasonsVi.map((line) => (
+          <Text key={line} testID="level-1-line" style={{ color: colors.navy, fontSize: type.body, textAlign: "center" }}>{line}</Text>
+        )) : null}
         <Button label={copy.homeButton} onPress={() => router.replace("/(main)/(tabs)")} />
       </View>
     </Screen>

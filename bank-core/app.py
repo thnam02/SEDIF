@@ -310,24 +310,61 @@ def credit(conn, account: str, amount: int) -> None:
     conn.execute("UPDATE bank.accounts SET balance = balance + %s WHERE id = %s", (amount, account))
 
 
-def debit(conn, account: str, amount: int, now: datetime) -> None:
-    row = conn.execute("SELECT balance, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s", (account,)).fetchone()
-    if row is None:
-        raise HTTPException(404, "không có tài khoản")
-    if int(row["balance"]) < amount:
-        raise HTTPException(400, "không đủ số dư")
-    if amount > int(row["limit_per_txn"]):
-        raise HTTPException(400, "vượt hạn mức giao dịch")
+ADD_METHODS = frozenset({"typed", "paste", "qr", "contact"})
+
+
+def add_method_for(task_type: str | None, entry_detail: str | None, explicit: str | None) -> str | None:
+    """Cách nhập mà model-v2.1 đã học. Ảnh không có cột riêng, nên dùng paste."""
+    if explicit in ADD_METHODS:
+        return explicit
+    if entry_detail in {"paste", "image_capture", "image_upload"}:
+        return "paste"
+    if task_type == "qr":
+        return "qr"
+    if task_type == "saved_payee":
+        return "contact"
+    if task_type == "new_pasted":
+        return "paste"
+    if task_type == "new_typed":
+        return "typed"
+    return None
+
+
+def spent_today(conn, account: str, now: datetime) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     spent = conn.execute(
         """
         SELECT COALESCE(SUM(amount), 0) AS n FROM bank.transfers
-        WHERE from_account = %s AND created_at >= %s AND status <> 'cancelled'
+        WHERE from_account = %s AND created_at >= %s
+          AND status NOT IN ('cancelled', 'awaiting_confirmation', 'expired')
         """,
         (account, start),
     ).fetchone()
-    if int(spent["n"]) + amount > int(row["limit_per_day"]):
+    return int(spent["n"])
+
+
+def load_account(conn, account: str):
+    row = conn.execute(
+        "SELECT balance, segment, has_guardian, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s",
+        (account,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "không có tài khoản")
+    return row
+
+
+def reject_if_cannot_pay(row, amount: int, spent: int) -> None:
+    if int(row["balance"]) < amount:
+        raise HTTPException(400, "không đủ số dư")
+    if amount > int(row["limit_per_txn"]):
+        raise HTTPException(400, "vượt hạn mức giao dịch")
+    if spent + amount > int(row["limit_per_day"]):
         raise HTTPException(400, "vượt hạn mức ngày")
+
+
+def debit(conn, account: str, amount: int, now: datetime) -> None:
+    row = load_account(conn, account)
+    reject_if_cannot_pay(row, amount, spent_today(conn, account, now))
     conn.execute("UPDATE bank.accounts SET balance = balance - %s WHERE id = %s", (amount, account))
 
 
@@ -415,6 +452,8 @@ class TransferIn(BaseModel):
     purpose_text: str | None = None
     device: dict | None = None
     task_type: Literal["saved_payee", "new_typed", "new_pasted", "qr"] | None = None
+    add_method: Literal["typed", "paste", "qr", "contact"] | None = None
+    entry_detail: Literal["paste", "image_capture", "image_upload"] | None = None
     call: CallIn | None = None
     behaviour_features: BehaviourIn | None = None
     transfer_purpose: Literal[
@@ -440,6 +479,10 @@ class ExperimentSessionIn(BaseModel):
     call: CallIn
     behaviour_features: BehaviourIn
     raw_events: list[dict] | None = None
+
+
+class Level1Action(BaseModel):
+    response_ms: int = 0
 
 
 class RespondIn(BaseModel):
@@ -472,7 +515,7 @@ class GuardianIn(BaseModel):
 
 
 class ChoiceIn(BaseModel):
-    choice: Literal["pause", "cancel", "continue"]
+    choice: Literal["pause", "cancel", "continue", "abandoned"]
     response_ms: int
 
 
@@ -1035,28 +1078,50 @@ def transfer(
     now = CLOCK.now()
     key = (idempotency_key or "").strip() or None
     if key:
-        with connect() as conn:
-            prior = conn.execute("SELECT response FROM bank.idempotency WHERE key = %s", (key,)).fetchone()
-        if prior is not None:
-            stored = prior["response"]
-            return stored if isinstance(stored, dict) else json.loads(stored)
+        stored, abandoned_id = _take_replay(key, now)
+        if abandoned_id:
+            log_choice(abandoned_id, "abandoned", 0)
+        if stored is not None:
+            return stored
     session = touch_session(body.from_account, body.device, now)
     with connect() as conn:
-        debit(conn, body.from_account, body.amount, now)
-        balance = conn.execute("SELECT balance, segment, has_guardian FROM bank.accounts WHERE id = %s", (body.from_account,)).fetchone()
+        account = load_account(conn, body.from_account)
+        spent = spent_today(conn, body.from_account, now)
+        reject_if_cannot_pay(account, body.amount, spent)
         transfer_id = _next_id("X")
         decision_id = f"dec-{transfer_id}"
+        method = add_method_for(body.task_type, body.entry_detail, body.add_method)
+        if method:
+            try:
+                engine_post(
+                    "/events",
+                    {
+                        "type": "payee_add",
+                        "ts": _us(now),
+                        "account": account_hash(body.from_account),
+                        "payee": account_hash(body.to_account),
+                        "method": method,
+                    },
+                    timeout=DECIDE_TIMEOUT_S,
+                )
+            except EngineUnavailable:
+                log.warning("payee_add failed")
         request = {
             "decision_id": decision_id,
             "profile": "advanced",
             "sender_hash": account_hash(body.from_account),
             "payee_hash": account_hash(body.to_account),
             "amount": body.amount,
-            "balance": int(balance["balance"]) + body.amount,
+            "balance": int(account["balance"]),
             "ts": now.isoformat(),
             "session_id": session,
             "score_request": True,
+            "limit_per_txn": int(account["limit_per_txn"]),
+            "limit_per_day": int(account["limit_per_day"]),
+            "spent_today": spent,
         }
+        if method:
+            request["add_method"] = method
         if body.device is not None:
             request["device"] = body.device
         for field in ("task_type", "call", "behaviour_features", "transfer_purpose", "experiment"):
@@ -1086,8 +1151,13 @@ def transfer(
             log.info("experiment decision %s", json.dumps(record, ensure_ascii=False))
             funds = "released"
             decided["hold_until"] = None
-        hung = False
-        status = "done" if experiment is not None else status_of(level, funds, hung)
+        waiting = level == 1 and experiment is None
+        if waiting:
+            funds = "held"
+            status = "awaiting_confirmation"
+        else:
+            debit(conn, body.from_account, body.amount, now)
+            status = "done" if experiment is not None else status_of(level, funds, False)
         conn.execute(
             """
             INSERT INTO bank.transfers
@@ -1113,10 +1183,11 @@ def transfer(
                 now,
             ),
         )
-        entry(conn, body.from_account, transfer_id, now, "out", body.amount, "transfer", body.purpose_text or "", status, body.to_account)
-        stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer_id,)).fetchone()
-        if funds == "released":
-            release_payee(conn, stored, now)
+        if not waiting:
+            entry(conn, body.from_account, transfer_id, now, "out", body.amount, "transfer", body.purpose_text or "", status, body.to_account)
+            stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer_id,)).fetchone()
+            if funds == "released":
+                release_payee(conn, stored, now)
         if experiment is not None:
             _save_experiment_decision(conn, body, decided, now)
         if level == 2 and experiment is None and _guardian_consented(conn, body.from_account):
@@ -1129,12 +1200,15 @@ def transfer(
             )
             log.info("guardian notify mock account=%s transfer=%s", body.from_account, transfer_id)
         conn.commit()
+    decision = _decision_payload(level, decided)
+    if waiting:
+        decision["intervention"] = "reminder"
     result = {
         "transfer_id": transfer_id,
         "status": status,
         "funds_status": funds,
         "hold_until": decided.get("hold_until"),
-        "decision": _decision_payload(level, decided),
+        "decision": decision,
     }
     if key:
         with connect() as conn:
@@ -1151,6 +1225,190 @@ def transfer(
         stored = prior["response"]
         return stored if isinstance(stored, dict) else json.loads(stored)
     return result
+
+
+EXPIRED_DETAIL = "Lệnh đã hết hạn, vui lòng thực hiện lại"
+LEVEL1_TTL = timedelta(minutes=10)
+
+
+def _drop_idempotency(conn, transfer_id: str) -> None:
+    conn.execute("DELETE FROM bank.idempotency WHERE transfer_id = %s", (transfer_id,))
+
+
+def _mark_expired(conn, transfer: dict, now: datetime) -> str:
+    """fresh, expired_now, or expired. Hết hạn không trừ tiền."""
+    if transfer["status"] == "expired":
+        _drop_idempotency(conn, transfer["id"])
+        return "expired"
+    if transfer["status"] != "awaiting_confirmation":
+        return "fresh"
+    created = transfer["created_at"]
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=now.tzinfo or ICT)
+    if now - created <= LEVEL1_TTL:
+        return "fresh"
+    conn.execute(
+        """
+        UPDATE bank.transfers
+        SET status = 'expired', funds_status = 'cancelled'
+        WHERE id = %s AND status = 'awaiting_confirmation'
+        """,
+        (transfer["id"],),
+    )
+    _drop_idempotency(conn, transfer["id"])
+    return "expired_now"
+
+
+def _take_replay(key: str, now: datetime) -> tuple[dict | None, str | None]:
+    """Trả lệnh đã lưu, hoặc decision_id vừa hết hạn để ghi abandoned rồi tạo lệnh mới."""
+    with connect() as conn:
+        prior = conn.execute(
+            "SELECT transfer_id, response FROM bank.idempotency WHERE key = %s",
+            (key,),
+        ).fetchone()
+        if prior is None:
+            return None, None
+        row = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (prior["transfer_id"],)).fetchone()
+        if row is None:
+            stored = prior["response"]
+            return stored if isinstance(stored, dict) else json.loads(stored), None
+        state = _mark_expired(conn, row, now)
+        if state == "fresh":
+            stored = prior["response"]
+            return stored if isinstance(stored, dict) else json.loads(stored), None
+        decision_id = row["decision_id"] if state == "expired_now" else None
+        conn.commit()
+        return None, decision_id
+
+
+def log_choice(decision_id: str | None, choice: str, response_ms: int) -> None:
+    if not decision_id:
+        return
+    try:
+        engine_post(
+            f"/decisions/{decision_id}/choice",
+            {"choice": choice, "response_ms": max(0, int(response_ms))},
+        )
+    except EngineUnavailable as exc:
+        log.warning("choice not logged: %s", exc)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            log.warning("choice not logged: %s", exc.detail)
+
+
+def _level1_decision(transfer: dict) -> dict:
+    reasons = transfer["reasons"] if isinstance(transfer["reasons"], list) else json.loads(transfer["reasons"] or "[]")
+    actions = transfer["actions"] if isinstance(transfer["actions"], list) else json.loads(transfer["actions"] or "[]")
+    return {
+        "level": 1,
+        "actions": actions,
+        "reasons": reasons,
+        "signals_present": [],
+        "rules_fired": [],
+        "evidence_card": {"signals": [], "reasons_vi": [], "baseline_quality": "none", "episode_id": ""},
+        "intervention": "reminder",
+    }
+
+
+def _settle_level1(conn, transfer: dict, now: datetime) -> None:
+    debit(conn, transfer["from_account"], int(transfer["amount"]), now)
+    entry(
+        conn,
+        transfer["from_account"],
+        transfer["id"],
+        now,
+        "out",
+        int(transfer["amount"]),
+        "transfer",
+        transfer["purpose_text"] or "",
+        "done",
+        transfer["to_account"],
+    )
+    conn.execute(
+        "UPDATE bank.transfers SET funds_status = 'released', status = 'done' WHERE id = %s",
+        (transfer["id"],),
+    )
+    stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer["id"],)).fetchone()
+    release_payee(conn, stored, now)
+
+
+@app.post("/transfers/{transfer_id}/confirm")
+def confirm_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
+    """Mức 1: trừ tiền và hoàn tất. Gọi lại trả cùng kết quả, không trừ lần hai."""
+    now = CLOCK.now()
+    response_ms = 0 if body is None else body.response_ms
+    if response_ms < 0:
+        raise HTTPException(400, "response_ms không hợp lệ")
+    abandoned = False
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (transfer_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có lệnh")
+        if transfer["status"] == "done" and int(transfer["level"] or 0) == 1:
+            conn.commit()
+            return {
+                "transfer_id": transfer_id,
+                "status": "done",
+                "funds_status": "released",
+                "hold_until": None,
+                "decision": _level1_decision(transfer),
+            }
+        state = _mark_expired(conn, transfer, now)
+        if state != "fresh":
+            abandoned = state == "expired_now"
+            conn.commit()
+        elif transfer["status"] != "awaiting_confirmation":
+            raise HTTPException(409, "chỉ lệnh mức 1 đang chờ mới xác nhận được")
+        else:
+            _settle_level1(conn, transfer, now)
+            conn.commit()
+            log_choice(transfer["decision_id"], "continue", response_ms)
+            return {
+                "transfer_id": transfer_id,
+                "status": "done",
+                "funds_status": "released",
+                "hold_until": None,
+                "decision": _level1_decision(transfer),
+            }
+    if abandoned:
+        log_choice(transfer["decision_id"], "abandoned", response_ms)
+    raise HTTPException(409, EXPIRED_DETAIL)
+
+
+@app.post("/transfers/{transfer_id}/cancel")
+def cancel_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
+    """Mức 1: bỏ lệnh. Chưa trừ tiền."""
+    response_ms = 0 if body is None else body.response_ms
+    if response_ms < 0:
+        raise HTTPException(400, "response_ms không hợp lệ")
+    now = CLOCK.now()
+    abandoned = False
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (transfer_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có lệnh")
+        state = _mark_expired(conn, transfer, now)
+        if state != "fresh":
+            abandoned = state == "expired_now"
+            conn.commit()
+        elif transfer["status"] == "cancelled" and int(transfer["level"] or 0) == 1:
+            _drop_idempotency(conn, transfer_id)
+            conn.commit()
+            return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
+        elif transfer["status"] != "awaiting_confirmation":
+            raise HTTPException(409, "chỉ lệnh mức 1 đang chờ mới huỷ được")
+        else:
+            conn.execute(
+                "UPDATE bank.transfers SET funds_status = 'cancelled', status = 'cancelled' WHERE id = %s",
+                (transfer_id,),
+            )
+            _drop_idempotency(conn, transfer_id)
+            conn.commit()
+            log_choice(transfer["decision_id"], "cancel", response_ms)
+            return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
+    if abandoned:
+        log_choice(transfer["decision_id"], "abandoned", response_ms)
+    return {"transfer_id": transfer_id, "status": "expired", "funds_status": "cancelled"}
 
 
 def _decision_payload(level: int, decided: dict) -> dict:
@@ -1340,9 +1598,89 @@ def _product(body: ProductIn, kind: str, tx_type: str) -> dict:
     return {"id": product_id, "status": "done"}
 
 
+def _savings_book(conn, checking_id: str):
+    """Sổ tiết kiệm đang mở của cùng khách. Không có sổ thì tất toán chỉ ghi có, như các bài test."""
+    return conn.execute(
+        """
+        SELECT s.id, s.balance
+        FROM bank.accounts s
+        JOIN bank.accounts c ON c.customer_id = s.customer_id
+        WHERE c.id = %s
+          AND s.id <> c.id
+          AND s.account_type = 'savings'
+          AND s.status = 'open'
+          AND s.balance > 0
+        ORDER BY s.balance DESC
+        LIMIT 1
+        """,
+        (checking_id,),
+    ).fetchone()
+
+
 @app.post("/savings/liquidate")
 def liquidate(body: ProductIn) -> dict:
-    return _product(body, "savings_liquidation", "savings_liquidation")
+    """Tất toán một lần: trừ sổ, ghi có đúng một dòng vào tài khoản thanh toán, báo engine.
+
+    Lần gọi sau cùng tài khoản, loại và số tiền trả về dòng đã có, không cộng thêm.
+    """
+    now = CLOCK.now()
+    touch_session(body.account_id, body.device, now)
+    fresh = False
+    with connect() as conn:
+        found = conn.execute(
+            """
+            SELECT tx_id FROM bank.entries
+            WHERE account_id = %s AND tx_type = 'savings_liquidation' AND direction = 'in'
+              AND amount = %s AND left(tx_id, 2) = 'P-'
+            ORDER BY ts DESC
+            LIMIT 1
+            """,
+            (body.account_id, body.amount),
+        ).fetchone()
+        if found:
+            product_id = found["tx_id"]
+        else:
+            book = _savings_book(conn, body.account_id)
+            if book is not None and int(book["balance"]) < body.amount:
+                raise HTTPException(400, "không đủ số dư")
+            fresh = True
+            product_id = f"P-{uuid.uuid4().hex[:16]}"
+            if book is not None:
+                updated = conn.execute(
+                    """
+                    UPDATE bank.accounts
+                    SET balance = balance - %s
+                    WHERE id = %s AND status = 'open' AND balance >= %s
+                    RETURNING balance
+                    """,
+                    (body.amount, book["id"], body.amount),
+                ).fetchone()
+                if updated is None:
+                    raise HTTPException(400, "không đủ số dư")
+                if int(updated["balance"]) == 0:
+                    conn.execute("UPDATE bank.accounts SET status = 'closed' WHERE id = %s", (book["id"],))
+                entry(conn, book["id"], product_id, now, "out", body.amount, "savings_liquidation", "savings_liquidation", "done")
+            credit(conn, body.account_id, body.amount)
+            entry(conn, body.account_id, product_id, now, "in", body.amount, "savings_liquidation", "savings_liquidation", "done")
+            conn.execute(
+                "INSERT INTO bank.products (id, account_id, amount, kind, ts, channel) VALUES (%s,%s,%s,'savings_liquidation',%s,'app')",
+                (product_id, body.account_id, body.amount, now),
+            )
+            conn.commit()
+    if fresh:
+        post_ledger(
+            {
+                "event_id": f"product:{product_id}",
+                "type": "product",
+                "ts": now.isoformat(),
+                "account_hash": account_hash(body.account_id),
+                "product_type": "savings_liquidation",
+                "tx_type": "savings_liquidation",
+                "amount": body.amount,
+                "session_id": f"demo-{body.account_id}",
+            }
+        )
+    return {"id": product_id, "status": "done"}
 
 
 @app.post("/loan")
@@ -1400,6 +1738,28 @@ def record_choice(decision_id: str, body: ChoiceIn) -> dict:
     now = CLOCK.now()
     if body.response_ms < 0:
         raise HTTPException(400, "response_ms không hợp lệ")
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE decision_id = %s FOR UPDATE", (decision_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có quyết định")
+        state = _mark_expired(conn, transfer, now)
+        if state != "fresh":
+            conn.commit()
+    if state != "fresh":
+        if state == "expired_now":
+            log_choice(transfer["decision_id"], "abandoned", body.response_ms)
+        raise HTTPException(409, EXPIRED_DETAIL)
+    if transfer["status"] == "awaiting_confirmation":
+        raise HTTPException(409, "lệnh mức 1 đang chờ xác nhận")
+    if body.choice == "abandoned":
+        log_choice(decision_id, body.choice, body.response_ms)
+        return {
+            "decision_id": decision_id,
+            "choice": body.choice,
+            "logged": True,
+            "status": transfer["status"],
+            "funds_status": transfer["funds_status"],
+        }
     try:
         engine_post(f"/decisions/{decision_id}/choice", {"choice": body.choice, "response_ms": body.response_ms})
     except EngineUnavailable as exc:

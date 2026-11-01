@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import CallKit
+import UIKit
 
 /// Delegate giữ bởi module. CXCallObserver chỉ giữ weak reference.
 final class FidesCallDelegate: NSObject, CXCallObserverDelegate {
@@ -25,10 +26,12 @@ public class FidesModule: Module {
   private var lastDirection: String?
   private var simulated: Bool?
   private var simulatedVoip = false
+  private var screenCaptured = false
+  private var captureObserver: NSObjectProtocol?
 
   public func definition() -> ModuleDefinition {
     Name("Fides")
-    Events("onCallStateChanged")
+    Events("onCallStateChanged", "onCaptureChanged")
 
     Function("getCallState") { () -> [String: Any] in
       self.snapshot()
@@ -40,6 +43,14 @@ public class FidesModule: Module {
 
     Function("beginSession") {
       self.beginSession()
+      self.startCaptureWatch()
+    }
+
+    Function("getScreenCaptured") { () -> Bool in
+      self.startCaptureWatch()
+      let captured = self.readCaptured()
+      self.screenCaptured = captured
+      return captured
     }
 
     Function("reconcile") { () -> [String: Any] in
@@ -56,6 +67,35 @@ public class FidesModule: Module {
     OnStopObserving {
       self.delegate.onChange = nil
       self.observer.setDelegate(nil, queue: nil)
+    }
+  }
+
+  /// Đọc trên main. AirPlay cũng làm isCaptured thành true.
+  private func readCaptured() -> Bool {
+    if Thread.isMainThread {
+      return UIScreen.main.isCaptured
+    }
+    var captured = false
+    DispatchQueue.main.sync {
+      captured = UIScreen.main.isCaptured
+    }
+    return captured
+  }
+
+  private func startCaptureWatch() {
+    if captureObserver != nil {
+      return
+    }
+    screenCaptured = readCaptured()
+    captureObserver = NotificationCenter.default.addObserver(
+      forName: UIScreen.capturedDidChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self else { return }
+      let captured = UIScreen.main.isCaptured
+      self.screenCaptured = captured
+      self.sendEvent("onCaptureChanged", ["captured": captured])
     }
   }
 
