@@ -78,6 +78,10 @@ export function maskAccount(id: string): string {
   return tail ? `•••• ${tail}` : ""
 }
 
+export function payeeLine(parts: Array<string | null | undefined>): string {
+  return parts.map((part) => (part ?? "").trim()).filter(Boolean).join(" · ")
+}
+
 /** Một kiểu câu: chữ đầu viết hoa, kết thúc bằng dấu chấm. */
 export function reasonLine(text: string): string {
   const trimmed = text.trim().replace(/\s+/g, " ")

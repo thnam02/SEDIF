@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { DEMO_CLOCK, groupAccount, isHeld, maskAccount, movementTitle, parseTransferDraft, presentHistory, presentStamp, reasonLine, showAccount, when } from "./format.ts"
+import { DEMO_CLOCK, groupAccount, isHeld, maskAccount, movementTitle, parseTransferDraft, payeeLine, presentHistory, presentStamp, reasonLine, showAccount, when } from "./format.ts"
 
 test("when shows the Ho Chi Minh clock", () => {
   const stamp = when("2026-09-18T11:03:58+00:00")
@@ -35,6 +35,9 @@ test("reason lines share one sentence style", () => {
   assert.equal(reasonLine("Giao dịch khác thường so với lịch sử của bạn"), "Giao dịch khác thường so với lịch sử của bạn.")
   assert.equal(reasonLine("Màn hình đang bị ghi hoặc chiếu."), "Màn hình đang bị ghi hoặc chiếu.")
   assert.equal(reasonLine("quét mã QR"), "Quét mã QR.")
+  assert.equal(payeeLine(["Mai Phương Thảo", "BVC bank", "0902 102 002"]), "Mai Phương Thảo · BVC bank · 0902 102 002")
+  assert.equal(payeeLine(["", "BVC bank", "0902 102 002"]), "BVC bank · 0902 102 002")
+  assert.equal(payeeLine([null, "  ", "0902"]), "0902")
 })
 
 test("history dates shift by the same number of days and keep real gaps", () => {

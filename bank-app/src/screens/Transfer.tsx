@@ -11,7 +11,7 @@ import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
 import { copy } from "../copy/vi"
-import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, presentStamp, reasonLine, showAccount, vnd } from "../format"
+import { digits, displayDigits, grouped, maskAccount, parseTransferDraft, payeeLine, presentStamp, reasonLine, showAccount, vnd } from "../format"
 import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
 import { addMethod } from "../addMethod"
@@ -688,7 +688,7 @@ export function ResultScreen() {
         </View>
         <Text style={{ color: colors.navy, fontSize: type.title, fontWeight: "700" }}>{copy.success}</Text>
         <Text style={{ color: colors.deep, fontSize: 30, fontWeight: "700" }}>{vnd(outcome.amount)}</Text>
-        <Text style={{ color: "#64748B", fontSize: type.body }}>{who} · {copy.bankName} · {showAccount(outcome.payee)}</Text>
+        <Text style={{ color: "#64748B", fontSize: type.body }}>{payeeLine([who, copy.bankName, showAccount(outcome.payee)])}</Text>
         {route === "success_reminder" ? outcome.reasonsVi.map((line) => (
           <Text key={line} testID="level-1-line" style={{ color: colors.navy, fontSize: type.body, textAlign: "center" }}>{line}</Text>
         )) : null}
