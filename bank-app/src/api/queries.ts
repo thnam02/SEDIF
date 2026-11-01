@@ -117,6 +117,19 @@ export function useTransfer() {
   })
 }
 
+async function rejectBank(response: Response, fallback: string): Promise<never> {
+  let detail = fallback
+  try {
+    const body = await response.json()
+    if (body && typeof body.detail === "string" && body.detail) detail = body.detail
+  } catch {
+    detail = fallback
+  }
+  const error = new Error(detail) as Error & { status: number }
+  error.status = response.status
+  throw error
+}
+
 export function useConfirmLevel1() {
   const accountId = useBank((state) => state.accountId) ?? ""
   const client = useQueryClient()
@@ -127,7 +140,7 @@ export function useConfirmLevel1() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response_ms: input.responseMs }),
       })
-      if (!response.ok) throw new Error("confirm")
+      if (!response.ok) await rejectBank(response, "confirm")
       return response.json() as Promise<{ transfer_id: string; status: string; funds_status: string }>
     },
     onSuccess: () => refreshAccount(client, accountId),
@@ -144,7 +157,7 @@ export function useCancelLevel1() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response_ms: input.responseMs }),
       })
-      if (!response.ok) throw new Error("cancel")
+      if (!response.ok) await rejectBank(response, "cancel")
       return response.json() as Promise<{ transfer_id: string; status: string }>
     },
     onSuccess: () => refreshAccount(client, accountId),

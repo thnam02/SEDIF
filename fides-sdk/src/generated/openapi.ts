@@ -784,7 +784,7 @@ export interface components {
             countdown_until: string | null;
         };
         /** @enum {string} */
-        UserChoice: "pause" | "cancel" | "continue";
+        UserChoice: "pause" | "cancel" | "continue" | "abandoned";
         UserChoiceRequest: {
             choice: components["schemas"]["UserChoice"];
             /** @description Mili giây từ lúc hiện can thiệp tới lúc bấm. Chỉ ghi cho nghiên cứu. Không đưa vào chấm điểm.
@@ -869,7 +869,7 @@ export interface components {
             times_paid: number;
         };
         /** @enum {string} */
-        TransferStatus: "done" | "needs_verification" | "held" | "blocked_pending_hangup" | "released" | "cancelled" | "pending_draft" | "awaiting_confirmation";
+        TransferStatus: "done" | "needs_verification" | "held" | "blocked_pending_hangup" | "released" | "cancelled" | "pending_draft" | "awaiting_confirmation" | "expired";
         TransferRequest: {
             from_account: string;
             to_account: string;

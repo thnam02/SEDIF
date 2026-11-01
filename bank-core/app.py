@@ -336,7 +336,7 @@ def spent_today(conn, account: str, now: datetime) -> int:
         """
         SELECT COALESCE(SUM(amount), 0) AS n FROM bank.transfers
         WHERE from_account = %s AND created_at >= %s
-          AND status NOT IN ('cancelled', 'awaiting_confirmation')
+          AND status NOT IN ('cancelled', 'awaiting_confirmation', 'expired')
         """,
         (account, start),
     ).fetchone()
@@ -515,7 +515,7 @@ class GuardianIn(BaseModel):
 
 
 class ChoiceIn(BaseModel):
-    choice: Literal["pause", "cancel", "continue"]
+    choice: Literal["pause", "cancel", "continue", "abandoned"]
     response_ms: int
 
 
@@ -1078,11 +1078,11 @@ def transfer(
     now = CLOCK.now()
     key = (idempotency_key or "").strip() or None
     if key:
-        with connect() as conn:
-            prior = conn.execute("SELECT response FROM bank.idempotency WHERE key = %s", (key,)).fetchone()
-        if prior is not None:
-            stored = prior["response"]
-            return stored if isinstance(stored, dict) else json.loads(stored)
+        stored, abandoned_id = _take_replay(key, now)
+        if abandoned_id:
+            log_choice(abandoned_id, "abandoned", 0)
+        if stored is not None:
+            return stored
     session = touch_session(body.from_account, body.device, now)
     with connect() as conn:
         account = load_account(conn, body.from_account)
@@ -1227,6 +1227,60 @@ def transfer(
     return result
 
 
+EXPIRED_DETAIL = "Lệnh đã hết hạn, vui lòng thực hiện lại"
+LEVEL1_TTL = timedelta(minutes=10)
+
+
+def _drop_idempotency(conn, transfer_id: str) -> None:
+    conn.execute("DELETE FROM bank.idempotency WHERE transfer_id = %s", (transfer_id,))
+
+
+def _mark_expired(conn, transfer: dict, now: datetime) -> str:
+    """fresh, expired_now, or expired. Hết hạn không trừ tiền."""
+    if transfer["status"] == "expired":
+        _drop_idempotency(conn, transfer["id"])
+        return "expired"
+    if transfer["status"] != "awaiting_confirmation":
+        return "fresh"
+    created = transfer["created_at"]
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=now.tzinfo or ICT)
+    if now - created <= LEVEL1_TTL:
+        return "fresh"
+    conn.execute(
+        """
+        UPDATE bank.transfers
+        SET status = 'expired', funds_status = 'cancelled'
+        WHERE id = %s AND status = 'awaiting_confirmation'
+        """,
+        (transfer["id"],),
+    )
+    _drop_idempotency(conn, transfer["id"])
+    return "expired_now"
+
+
+def _take_replay(key: str, now: datetime) -> tuple[dict | None, str | None]:
+    """Trả lệnh đã lưu, hoặc decision_id vừa hết hạn để ghi abandoned rồi tạo lệnh mới."""
+    with connect() as conn:
+        prior = conn.execute(
+            "SELECT transfer_id, response FROM bank.idempotency WHERE key = %s",
+            (key,),
+        ).fetchone()
+        if prior is None:
+            return None, None
+        row = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (prior["transfer_id"],)).fetchone()
+        if row is None:
+            stored = prior["response"]
+            return stored if isinstance(stored, dict) else json.loads(stored), None
+        state = _mark_expired(conn, row, now)
+        if state == "fresh":
+            stored = prior["response"]
+            return stored if isinstance(stored, dict) else json.loads(stored), None
+        decision_id = row["decision_id"] if state == "expired_now" else None
+        conn.commit()
+        return None, decision_id
+
+
 def log_choice(decision_id: str | None, choice: str, response_ms: int) -> None:
     if not decision_id:
         return
@@ -1285,6 +1339,7 @@ def confirm_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
     response_ms = 0 if body is None else body.response_ms
     if response_ms < 0:
         raise HTTPException(400, "response_ms không hợp lệ")
+    abandoned = False
     with connect() as conn:
         transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (transfer_id,)).fetchone()
         if transfer is None:
@@ -1298,18 +1353,26 @@ def confirm_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
                 "hold_until": None,
                 "decision": _level1_decision(transfer),
             }
-        if transfer["status"] != "awaiting_confirmation":
+        state = _mark_expired(conn, transfer, now)
+        if state != "fresh":
+            abandoned = state == "expired_now"
+            conn.commit()
+        elif transfer["status"] != "awaiting_confirmation":
             raise HTTPException(409, "chỉ lệnh mức 1 đang chờ mới xác nhận được")
-        _settle_level1(conn, transfer, now)
-        conn.commit()
-    log_choice(transfer["decision_id"], "continue", response_ms)
-    return {
-        "transfer_id": transfer_id,
-        "status": "done",
-        "funds_status": "released",
-        "hold_until": None,
-        "decision": _level1_decision(transfer),
-    }
+        else:
+            _settle_level1(conn, transfer, now)
+            conn.commit()
+            log_choice(transfer["decision_id"], "continue", response_ms)
+            return {
+                "transfer_id": transfer_id,
+                "status": "done",
+                "funds_status": "released",
+                "hold_until": None,
+                "decision": _level1_decision(transfer),
+            }
+    if abandoned:
+        log_choice(transfer["decision_id"], "abandoned", response_ms)
+    raise HTTPException(409, EXPIRED_DETAIL)
 
 
 @app.post("/transfers/{transfer_id}/cancel")
@@ -1318,22 +1381,34 @@ def cancel_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
     response_ms = 0 if body is None else body.response_ms
     if response_ms < 0:
         raise HTTPException(400, "response_ms không hợp lệ")
+    now = CLOCK.now()
+    abandoned = False
     with connect() as conn:
         transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (transfer_id,)).fetchone()
         if transfer is None:
             raise HTTPException(404, "không có lệnh")
-        if transfer["status"] == "cancelled" and int(transfer["level"] or 0) == 1:
+        state = _mark_expired(conn, transfer, now)
+        if state != "fresh":
+            abandoned = state == "expired_now"
+            conn.commit()
+        elif transfer["status"] == "cancelled" and int(transfer["level"] or 0) == 1:
+            _drop_idempotency(conn, transfer_id)
             conn.commit()
             return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
-        if transfer["status"] != "awaiting_confirmation":
+        elif transfer["status"] != "awaiting_confirmation":
             raise HTTPException(409, "chỉ lệnh mức 1 đang chờ mới huỷ được")
-        conn.execute(
-            "UPDATE bank.transfers SET funds_status = 'cancelled', status = 'cancelled' WHERE id = %s",
-            (transfer_id,),
-        )
-        conn.commit()
-    log_choice(transfer["decision_id"], "cancel", response_ms)
-    return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
+        else:
+            conn.execute(
+                "UPDATE bank.transfers SET funds_status = 'cancelled', status = 'cancelled' WHERE id = %s",
+                (transfer_id,),
+            )
+            _drop_idempotency(conn, transfer_id)
+            conn.commit()
+            log_choice(transfer["decision_id"], "cancel", response_ms)
+            return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
+    if abandoned:
+        log_choice(transfer["decision_id"], "abandoned", response_ms)
+    return {"transfer_id": transfer_id, "status": "expired", "funds_status": "cancelled"}
 
 
 def _decision_payload(level: int, decided: dict) -> dict:
@@ -1663,6 +1738,28 @@ def record_choice(decision_id: str, body: ChoiceIn) -> dict:
     now = CLOCK.now()
     if body.response_ms < 0:
         raise HTTPException(400, "response_ms không hợp lệ")
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE decision_id = %s FOR UPDATE", (decision_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có quyết định")
+        state = _mark_expired(conn, transfer, now)
+        if state != "fresh":
+            conn.commit()
+    if state != "fresh":
+        if state == "expired_now":
+            log_choice(transfer["decision_id"], "abandoned", body.response_ms)
+        raise HTTPException(409, EXPIRED_DETAIL)
+    if transfer["status"] == "awaiting_confirmation":
+        raise HTTPException(409, "lệnh mức 1 đang chờ xác nhận")
+    if body.choice == "abandoned":
+        log_choice(decision_id, body.choice, body.response_ms)
+        return {
+            "decision_id": decision_id,
+            "choice": body.choice,
+            "logged": True,
+            "status": transfer["status"],
+            "funds_status": transfer["funds_status"],
+        }
     try:
         engine_post(f"/decisions/{decision_id}/choice", {"choice": body.choice, "response_ms": body.response_ms})
     except EngineUnavailable as exc:
@@ -1675,8 +1772,6 @@ def record_choice(decision_id: str, body: ChoiceIn) -> dict:
         transfer = conn.execute("SELECT * FROM bank.transfers WHERE decision_id = %s", (decision_id,)).fetchone()
         if transfer is None:
             raise HTTPException(404, "không có quyết định")
-        if transfer["status"] == "awaiting_confirmation":
-            raise HTTPException(409, "lệnh mức 1 đang chờ xác nhận")
         funds = transfer["funds_status"]
         if body.choice == "cancel":
             funds = "cancelled"

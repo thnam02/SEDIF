@@ -18,6 +18,7 @@ from engine.audit import (
     insert_decision,
     insert_response,
     record_choice,
+    reject_choice,
     list_decisions,
     load_state,
     reset_countdown,
@@ -516,7 +517,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             choice = body.get("choice")
             response_ms = body.get("response_ms")
-            if choice not in {"pause", "cancel", "continue"} or not isinstance(response_ms, int) or isinstance(response_ms, bool) or response_ms < 0:
+            if reject_choice(choice, response_ms):
                 _bad(self, 400, "choice hoặc response_ms không hợp lệ")
                 return
             with audit_conn() as conn:

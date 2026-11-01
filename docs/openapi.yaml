@@ -14,7 +14,9 @@ info:
     POST /decisions/{id}/choice ghi response_ms và áp dụng pause, cancel, continue.
     Bản 2.4.2: bank-core gọi /decide trước khi trừ tiền. Mức 1 là awaiting_confirmation,
     chưa trừ, intervention reminder. POST /transfers/{id}/confirm trừ và hoàn tất.
-    POST /transfers/{id}/cancel bỏ lệnh. iOS gửi device.state none khi không ghi màn hình.
+    POST /transfers/{id}/cancel bỏ lệnh. Lệnh awaiting_confirmation quá 10 phút
+    thành expired, không trừ tiền, và engine ghi choice abandoned. iOS gửi
+    device.state none khi không ghi màn hình.
 servers:
   - url: http://localhost:8081
     description: FIDES Engine
@@ -685,7 +687,8 @@ paths:
       summary: Khách xác nhận tờ nhắc mức 1
       description: >
         Chỉ lệnh awaiting_confirmation. Trừ tiền, ghi sổ, báo engine choice continue.
-        Gọi lại không trừ lần hai.
+        Gọi lại không trừ lần hai. Quá 10 phút thì hết hạn, không trừ, và trả 409
+        "Lệnh đã hết hạn, vui lòng thực hiện lại".
       parameters:
         - name: id
           in: path
@@ -719,7 +722,9 @@ paths:
       tags: [Bank core]
       operationId: cancelLevel1Transfer
       summary: Khách huỷ tờ nhắc mức 1
-      description: Bỏ lệnh awaiting_confirmation. Không trừ tiền. Báo engine choice cancel.
+      description: >
+        Bỏ lệnh awaiting_confirmation. Không trừ tiền. Báo engine choice cancel.
+        Quá 10 phút thì thành expired và choice abandoned, không ghi cancel.
       parameters:
         - name: id
           in: path
@@ -1605,7 +1610,7 @@ components:
           description: Hung_up ở high cộng 10 phút. Cuộc gọi mới tính lại. Proceed trước mốc này không nhả tiền.
     UserChoice:
       type: string
-      enum: [pause, cancel, continue]
+      enum: [pause, cancel, continue, abandoned]
     UserChoiceRequest:
       type: object
       additionalProperties: false
@@ -1773,7 +1778,7 @@ components:
           minimum: 0
     TransferStatus:
       type: string
-      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled, pending_draft, awaiting_confirmation]
+      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled, pending_draft, awaiting_confirmation, expired]
     TransferRequest:
       type: object
       required: [from_account, to_account, amount]

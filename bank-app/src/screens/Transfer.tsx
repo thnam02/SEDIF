@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import { InputAccessoryView, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native"
-import { useRouter } from "expo-router"
+import { Alert, AppState, InputAccessoryView, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native"
+import { useNavigation, useRouter } from "expo-router"
 import { AlertTriangle, Camera, Check, ChevronDown, ClipboardPaste, Contact, CreditCard, Image as ImageIcon, QrCode, Receipt, Search, ShieldCheck, TrendingUp, Wallet, X } from "lucide-react-native"
 import { FidesCallNotice, FidesSession, sessionRecorder, useAccountInput } from "fides-sdk"
 
@@ -16,6 +16,7 @@ import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
 import { addMethod } from "../addMethod"
 import { deviceState } from "../deviceState"
+import { level1ConfirmRejected, level1OnLeave } from "../level1Leave"
 import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -393,7 +394,33 @@ export function ConfirmScreen() {
   const confirmLevel1 = useConfirmLevel1()
   const cancelLevel1 = useCancelLevel1()
   const remindedAt = useRef(Date.now())
+  const settled = useRef(false)
   const [reminder, setReminder] = useState<{ transferId: string; reasons: string[] } | null>(null)
+  const navigation = useNavigation()
+  const cancelRef = useRef(cancelLevel1)
+  cancelRef.current = cancelLevel1
+  useEffect(() => {
+    if (!reminder) return
+    const id = reminder.transferId
+    const abandon = (event: "navigation" | "background" | "unmount") => {
+      const decision = level1OnLeave(event)
+      if (settled.current || decision.request !== "cancel") return
+      settled.current = true
+      cancelRef.current.mutate({ id, responseMs: Math.max(0, Date.now() - remindedAt.current) })
+      if (decision.forgetKey) void forgetTransferKey(accountId, toAccount, amount)
+      if (event === "background") router.back()
+    }
+    const unsub = navigation.addListener("beforeRemove", () => abandon("navigation"))
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "background") abandon("background")
+    })
+    return () => {
+      unsub()
+      sub.remove()
+      abandon("unmount")
+    }
+    // Chỉ gắn lại khi bảng nhắc mới mở. Đổi phụ thuộc mỗi render sẽ huỷ nhầm lệnh.
+  }, [reminder])
   const saved = useBeneficiaries(accountId)
   const policy = usePurposePolicy()
   const type = useType()
@@ -439,11 +466,12 @@ export function ConfirmScreen() {
             <Text key={line} testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{line}</Text>
           ))}
           <Button testID="level-1-continue" label={copy.level1Continue} onPress={() => {
-            if (confirmLevel1.isPending) return
+            if (confirmLevel1.isPending || settled.current) return
             confirmLevel1.mutate(
               { id: reminder.transferId, responseMs: Math.max(0, Date.now() - remindedAt.current) },
               {
                 onSuccess: () => {
+                  settled.current = true
                   setOutcome({
                     transferId: reminder.transferId,
                     decisionId: `dec-${reminder.transferId}`,
@@ -465,11 +493,22 @@ export function ConfirmScreen() {
                   })
                   router.replace("/(main)/transfer/result")
                 },
+                onError: (error) => {
+                  const status = "status" in error ? Number((error as { status?: number }).status) : 0
+                  const rejected = level1ConfirmRejected(status, error.message)
+                  if (!rejected?.back) return
+                  settled.current = true
+                  if (rejected.forgetKey) void forgetTransferKey(accountId, toAccount, amount)
+                  Alert.alert(rejected.message)
+                  setReminder(null)
+                  router.back()
+                },
               },
             )
           }} />
           <Button testID="level-1-cancel" outline label={copy.level1Cancel} onPress={() => {
-            if (cancelLevel1.isPending) return
+            if (cancelLevel1.isPending || settled.current) return
+            settled.current = true
             cancelLevel1.mutate(
               { id: reminder.transferId, responseMs: Math.max(0, Date.now() - remindedAt.current) },
               {
