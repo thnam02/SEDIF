@@ -39,6 +39,17 @@ appId: com.hainamtran.saobank
     direction: DOWN
 - tapOn:
     id: "confirm-transfer"
+- scrollUntilVisible:
+    element:
+      id: "level-1-continue"
+    direction: DOWN
+- assertVisible: "Tiếp tục chuyển"
+- assertVisible: "Huỷ"
+- assertVisible: ".*Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới.*"
+- assertNotVisible: "Chuyển tiền thành công"
+- tapOn:
+    id: "level-1-continue"
+- assertVisible: "Chuyển tiền thành công"
 - assertVisible: ".*Bạn đang trong cuộc gọi và chuyển tiền cho người nhận mới.*"
 - assertNotVisible: "Tạm dừng để xác minh"
 - assertNotVisible: "Giao dịch đang được ngân hàng xem xét"

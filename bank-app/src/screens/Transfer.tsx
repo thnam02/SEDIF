@@ -5,7 +5,8 @@ import { AlertTriangle, Camera, Check, ChevronDown, ClipboardPaste, Contact, Cre
 import { FidesCallNotice, FidesSession, sessionRecorder, useAccountInput } from "fides-sdk"
 
 import { BANK_URL } from "../api/client"
-import { useAccount, useBeneficiaries, useChoice, usePurposePolicy, useTransfer } from "../api/queries"
+import { useAccount, useBeneficiaries, useCancelLevel1, useChoice, useConfirmLevel1, usePurposePolicy, useTransfer } from "../api/queries"
+import { forgetTransferKey } from "../api/idempotency"
 import { GUIDED_FEATURES } from "../dev/guided"
 import { rememberSession } from "../dev/lastSession"
 import { uploadExperiment } from "../dev/upload"
@@ -389,6 +390,10 @@ export function ConfirmScreen() {
   const devCapture = useBank((state) => state.devCapture)
   const devGuided = useBank((state) => state.devGuided)
   const transfer = useTransfer()
+  const confirmLevel1 = useConfirmLevel1()
+  const cancelLevel1 = useCancelLevel1()
+  const remindedAt = useRef(Date.now())
+  const [reminder, setReminder] = useState<{ transferId: string; reasons: string[] } | null>(null)
   const saved = useBeneficiaries(accountId)
   const policy = usePurposePolicy()
   const type = useType()
@@ -428,7 +433,58 @@ export function ConfirmScreen() {
           <Text style={{ color: colors.warn, fontSize: type.small }}>{copy.face}</Text>
         </View>
       ) : null}
-      <Button
+      {reminder ? (
+        <View style={{ gap: 12 }}>
+          {reminder.reasons.map((line) => (
+            <Text key={line} testID="level-1-line" style={{ color: colors.navy, fontSize: type.body }}>{line}</Text>
+          ))}
+          <Button testID="level-1-continue" label={copy.level1Continue} onPress={() => {
+            if (confirmLevel1.isPending) return
+            confirmLevel1.mutate(
+              { id: reminder.transferId, responseMs: Math.max(0, Date.now() - remindedAt.current) },
+              {
+                onSuccess: () => {
+                  setOutcome({
+                    transferId: reminder.transferId,
+                    decisionId: `dec-${reminder.transferId}`,
+                    status: "done",
+                    level: 1,
+                    engineLevel: 1,
+                    intervention: "reminder",
+                    actions: [],
+                    reasons: reminder.reasons.map((text) => ({ code: "shown", text })),
+                    reasonsVi: reminder.reasons,
+                    signalsPresent: [],
+                    funds_status: "released",
+                    gate: "none",
+                    hold_until: null,
+                    countdown_until: null,
+                    payee: toAccount,
+                    payeeName: resolved || toName,
+                    amount,
+                  })
+                  router.replace("/(main)/transfer/result")
+                },
+              },
+            )
+          }} />
+          <Button testID="level-1-cancel" outline label={copy.level1Cancel} onPress={() => {
+            if (cancelLevel1.isPending) return
+            cancelLevel1.mutate(
+              { id: reminder.transferId, responseMs: Math.max(0, Date.now() - remindedAt.current) },
+              {
+                onSuccess: () => {
+                  void forgetTransferKey(accountId, toAccount, amount)
+                  setReminder(null)
+                  router.back()
+                },
+              },
+            )
+          }} />
+          {confirmLevel1.isError || cancelLevel1.isError ? <Text style={{ color: colors.danger }}>{copy.accountLoadError}</Text> : null}
+        </View>
+      ) : null}
+      {reminder ? null : <Button
         testID="confirm-transfer"
         label={copy.confirm}
         onPress={() => {
@@ -480,7 +536,12 @@ export function ConfirmScreen() {
                 }))
                 if (card && entryDetail) card.entry_detail = entryDetail
                 const engineLevel = result.decision.level
-                const reasonsVi = (card?.reasons_vi ?? []).map(reasonLine).filter(Boolean)
+                const reasonsVi = (card?.reasons_vi ?? result.decision.reasons.map((reason) => reason.text) ?? []).map(reasonLine).filter(Boolean)
+                if (result.status === "awaiting_confirmation") {
+                  remindedAt.current = Date.now()
+                  setReminder({ transferId: result.transfer_id, reasons: reasonsVi })
+                  return
+                }
                 const route = resultRoute(engineLevel, result.decision.intervention)
                 console.log(JSON.stringify({ kind: "route", route }))
                 setOutcome({
@@ -508,7 +569,7 @@ export function ConfirmScreen() {
             },
           )
         }}
-      />
+      />}
       {transfer.isError ? <Text style={{ color: colors.danger }}>{transfer.error.message}</Text> : null}
     </Screen>
   )

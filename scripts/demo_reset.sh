@@ -151,7 +151,7 @@ WHERE transfer_id IN (
         'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
         'A0031239'
     )
-      AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup')
+      AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup', 'awaiting_confirmation')
 );
 DELETE FROM bank.transfers
 WHERE from_account IN (
@@ -160,7 +160,7 @@ WHERE from_account IN (
     'A0002845', 'A0051289', 'A0072782', 'A0078375', 'A0097589',
     'A0031239'
 )
-  AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup');
+  AND status IN ('pending_draft', 'needs_verification', 'held', 'blocked_pending_hangup', 'awaiting_confirmation');
 SQL
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 FIDES_ROOT="$ROOT" python3 - <<'PY'

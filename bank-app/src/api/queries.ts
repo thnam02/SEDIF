@@ -117,6 +117,40 @@ export function useTransfer() {
   })
 }
 
+export function useConfirmLevel1() {
+  const accountId = useBank((state) => state.accountId) ?? ""
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { id: string; responseMs: number }) => {
+      const response = await fetch(`${BANK_URL}/transfers/${input.id}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response_ms: input.responseMs }),
+      })
+      if (!response.ok) throw new Error("confirm")
+      return response.json() as Promise<{ transfer_id: string; status: string; funds_status: string }>
+    },
+    onSuccess: () => refreshAccount(client, accountId),
+  })
+}
+
+export function useCancelLevel1() {
+  const accountId = useBank((state) => state.accountId) ?? ""
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { id: string; responseMs: number }) => {
+      const response = await fetch(`${BANK_URL}/transfers/${input.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response_ms: input.responseMs }),
+      })
+      if (!response.ok) throw new Error("cancel")
+      return response.json() as Promise<{ transfer_id: string; status: string }>
+    },
+    onSuccess: () => refreshAccount(client, accountId),
+  })
+}
+
 export function usePurposePolicy() {
   return useQuery({
     queryKey: ["purpose-policy"],

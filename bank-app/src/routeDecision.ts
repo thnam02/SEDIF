@@ -21,6 +21,13 @@ function routeForIntervention(intervention: string | null | undefined): ResultRo
   return "success"
 }
 
+/** Trước khi trừ tiền. Mức 1 là tờ nhắc. Mức 0 trừ và xong. Mức 2 và 3 giữ lệnh. */
+export function confirmOutcome(level: number): "settle" | "reminder" | "hold" {
+  if (level >= 2) return "hold"
+  if (level === 1) return "reminder"
+  return "settle"
+}
+
 /** Màn sau khi xác nhận. Mức số và kiểu can thiệp cùng trỏ một màn; mức cao hơn thắng. */
 export function resultRoute(level: number, intervention?: string | null): ResultRoute {
   const fromLevel = routeForLevel(level)

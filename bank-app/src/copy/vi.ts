@@ -146,6 +146,8 @@ export const copy = {
   ] as const,
   level2Check: "Tạm dừng để kiểm tra",
   level2Title: "Tạm dừng để xác minh",
+  level1Continue: "Tiếp tục chuyển",
+  level1Cancel: "Huỷ",
   level2Cancel: "Huỷ",
   level2Continue: "Tiếp tục",
   level2Body: "Nếu ai đó đang hướng dẫn bạn qua điện thoại, kể cả người tự nhận là công an hay nhân viên ngân hàng, hãy cúp máy và tự gọi ngân hàng theo số in sau thẻ.",

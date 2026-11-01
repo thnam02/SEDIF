@@ -335,23 +335,36 @@ def spent_today(conn, account: str, now: datetime) -> int:
     spent = conn.execute(
         """
         SELECT COALESCE(SUM(amount), 0) AS n FROM bank.transfers
-        WHERE from_account = %s AND created_at >= %s AND status <> 'cancelled'
+        WHERE from_account = %s AND created_at >= %s
+          AND status NOT IN ('cancelled', 'awaiting_confirmation')
         """,
         (account, start),
     ).fetchone()
     return int(spent["n"])
 
 
-def debit(conn, account: str, amount: int, now: datetime) -> None:
-    row = conn.execute("SELECT balance, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s", (account,)).fetchone()
+def load_account(conn, account: str):
+    row = conn.execute(
+        "SELECT balance, segment, has_guardian, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s",
+        (account,),
+    ).fetchone()
     if row is None:
         raise HTTPException(404, "không có tài khoản")
+    return row
+
+
+def reject_if_cannot_pay(row, amount: int, spent: int) -> None:
     if int(row["balance"]) < amount:
         raise HTTPException(400, "không đủ số dư")
     if amount > int(row["limit_per_txn"]):
         raise HTTPException(400, "vượt hạn mức giao dịch")
-    if spent_today(conn, account, now) + amount > int(row["limit_per_day"]):
+    if spent + amount > int(row["limit_per_day"]):
         raise HTTPException(400, "vượt hạn mức ngày")
+
+
+def debit(conn, account: str, amount: int, now: datetime) -> None:
+    row = load_account(conn, account)
+    reject_if_cannot_pay(row, amount, spent_today(conn, account, now))
     conn.execute("UPDATE bank.accounts SET balance = balance - %s WHERE id = %s", (amount, account))
 
 
@@ -466,6 +479,10 @@ class ExperimentSessionIn(BaseModel):
     call: CallIn
     behaviour_features: BehaviourIn
     raw_events: list[dict] | None = None
+
+
+class Level1Action(BaseModel):
+    response_ms: int = 0
 
 
 class RespondIn(BaseModel):
@@ -1068,11 +1085,9 @@ def transfer(
             return stored if isinstance(stored, dict) else json.loads(stored)
     session = touch_session(body.from_account, body.device, now)
     with connect() as conn:
-        debit(conn, body.from_account, body.amount, now)
-        balance = conn.execute(
-            "SELECT balance, segment, has_guardian, limit_per_txn, limit_per_day FROM bank.accounts WHERE id = %s",
-            (body.from_account,),
-        ).fetchone()
+        account = load_account(conn, body.from_account)
+        spent = spent_today(conn, body.from_account, now)
+        reject_if_cannot_pay(account, body.amount, spent)
         transfer_id = _next_id("X")
         decision_id = f"dec-{transfer_id}"
         method = add_method_for(body.task_type, body.entry_detail, body.add_method)
@@ -1097,13 +1112,13 @@ def transfer(
             "sender_hash": account_hash(body.from_account),
             "payee_hash": account_hash(body.to_account),
             "amount": body.amount,
-            "balance": int(balance["balance"]) + body.amount,
+            "balance": int(account["balance"]),
             "ts": now.isoformat(),
             "session_id": session,
             "score_request": True,
-            "limit_per_txn": int(balance["limit_per_txn"]),
-            "limit_per_day": int(balance["limit_per_day"]),
-            "spent_today": spent_today(conn, body.from_account, now),
+            "limit_per_txn": int(account["limit_per_txn"]),
+            "limit_per_day": int(account["limit_per_day"]),
+            "spent_today": spent,
         }
         if method:
             request["add_method"] = method
@@ -1136,8 +1151,13 @@ def transfer(
             log.info("experiment decision %s", json.dumps(record, ensure_ascii=False))
             funds = "released"
             decided["hold_until"] = None
-        hung = False
-        status = "done" if experiment is not None else status_of(level, funds, hung)
+        waiting = level == 1 and experiment is None
+        if waiting:
+            funds = "held"
+            status = "awaiting_confirmation"
+        else:
+            debit(conn, body.from_account, body.amount, now)
+            status = "done" if experiment is not None else status_of(level, funds, False)
         conn.execute(
             """
             INSERT INTO bank.transfers
@@ -1163,10 +1183,11 @@ def transfer(
                 now,
             ),
         )
-        entry(conn, body.from_account, transfer_id, now, "out", body.amount, "transfer", body.purpose_text or "", status, body.to_account)
-        stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer_id,)).fetchone()
-        if funds == "released":
-            release_payee(conn, stored, now)
+        if not waiting:
+            entry(conn, body.from_account, transfer_id, now, "out", body.amount, "transfer", body.purpose_text or "", status, body.to_account)
+            stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer_id,)).fetchone()
+            if funds == "released":
+                release_payee(conn, stored, now)
         if experiment is not None:
             _save_experiment_decision(conn, body, decided, now)
         if level == 2 and experiment is None and _guardian_consented(conn, body.from_account):
@@ -1179,12 +1200,15 @@ def transfer(
             )
             log.info("guardian notify mock account=%s transfer=%s", body.from_account, transfer_id)
         conn.commit()
+    decision = _decision_payload(level, decided)
+    if waiting:
+        decision["intervention"] = "reminder"
     result = {
         "transfer_id": transfer_id,
         "status": status,
         "funds_status": funds,
         "hold_until": decided.get("hold_until"),
-        "decision": _decision_payload(level, decided),
+        "decision": decision,
     }
     if key:
         with connect() as conn:
@@ -1201,6 +1225,115 @@ def transfer(
         stored = prior["response"]
         return stored if isinstance(stored, dict) else json.loads(stored)
     return result
+
+
+def log_choice(decision_id: str | None, choice: str, response_ms: int) -> None:
+    if not decision_id:
+        return
+    try:
+        engine_post(
+            f"/decisions/{decision_id}/choice",
+            {"choice": choice, "response_ms": max(0, int(response_ms))},
+        )
+    except EngineUnavailable as exc:
+        log.warning("choice not logged: %s", exc)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            log.warning("choice not logged: %s", exc.detail)
+
+
+def _level1_decision(transfer: dict) -> dict:
+    reasons = transfer["reasons"] if isinstance(transfer["reasons"], list) else json.loads(transfer["reasons"] or "[]")
+    actions = transfer["actions"] if isinstance(transfer["actions"], list) else json.loads(transfer["actions"] or "[]")
+    return {
+        "level": 1,
+        "actions": actions,
+        "reasons": reasons,
+        "signals_present": [],
+        "rules_fired": [],
+        "evidence_card": {"signals": [], "reasons_vi": [], "baseline_quality": "none", "episode_id": ""},
+        "intervention": "reminder",
+    }
+
+
+def _settle_level1(conn, transfer: dict, now: datetime) -> None:
+    debit(conn, transfer["from_account"], int(transfer["amount"]), now)
+    entry(
+        conn,
+        transfer["from_account"],
+        transfer["id"],
+        now,
+        "out",
+        int(transfer["amount"]),
+        "transfer",
+        transfer["purpose_text"] or "",
+        "done",
+        transfer["to_account"],
+    )
+    conn.execute(
+        "UPDATE bank.transfers SET funds_status = 'released', status = 'done' WHERE id = %s",
+        (transfer["id"],),
+    )
+    stored = conn.execute("SELECT * FROM bank.transfers WHERE id = %s", (transfer["id"],)).fetchone()
+    release_payee(conn, stored, now)
+
+
+@app.post("/transfers/{transfer_id}/confirm")
+def confirm_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
+    """Mức 1: trừ tiền và hoàn tất. Gọi lại trả cùng kết quả, không trừ lần hai."""
+    now = CLOCK.now()
+    response_ms = 0 if body is None else body.response_ms
+    if response_ms < 0:
+        raise HTTPException(400, "response_ms không hợp lệ")
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (transfer_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có lệnh")
+        if transfer["status"] == "done" and int(transfer["level"] or 0) == 1:
+            conn.commit()
+            return {
+                "transfer_id": transfer_id,
+                "status": "done",
+                "funds_status": "released",
+                "hold_until": None,
+                "decision": _level1_decision(transfer),
+            }
+        if transfer["status"] != "awaiting_confirmation":
+            raise HTTPException(409, "chỉ lệnh mức 1 đang chờ mới xác nhận được")
+        _settle_level1(conn, transfer, now)
+        conn.commit()
+    log_choice(transfer["decision_id"], "continue", response_ms)
+    return {
+        "transfer_id": transfer_id,
+        "status": "done",
+        "funds_status": "released",
+        "hold_until": None,
+        "decision": _level1_decision(transfer),
+    }
+
+
+@app.post("/transfers/{transfer_id}/cancel")
+def cancel_level1(transfer_id: str, body: Level1Action | None = None) -> dict:
+    """Mức 1: bỏ lệnh. Chưa trừ tiền."""
+    response_ms = 0 if body is None else body.response_ms
+    if response_ms < 0:
+        raise HTTPException(400, "response_ms không hợp lệ")
+    with connect() as conn:
+        transfer = conn.execute("SELECT * FROM bank.transfers WHERE id = %s FOR UPDATE", (transfer_id,)).fetchone()
+        if transfer is None:
+            raise HTTPException(404, "không có lệnh")
+        if transfer["status"] == "cancelled" and int(transfer["level"] or 0) == 1:
+            conn.commit()
+            return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
+        if transfer["status"] != "awaiting_confirmation":
+            raise HTTPException(409, "chỉ lệnh mức 1 đang chờ mới huỷ được")
+        conn.execute(
+            "UPDATE bank.transfers SET funds_status = 'cancelled', status = 'cancelled' WHERE id = %s",
+            (transfer_id,),
+        )
+        conn.commit()
+    log_choice(transfer["decision_id"], "cancel", response_ms)
+    return {"transfer_id": transfer_id, "status": "cancelled", "funds_status": "cancelled"}
 
 
 def _decision_payload(level: int, decided: dict) -> dict:
@@ -1542,6 +1675,8 @@ def record_choice(decision_id: str, body: ChoiceIn) -> dict:
         transfer = conn.execute("SELECT * FROM bank.transfers WHERE decision_id = %s", (decision_id,)).fetchone()
         if transfer is None:
             raise HTTPException(404, "không có quyết định")
+        if transfer["status"] == "awaiting_confirmation":
+            raise HTTPException(409, "lệnh mức 1 đang chờ xác nhận")
         funds = transfer["funds_status"]
         if body.choice == "cancel":
             funds = "cancelled"

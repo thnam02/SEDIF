@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FIDES
-  version: 2.4.1
+  version: 2.4.2
   summary: Engine chấm điểm và lõi ngân hàng giả.
   description: >
     App không gửi ts. Bank-core đóng dấu theo đồng hồ demo: bắt đầu
@@ -12,6 +12,9 @@ info:
     chấm mới trên /decide, evidence_card và POST /decisions/{id}/choice.
     Bank-core trả level số, rules_fired, evidence_card và intervention.
     POST /decisions/{id}/choice ghi response_ms và áp dụng pause, cancel, continue.
+    Bản 2.4.2: bank-core gọi /decide trước khi trừ tiền. Mức 1 là awaiting_confirmation,
+    chưa trừ, intervention reminder. POST /transfers/{id}/confirm trừ và hoàn tất.
+    POST /transfers/{id}/cancel bỏ lệnh. iOS gửi device.state none khi không ghi màn hình.
 servers:
   - url: http://localhost:8081
     description: FIDES Engine
@@ -592,7 +595,10 @@ paths:
       summary: Tạo lệnh chuyển
       description: >
         App không gửi ts. Bank-core đóng dấu đồng hồ demo, băm số tài khoản bằng HMAC-SHA256
-        rồi gọi POST /decide. none, info và banner cho đi.
+        rồi gọi POST /decide trước khi trừ tiền.
+        Mức 0 trừ và hoàn tất. Mức 1 tạo awaiting_confirmation, chưa trừ, intervention reminder.
+        Mức 2 và 3 trừ sau khi đã có quyết định rồi giữ như trước.
+        none, info và banner cho đi sau khi khách xác nhận mức 1.
         Người nhận simo_listed được ít nhất banner, trừ khi người gửi đã chuyển
         cho người đó từ 3 lần trở lên, lần đầu cách lúc liệt kê ít nhất 60 ngày, và không có họ thao túng:
         lúc đó chỉ là ghi chú info.
@@ -672,6 +678,76 @@ paths:
                       signals_present: [call_active]
                       reasons:
                         - {code: in_call, text: "Cuộc gọi đang mở trong phiên này."}
+  /transfers/{id}/confirm:
+    post:
+      tags: [Bank core]
+      operationId: confirmLevel1Transfer
+      summary: Khách xác nhận tờ nhắc mức 1
+      description: >
+        Chỉ lệnh awaiting_confirmation. Trừ tiền, ghi sổ, báo engine choice continue.
+        Gọi lại không trừ lần hai.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                response_ms:
+                  type: integer
+                  minimum: 0
+      responses:
+        "200":
+          description: Đã trừ và hoàn tất
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferResponse"
+        "409":
+          description: Không phải lệnh mức 1 đang chờ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /transfers/{id}/cancel:
+    post:
+      tags: [Bank core]
+      operationId: cancelLevel1Transfer
+      summary: Khách huỷ tờ nhắc mức 1
+      description: Bỏ lệnh awaiting_confirmation. Không trừ tiền. Báo engine choice cancel.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                response_ms:
+                  type: integer
+                  minimum: 0
+      responses:
+        "200":
+          description: Đã huỷ, số dư không đổi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferRespondResponse"
+        "409":
+          description: Không phải lệnh mức 1 đang chờ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /experiment/sessions:
     post:
       tags: [Bank core]
@@ -1093,6 +1169,8 @@ components:
         Toàn vẹn thiết bị gửi kèm khối device trên /decide.
         additionalProperties không khoá để allOf với Device vẫn nhận in_call và acct_input.
         Engine đọc state. integrity_verdict_at vẫn chưa đọc.
+        none là máy báo không ghi màn hình. unknown là không biết; engine không coi unknown là vắng.
+        iOS gửi active_capture hoặc none. Android có thể gửi unknown.
       properties:
         state:
           type: string
@@ -1443,8 +1521,10 @@ components:
           description: Cách dán hoặc lấy số từ ảnh. App gắn khi hiện thẻ. Engine không đọc.
     Intervention:
       type: string
-      enum: [none, banner, three_button, security_workflow]
-      description: Kiểu màn hình v2.4. App dùng trường này cùng level 0–3.
+      enum: [none, banner, reminder, three_button, security_workflow]
+      description: >
+        Kiểu màn hình v2.4. App dùng trường này cùng level 0–3.
+        reminder là tờ mức 1 trên màn xác nhận, trước khi trừ tiền. Engine vẫn trả banner.
     DecideResponse:
       type: object
       description: >
@@ -1693,7 +1773,7 @@ components:
           minimum: 0
     TransferStatus:
       type: string
-      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled, pending_draft]
+      enum: [done, needs_verification, held, blocked_pending_hangup, released, cancelled, pending_draft, awaiting_confirmation]
     TransferRequest:
       type: object
       required: [from_account, to_account, amount]
