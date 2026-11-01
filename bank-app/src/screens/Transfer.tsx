@@ -16,7 +16,7 @@ import { displayHolder, payeeName, recentChips, transferNote } from "../names"
 import { personas } from "../personas"
 import { addMethod } from "../addMethod"
 import { deviceState } from "../deviceState"
-import { level1ConfirmRejected, level1OnLeave } from "../level1Leave"
+import { level1AppStateCancels, level1ConfirmRejected, level1OnLeave } from "../level1Leave"
 import { resultRoute } from "../routeDecision"
 import { DEMO, useBank, type EntryDetail } from "../store"
 import { Button, Card, colors, Header, Screen, useType } from "../ui/parts"
@@ -412,7 +412,7 @@ export function ConfirmScreen() {
     }
     const unsub = navigation.addListener("beforeRemove", () => abandon("navigation"))
     const sub = AppState.addEventListener("change", (next) => {
-      if (next === "background") abandon("background")
+      if (level1AppStateCancels(next)) abandon("background")
     })
     return () => {
       unsub()
